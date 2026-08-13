@@ -67,8 +67,7 @@ class ConeLayout:
         nonnegative = _dimension(self.nonnegative, "nonnegative")
         try:
             second_order = tuple(
-                _dimension(size, f"second_order[{position}]")
-                for position, size in enumerate(self.second_order)
+                _dimension(size, f"second_order[{position}]") for position, size in enumerate(self.second_order)
             )
         except TypeError as error:
             raise ValueError("second_order must be a sequence of cone sizes.") from error
@@ -219,9 +218,7 @@ class ConeLayout:
         vector = _numeric_vector(value, self.size)
         squared_distance = float(np.dot(vector[self.zero_slice], vector[self.zero_slice]))
         squared_distance += _nonnegative_squared_distance(vector[self.nonnegative_slice])
-        squared_distance += sum(
-            _soc_squared_distance(vector[block]) for block in self.second_order_slices
-        )
+        squared_distance += sum(_soc_squared_distance(vector[block]) for block in self.second_order_slices)
         return float(np.sqrt(squared_distance))
 
     def dual_distance(self, value: ArrayLike) -> float:
@@ -229,9 +226,7 @@ class ConeLayout:
 
         vector = _numeric_vector(value, self.size)
         squared_distance = _nonnegative_squared_distance(vector[self.nonnegative_slice])
-        squared_distance += sum(
-            _soc_squared_distance(vector[block]) for block in self.second_order_slices
-        )
+        squared_distance += sum(_soc_squared_distance(vector[block]) for block in self.second_order_slices)
         return float(np.sqrt(squared_distance))
 
     def complementarity(self, primal: ArrayLike, dual: ArrayLike) -> float:
@@ -327,9 +322,7 @@ def _expression_vector(value: cp.Expression | ArrayLike, expected_size: int) -> 
     if not expression.is_real():
         raise ValueError("Cone vectors must be real-valued.")
     if expression.size != expected_size:
-        raise ValueError(
-            f"Cone vector has {expression.size} entries; expected {expected_size}."
-        )
+        raise ValueError(f"Cone vector has {expression.size} entries; expected {expected_size}.")
     if expression.ndim == 1:
         return expression
     return cp.reshape(expression, (expected_size,), order="F")

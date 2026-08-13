@@ -2,8 +2,8 @@
 
 BLVPy is a [CVXPY](https://www.cvxpy.org/) extension for modeling and locally
 solving optimistic bilevel programs. The lower-level problem is written as a
-disciplined parametrized program (DPP), with selected parameters linked to
-upper-level variables. BLVPy canonicalizes that family once and replaces
+disciplined parametrized program (DPP), with selected upper variables declared
+as its parameters. BLVPy canonicalizes that family once and replaces
 lower-level optimality with primal feasibility, dual feasibility, and a conic
 duality-gap constraint.
 
@@ -45,9 +45,9 @@ minimization problems and DPP with respect to their linked parameters. BLVPy
 implements optimistic semantics: if the lower problem has several minimizers,
 the upper problem may select the one most favorable to it.
 
-Unmapped lower parameters are fixed data: their values are snapshotted when
-the lower problem is first canonicalized. Construct a new `BilevelProblem` if
-those values need to change.
+Ordinary CVXPY parameters may also occur as fixed data. Their values are
+snapshotted when the lower problem is first canonicalized; construct a new
+`BilevelProblem` if those values need to change.
 
 For the paper's pointwise graph contract, the initial exact-atom audit accepts
 affine expressions plus absolute value, Huber loss, scalar/vector maxima and
@@ -73,32 +73,30 @@ with CVXPY.
 
 ## Basic usage
 
-The same CVXPY variable can appear in both the upper model and the lower model.
-A separate CVXPY parameter marks where an upper variable enters the lower
-problem:
+The same CVXPY variable appears directly in both levels. Declare which upper
+variables parameterize the lower problem with `LowerProblem`:
 
 ```python
 import cvxpy as cp
 
-from blvpy import BilevelProblem
+from blvpy import BilevelProblem, LowerProblem
 
-x = cp.Variable(name="x", bounds=[-2.0, 2.0])
+x = cp.Variable(name="x")
 y = cp.Variable(name="y")
-x_lower = cp.Parameter(name="x_lower")
 
-lower = cp.Problem(cp.Minimize(cp.square(y - x_lower)))
+lower = LowerProblem(
+    cp.Minimize(cp.square(y - x)),
+    parameters=[x],
+)
 bilevel = BilevelProblem(
     outer_objective=cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0)),
     lower_problem=lower,
-    parameter_map={x_lower: x},
 )
 
 assert bilevel.is_dbp()
 result = bilevel.solve(
     epsilon_initial=1e-1,
     epsilon_target=1e-6,
-    starts=10,
-    seed=0,
 )
 
 print(result.status)
@@ -106,10 +104,19 @@ print(x.value, y.value)
 print(result.residuals)
 ```
 
-Each mapped parameter and upper variable must have the same shape. Any lower
-parameter omitted from `parameter_map` is fixed data and must have a value.
-Upper variables need either an initial value, finite CVXPY bounds, or finite
-`sample_bounds` so multistart initialization can sample them.
+Every variable listed in `LowerProblem(parameters=...)` is an upper-level
+variable and is held fixed while the lower problem is solved. BLVPy uses one
+deterministic upper start by default: it preserves an existing `.value`, uses
+the midpoint of finite bounds, or otherwise uses zero clipped to any one-sided
+bounds. It then attempts to project that point onto DCP upper constraints.
+
+Set `starts` above one to enable randomized multistart. Only components with
+finite two-sided CVXPY bounds are randomized; other components retain their
+deterministic values. If automatic initialization and feasibility restoration
+both fail, BLVPy names the variables whose `.value` should be initialized.
+
+Passing a raw `cp.Problem` with `parameter_map` remains available through
+BLVPy 0.1.x with a `FutureWarning`; it will be removed in 0.2.0.
 
 `validate()` raises a detailed modeling error, while `is_dbp()` provides the
 corresponding boolean check. `canonicalize()` exposes immutable cone-program
@@ -150,14 +157,15 @@ CVXPY extensions:
 
 ```shell
 make sync       # create the environment and install development dependencies
-make test       # run solver-independent tests
+make test       # run the full test suite
 make lint       # run Ruff without modifying files
 make build      # build the source and wheel distributions
 ```
 
-Use `make test-ipopt` to run the native IPOPT integration tests. CI runs
-solver-independent tests on Linux, macOS, and Windows for Python 3.12 through
-3.14, with IPOPT integration tests in a separate Linux job.
+CI runs tests, linting, and package builds on Linux with IPOPT for Python 3.12
+through 3.14. macOS and Windows jobs build the distributions without resolving
+runtime dependencies, so packaging remains portable without requiring IPOPT on
+those runners.
 
 ## License
 

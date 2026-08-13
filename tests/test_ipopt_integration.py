@@ -1,7 +1,7 @@
 """Native IPOPT end-to-end checks.
 
-These tests are kept separate because they execute against the native IPOPT
-library. The Linux integration job installs IPOPT before selecting this mark.
+These tests are marked because they execute against the native IPOPT library.
+The Linux CI jobs install IPOPT before running the complete suite.
 """
 
 from __future__ import annotations
@@ -10,8 +10,7 @@ import cvxpy as cp
 import numpy as np
 import pytest
 
-from blvpy import BilevelProblem
-
+from blvpy import BilevelProblem, LowerProblem
 
 pytestmark = pytest.mark.ipopt
 
@@ -25,12 +24,10 @@ def test_analytic_quadratic_reaches_target_and_matches_direct_lower_solve() -> N
     _require_ipopt()
     x = cp.Variable(name="x", bounds=[-2.0, 2.0])
     y = cp.Variable(name="y")
-    parameter = cp.Parameter(name="parameter")
-    lower = cp.Problem(cp.Minimize(cp.square(y - parameter)))
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
     model = BilevelProblem(
         cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0)),
         lower,
-        {parameter: x},
     )
 
     result = model.solve(
@@ -50,9 +47,10 @@ def test_analytic_quadratic_reaches_target_and_matches_direct_lower_solve() -> N
     assert float(y.value) == pytest.approx(0.0, abs=2e-3)
 
     returned_y = float(y.value)
+    parameter = next(iter(model._parameter_map))
     parameter.value = float(x.value)
-    lower.solve(solver=cp.CLARABEL)
-    assert lower.status in cp.settings.SOLUTION_PRESENT
+    model._cvxpy_lower_problem.solve(solver=cp.CLARABEL)
+    assert model._cvxpy_lower_problem.status in cp.settings.SOLUTION_PRESENT
     assert returned_y == pytest.approx(float(y.value), abs=2e-4)
 
 
@@ -60,12 +58,10 @@ def test_optimistic_lp_selects_upper_preferred_lower_optimizer() -> None:
     _require_ipopt()
     x = cp.Variable(name="x", bounds=[0.0, 1.0])
     y = cp.Variable(name="y")
-    parameter = cp.Parameter(name="parameter")
-    lower = cp.Problem(cp.Minimize(0.0 * y), [y >= parameter, y <= 1.0])
+    lower = LowerProblem(cp.Minimize(0.0 * y), [y >= x, y <= 1.0], parameters=[x])
     model = BilevelProblem(
         cp.Minimize(cp.square(x) + cp.square(y - 1.0)),
         lower,
-        {parameter: x},
     )
 
     result = model.solve(

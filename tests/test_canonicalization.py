@@ -15,9 +15,7 @@ from blvpy.errors import (
 
 
 def _direct_data(problem: cp.Problem) -> dict:
-    data, _, _ = problem.get_problem_data(
-        cp.CLARABEL, enforce_dpp=True, solver_opts={"use_quad_obj": False}
-    )
+    data, _, _ = problem.get_problem_data(cp.CLARABEL, enforce_dpp=True, solver_opts={"use_quad_obj": False})
     return data
 
 
@@ -107,9 +105,7 @@ def test_recovery_agrees_with_direct_solve_for_multiple_shapes_and_attributes() 
     matrix = cp.Variable((2, 2), name="matrix")
     nonnegative = cp.Variable(2, nonneg=True, name="nonnegative")
     bounded = cp.Variable(2, bounds=[-0.5, 2.0], name="bounded")
-    matrix_target = cp.vstack(
-        [cp.hstack([parameter, 1.0]), cp.hstack([2.0, -parameter])]
-    )
+    matrix_target = cp.vstack([cp.hstack([parameter, 1.0]), cp.hstack([2.0, -parameter])])
     problem = cp.Problem(
         cp.Minimize(
             cp.square(scalar - (parameter + 1.0))
@@ -215,9 +211,7 @@ def test_dpp_is_checked_only_with_respect_to_mapped_parameters() -> None:
     mapped = cp.Parameter(name="mapped")
     fixed = cp.Parameter(pos=True, value=2.0, name="fixed")
     source = cp.Variable(name="source")
-    problem = cp.Problem(
-        cp.Minimize(cp.quad_over_lin(source, fixed) + cp.square(source - mapped))
-    )
+    problem = cp.Problem(cp.Minimize(cp.quad_over_lin(source, fixed) + cp.square(source - mapped)))
 
     assert not problem.is_dpp()
     canonical = canonicalize_lower(problem, {mapped: cp.Variable()})

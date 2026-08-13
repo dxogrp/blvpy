@@ -10,14 +10,9 @@ sync: ## install the development environment
 	@uv sync --group dev
 
 .PHONY: test
-test: sync ## run solver-independent tests
-	@printf "$(BLUE)Running solver-independent tests...$(RESET)\n"
-	@uv run python -m pytest tests -m "not ipopt"
-
-.PHONY: test-ipopt
-test-ipopt: sync ## run IPOPT integration tests
-	@printf "$(BLUE)Running IPOPT integration tests...$(RESET)\n"
-	@uv run python -m pytest tests -m ipopt
+test: sync ## run the full test suite
+	@printf "$(BLUE)Running tests...$(RESET)\n"
+	@uv run python -m pytest tests
 
 .PHONY: lint
 lint: sync ## check formatting and lint rules

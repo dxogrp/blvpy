@@ -6,25 +6,24 @@ import cvxpy as cp
 import numpy as np
 import pytest
 
+from blvpy import BilevelProblem, LowerProblem
 from blvpy.errors import (
     ParameterMappingError,
     UnsupportedModelError,
     ValidationError,
 )
-from blvpy.problem import BilevelProblem
 
 
 def _quadratic_bilevel(*, bounds: tuple[float, float] = (-2.0, 2.0)):
     x = cp.Variable(name="x", bounds=list(bounds))
     y = cp.Variable(name="y")
-    parameter = cp.Parameter(name="lower_x")
-    lower = cp.Problem(cp.Minimize(cp.square(y - parameter)))
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
     problem = BilevelProblem(
         cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0)),
         lower,
-        {parameter: x},
-        [x + y <= 3.0],
+        outer_constraints=[x + y <= 3.0],
     )
+    parameter = next(iter(problem._parameter_map))
     return problem, x, y, parameter
 
 
@@ -37,7 +36,7 @@ def test_valid_problem_caches_canonical_and_lifted_models() -> None:
     assert problem.lifted_problem is problem.lifted_problem
     assert problem.upper_variables == (x,)
     assert problem.source_variables == (x, y)
-    assert parameter in problem.parameter_map
+    assert parameter in problem._parameter_map
 
 
 def test_lifted_problem_contains_full_optimistic_reformulation() -> None:
@@ -64,12 +63,13 @@ def test_lifted_affine_data_tracks_mapped_parameter() -> None:
     x = cp.Variable(name="x", bounds=[0.5, 2.0])
     y = cp.Variable(2, name="y")
     t = cp.Variable(name="t")
-    parameter = cp.Parameter(nonneg=True, name="lower_x")
-    lower = cp.Problem(
-        cp.Minimize(t + parameter * y[0]),
-        [cp.norm(y, 2) <= t, parameter * y[0] + y[1] >= 1.0],
+    lower = LowerProblem(
+        cp.Minimize(t + x * y[0]),
+        [cp.norm(y, 2) <= t, x * y[0] + y[1] >= 1.0],
+        parameters=[x],
     )
-    problem = BilevelProblem(cp.Minimize(cp.square(x - 1.0) + t), lower, {parameter: x})
+    problem = BilevelProblem(cp.Minimize(cp.square(x - 1.0) + t), lower)
+    parameter = next(iter(problem._parameter_map))
     canonical = problem.canonicalize()
     expressions = problem.lifted_problem.canonical_expressions
 
@@ -83,15 +83,14 @@ def test_lifted_affine_data_tracks_mapped_parameter() -> None:
 
 
 def test_mapped_parameter_domain_is_carried_into_lifted_problem() -> None:
-    x = cp.Variable(name="x", bounds=[-2.0, 2.0])
+    x = cp.Variable(name="x", nonneg=True)
     y = cp.Variable(name="y")
-    parameter = cp.Parameter(nonneg=True, name="nonnegative_parameter")
-    lower = cp.Problem(cp.Minimize(cp.square(y - parameter)))
-    problem = BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), lower, {parameter: x})
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    problem = BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), lower)
 
     lifted = problem.lifted_problem
     assert len(lifted.upper_constraints) == 1
-    x.value = -1.0
+    x.save_value(-1.0)
     assert float(np.max(lifted.upper_constraints[0].violation())) == pytest.approx(1.0)
     x.value = 1.0
     assert float(np.max(lifted.upper_constraints[0].violation())) == pytest.approx(0.0)
@@ -103,24 +102,22 @@ def test_mapped_parameter_domain_is_carried_into_lifted_problem() -> None:
         (
             lambda: (
                 cp.Maximize(cp.Variable(name="upper_x")),
-                cp.Problem(cp.Minimize(cp.Variable(name="lower_y"))),
-                {},
+                LowerProblem(cp.Minimize(cp.Variable(name="lower_y"))),
             ),
             "upper problem must be a minimization",
         ),
         (
             lambda: (
                 cp.Minimize(cp.Variable(name="upper_x")),
-                cp.Problem(cp.Maximize(cp.Variable(name="lower_y"))),
-                {},
+                LowerProblem(cp.Maximize(cp.Variable(name="lower_y"))),
             ),
             "lower problem must be a minimization",
         ),
     ],
 )
 def test_rejects_maximization_levels(factory, message: str) -> None:
-    objective, lower, mapping = factory()
-    problem = BilevelProblem(objective, lower, mapping)
+    objective, lower = factory()
+    problem = BilevelProblem(objective, lower)
 
     assert not problem.is_dbp()
     with pytest.raises(ValidationError, match=message):
@@ -130,10 +127,9 @@ def test_rejects_maximization_levels(factory, message: str) -> None:
 def test_rejects_missing_fixed_parameter_value() -> None:
     x = cp.Variable(name="x", bounds=[-1.0, 1.0])
     y = cp.Variable(name="y")
-    linked = cp.Parameter(name="linked")
     fixed = cp.Parameter(name="fixed")
-    lower = cp.Problem(cp.Minimize(cp.square(y - linked) + fixed * y))
-    problem = BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), lower, {linked: x})
+    lower = LowerProblem(cp.Minimize(cp.square(y - x) + fixed * y), parameters=[x])
+    problem = BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), lower)
 
     assert not problem.is_dbp()
     with pytest.raises(ParameterMappingError, match="fixed value"):
@@ -145,7 +141,8 @@ def test_rejects_parameter_map_shape_mismatch() -> None:
     y = cp.Variable(name="y")
     parameter = cp.Parameter(name="scalar_parameter")
     lower = cp.Problem(cp.Minimize(cp.square(y - parameter)))
-    problem = BilevelProblem(cp.Minimize(cp.sum_squares(x) + cp.square(y)), lower, {parameter: x})
+    with pytest.warns(FutureWarning, match="0.2.0"):
+        problem = BilevelProblem(cp.Minimize(cp.sum_squares(x) + cp.square(y)), lower, {parameter: x})
 
     assert not problem.is_dbp()
     with pytest.raises(ValidationError, match="shape"):
@@ -157,9 +154,12 @@ def test_rejects_nonvariable_parameter_link() -> None:
     y = cp.Variable(name="y")
     parameter = cp.Parameter(name="parameter")
     lower = cp.Problem(cp.Minimize(cp.square(y - parameter)))
-    problem = BilevelProblem(
-        cp.Minimize(cp.square(x) + cp.square(y)), lower, {parameter: x + 1.0}  # type: ignore[dict-item]
-    )
+    with pytest.warns(FutureWarning, match="0.2.0"):
+        problem = BilevelProblem(
+            cp.Minimize(cp.square(x) + cp.square(y)),
+            lower,
+            {parameter: x + 1.0},  # type: ignore[dict-item]
+        )
 
     assert not problem.is_dbp()
     with pytest.raises(ValidationError, match="must be a CVXPY Variable"):
@@ -169,9 +169,8 @@ def test_rejects_nonvariable_parameter_link() -> None:
 def test_rejects_upper_atom_that_is_not_dnlp() -> None:
     x = cp.Variable(name="x", bounds=[-1.0, 1.0])
     y = cp.Variable(name="y")
-    parameter = cp.Parameter(name="parameter")
-    lower = cp.Problem(cp.Minimize(cp.square(y - parameter)))
-    problem = BilevelProblem(cp.Minimize(cp.ceil(x) + cp.square(y)), lower, {parameter: x})
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    problem = BilevelProblem(cp.Minimize(cp.ceil(x) + cp.square(y)), lower)
 
     assert not problem.is_dbp()
     with pytest.raises(UnsupportedModelError, match="not DNLP compliant"):
@@ -179,11 +178,37 @@ def test_rejects_upper_atom_that_is_not_dnlp() -> None:
 
 
 def test_constructor_rejects_non_cvxpy_outer_constraints() -> None:
-    _, _, y, parameter = _quadratic_bilevel()
-    lower = cp.Problem(cp.Minimize(cp.square(y - parameter)))
+    _, _, y, _ = _quadratic_bilevel()
+    lower = LowerProblem(cp.Minimize(cp.square(y)))
 
     with pytest.raises(TypeError, match="CVXPY Constraint"):
-        BilevelProblem(cp.Minimize(cp.square(y)), lower, {}, [True])  # type: ignore[list-item]
+        BilevelProblem(cp.Minimize(cp.square(y)), lower, outer_constraints=[True])  # type: ignore[list-item]
+
+
+def test_deprecated_raw_problem_and_parameter_map_are_equivalent() -> None:
+    x = cp.Variable(name="x")
+    y = cp.Variable(name="y")
+    parameter = cp.Parameter(name="lower_x")
+    raw = cp.Problem(cp.Minimize(cp.square(y - parameter)))
+
+    with pytest.warns(FutureWarning, match="removed in BLVpy 0.2.0") as warnings:
+        legacy = BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), raw, {parameter: x})
+
+    modern = BilevelProblem(
+        cp.Minimize(cp.square(x) + cp.square(y)),
+        LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x]),
+    )
+    assert len(warnings) == 1
+    assert legacy.canonicalize().cone_layout == modern.canonicalize().cone_layout
+
+
+def test_lower_problem_rejects_explicit_parameter_map() -> None:
+    x = cp.Variable(name="x")
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+
+    with pytest.raises(TypeError, match="cannot be supplied with LowerProblem"):
+        BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), lower, {})
 
 
 def test_solve_defaults_match_documented_continuation_settings() -> None:
@@ -193,7 +218,7 @@ def test_solve_defaults_match_documented_continuation_settings() -> None:
     assert parameters["epsilon_initial"].default == pytest.approx(1e-1)
     assert parameters["epsilon_target"].default == pytest.approx(1e-6)
     assert parameters["contraction"].default == pytest.approx(0.1)
-    assert parameters["starts"].default == 10
+    assert parameters["starts"].default == 1
     assert parameters["feasibility_tolerance"].default == pytest.approx(1e-7)
     assert parameters["solver"].default == cp.IPOPT
     assert parameters["conic_solver"].default == cp.CLARABEL

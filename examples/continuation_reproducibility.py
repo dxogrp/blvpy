@@ -7,18 +7,16 @@ Requires BLVpy's native IPOPT dependency.
 
 import cvxpy as cp
 
-from blvpy import BilevelProblem
+from blvpy import BilevelProblem, LowerProblem
 
 
 def build() -> BilevelProblem:
     x = cp.Variable(name="x", bounds=[-2.0, 2.0])
     y = cp.Variable(name="y")
-    lower_x = cp.Parameter(name="lower_x")
-    lower = cp.Problem(cp.Minimize(cp.square(y - lower_x)))
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
     return BilevelProblem(
         cp.Minimize(cp.square(x - 0.25) + cp.square(y + 0.5)),
         lower,
-        {lower_x: x},
     )
 
 

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import blvpy.continuation as continuation
-from blvpy import BilevelProblem
+from blvpy import BilevelProblem, LowerProblem
 from blvpy.continuation import compute_residuals, sample_upper_starts
 from blvpy.errors import InitializationError, SolverUnavailableError
 from blvpy.result import IterationRecord, Residuals
@@ -17,14 +17,13 @@ def _quadratic_bilevel(*, bounded: bool = True):
     attributes = {"bounds": [-2.0, 2.0]} if bounded else {}
     x = cp.Variable(name="x", **attributes)
     y = cp.Variable(name="y")
-    parameter = cp.Parameter(name="lower_x")
-    lower = cp.Problem(cp.Minimize(cp.square(y - parameter)))
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
     model = BilevelProblem(
         cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0)),
         lower,
-        {parameter: x},
-        [x + y <= 3.0],
+        outer_constraints=[x + y <= 3.0],
     )
+    parameter = next(iter(model._parameter_map))
     return model, x, y, parameter
 
 
@@ -42,29 +41,51 @@ def test_bounded_upper_sampling_is_reproducible_and_uses_explicit_first() -> Non
     assert any(float(sample[x]) != pytest.approx(0.75) for sample in first[1:])
 
 
-def test_unbounded_upper_requires_value_or_sample_bounds() -> None:
+def test_unbounded_upper_defaults_to_zero_and_retains_explicit_value() -> None:
     model, x, _, _ = _quadratic_bilevel(bounded=False)
 
-    with pytest.raises(InitializationError, match="unbounded component"):
-        sample_upper_starts(model, 1, np.random.default_rng(0))
+    automatic = sample_upper_starts(model, 3, np.random.default_rng(0))
+    assert len(automatic) == 1
+    assert float(automatic[0][x]) == pytest.approx(0.0)
 
     x.value = -3.25
     repeated = sample_upper_starts(model, 3, np.random.default_rng(0))
-    assert [float(sample[x]) for sample in repeated] == pytest.approx([-3.25] * 3)
+    assert len(repeated) == 1
+    assert float(repeated[0][x]) == pytest.approx(-3.25)
 
 
-def test_sample_bounds_supports_unbounded_vector_variable() -> None:
-    x = cp.Variable(3, name="x")
-    x.sample_bounds = (np.array([-3.0, -2.0, -1.0]), np.array([-2.0, 0.0, 4.0]))
+def test_automatic_start_uses_midpoint_zero_and_one_sided_clipping() -> None:
+    x = cp.Variable(
+        4,
+        name="x",
+        bounds=[
+            np.array([-3.0, 2.0, -np.inf, -np.inf]),
+            np.array([-1.0, np.inf, -4.0, np.inf]),
+        ],
+    )
     y = cp.Variable(name="y")
-    parameter = cp.Parameter(3, name="lower_x")
-    lower = cp.Problem(cp.Minimize(cp.square(y) + cp.sum_squares(parameter)))
-    model = BilevelProblem(cp.Minimize(cp.sum_squares(x) + cp.square(y)), lower, {parameter: x})
+    lower = LowerProblem(cp.Minimize(cp.square(y) + cp.sum_squares(x)), parameters=[x])
+    model = BilevelProblem(cp.Minimize(cp.sum_squares(x) + cp.square(y)), lower)
 
-    starts = sample_upper_starts(model, 20, np.random.default_rng(4))
-    values = np.vstack([sample[x] for sample in starts])
-    assert np.all(values >= np.array([-3.0, -2.0, -1.0]))
-    assert np.all(values <= np.array([-2.0, 0.0, 4.0]))
+    starts = sample_upper_starts(model, 8, np.random.default_rng(4))
+
+    np.testing.assert_allclose(starts[0][x], np.array([-2.0, 2.0, -4.0, 0.0]))
+    values = np.vstack([sample[x] for sample in starts[1:]])
+    assert np.all(values[:, 0] >= -3.0)
+    assert np.all(values[:, 0] <= -1.0)
+    np.testing.assert_allclose(values[:, 1:], np.tile(np.array([2.0, -4.0, 0.0]), (len(values), 1)))
+
+
+def test_automatic_start_projects_through_variable_attributes() -> None:
+    x = cp.Variable(2, name="x", nonneg=True)
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y) + cp.sum_squares(x)), parameters=[x])
+    model = BilevelProblem(cp.Minimize(cp.sum_squares(x) + cp.square(y)), lower)
+
+    starts = sample_upper_starts(model, 3, np.random.default_rng(1))
+
+    assert len(starts) == 1
+    np.testing.assert_array_equal(starts[0][x], np.zeros(2))
 
 
 def test_sampling_tracks_bounds_per_variable_when_bound_types_are_mixed() -> None:
@@ -72,18 +93,66 @@ def test_sampling_tracks_bounds_per_variable_when_bound_types_are_mixed() -> Non
     explicit_only = cp.Variable(name="explicit_only")
     explicit_only.value = 7.5
     source = cp.Variable(name="source")
-    parameter = cp.Parameter(name="parameter")
-    lower = cp.Problem(cp.Minimize(cp.square(source - parameter)))
+    lower = LowerProblem(cp.Minimize(cp.square(source - bounded)), parameters=[bounded])
     model = BilevelProblem(
         cp.Minimize(cp.square(bounded) + cp.square(explicit_only) + cp.square(source)),
         lower,
-        {parameter: bounded},
     )
 
     samples = sample_upper_starts(model, 8, np.random.default_rng(18))
 
+    assert float(samples[0][bounded]) == pytest.approx(-1.5)
     assert all(-2.0 <= float(sample[bounded]) <= -1.0 for sample in samples)
     assert [float(sample[explicit_only]) for sample in samples] == pytest.approx([7.5] * 8)
+
+
+def test_deterministic_start_projects_onto_dcp_upper_constraints() -> None:
+    x = cp.Variable(name="x")
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    model = BilevelProblem(
+        cp.Minimize(cp.square(x) + cp.square(y)),
+        lower,
+        outer_constraints=[x >= 2.0],
+    )
+    sample = sample_upper_starts(model, 1, np.random.default_rng(0))[0]
+
+    projected = continuation._project_upper_start(model, sample, cp.CLARABEL, {}, False)
+
+    assert float(projected[x]) == pytest.approx(2.0, abs=1e-7)
+
+
+def test_failed_automatic_initialization_requests_named_values(monkeypatch) -> None:
+    model, _, _, _ = _quadratic_bilevel(bounded=False)
+    monkeypatch.setattr(continuation, "_require_solver", lambda *args, **kwargs: None)
+
+    def fail_initialization(*args, **kwargs) -> None:
+        raise InitializationError("synthetic initialization failure")
+
+    monkeypatch.setattr(continuation, "_initialize_lower", fail_initialization)
+
+    with pytest.raises(
+        InitializationError,
+        match=r"^Automatic initialization failed\. Please initialize variables: x\.",
+    ):
+        model.solve(starts=1, solver="MOCK_NLP")
+
+
+def test_failed_supplied_initialization_names_all_upper_variables(monkeypatch) -> None:
+    model, x, _, _ = _quadratic_bilevel(bounded=False)
+    x.value = 1.25
+    monkeypatch.setattr(continuation, "_require_solver", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda *args, **kwargs: (_ for _ in ()).throw(InitializationError("synthetic initialization failure")),
+    )
+
+    with pytest.raises(
+        InitializationError,
+        match=r"^Automatic initialization failed\. Please initialize variables: x\.",
+    ):
+        model.solve(starts=1, solver="MOCK_NLP")
 
 
 def test_default_solve_reports_actionable_missing_ipopt_error(monkeypatch) -> None:
@@ -150,19 +219,17 @@ def test_compute_residuals_matches_independent_canonical_calculation() -> None:
 def test_fixed_upper_initialization_recovers_direct_lower_solution() -> None:
     x = cp.Variable(name="x", bounds=[-2.0, 2.0])
     y = cp.Variable(2, name="y")
-    parameter = cp.Parameter(name="parameter")
-    lower = cp.Problem(
-        cp.Minimize(cp.sum_squares(y - cp.hstack([parameter, -parameter])))
-    )
-    model = BilevelProblem(cp.Minimize(cp.square(x) + cp.sum_squares(y)), lower, {parameter: x})
+    lower = LowerProblem(cp.Minimize(cp.sum_squares(y - cp.hstack([x, -x]))), parameters=[x])
+    model = BilevelProblem(cp.Minimize(cp.square(x) + cp.sum_squares(y)), lower)
+    parameter = next(iter(model._parameter_map))
     x.value = 0.65
 
     continuation._initialize_lower(model, cp.CLARABEL, {}, False)
     initialized = np.array(y.value, copy=True)
 
     parameter.value = x.value
-    lower.solve(solver=cp.CLARABEL)
-    assert lower.status in cp.settings.SOLUTION_PRESENT
+    model._cvxpy_lower_problem.solve(solver=cp.CLARABEL)
+    assert model._cvxpy_lower_problem.status in cp.settings.SOLUTION_PRESENT
     np.testing.assert_allclose(initialized, y.value, atol=2e-5)
 
 

@@ -35,7 +35,7 @@ class SolveSettings:
     epsilon_initial: float = 1e-1
     epsilon_target: float = 1e-6
     contraction: float = 0.1
-    starts: int = 10
+    starts: int = 1
     feasibility_tolerance: float = 1e-7
     seed: int | np.random.Generator | None = None
     solver: str = cp.IPOPT
@@ -77,19 +77,29 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
         raise ValueError("starts must be a positive integer.")
     if isinstance(max_retries, bool) or not isinstance(max_retries, (int, np.integer)) or max_retries < 0:
         raise ValueError("max_retries must be a nonnegative integer.")
-    feasibility_tolerance = _finite_nonnegative(
-        feasibility_tolerance, "feasibility_tolerance"
-    )
+    feasibility_tolerance = _finite_nonnegative(feasibility_tolerance, "feasibility_tolerance")
     solver_options = dict(solver_options or {})
     conic_solver_options = dict(conic_solver_options or {})
 
     model.validate()
     lifted = model.lifted_problem
-    canonical = model.canonicalize()
     _require_solver(solver, nonlinear=True)
     _require_solver(conic_solver, nonlinear=False)
     rng = seed if isinstance(seed, np.random.Generator) else np.random.default_rng(seed)
-    samples = sample_upper_starts(model, int(starts), rng)
+    variables_without_values = tuple(variable for variable in model.upper_variables if variable.value is None)
+    try:
+        samples = list(sample_upper_starts(model, int(starts), rng))
+        if samples:
+            samples[0] = _project_upper_start(
+                model,
+                samples[0],
+                conic_solver,
+                conic_solver_options,
+                verbose,
+            )
+            samples = list(_deduplicate_starts(samples))
+    except InitializationError as error:
+        raise _automatic_initialization_error(model, variables_without_values, str(error)) from error
 
     start_records: list[StartRecord] = []
     candidates: list[_Candidate] = []
@@ -119,16 +129,11 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
             if not _record_is_acceptable(record, feasibility_tolerance):
                 message = record.message
                 if record.status in _ACCEPTABLE_NLP_STATUSES:
-                    message = (
-                        "Independent residual check failed: "
-                        f"max violation {record.residuals.max_violation:.3g}."
-                    )
+                    message = f"Independent residual check failed: max violation {record.residuals.max_violation:.3g}."
                 start_records.append(
                     StartRecord(
                         index,
-                        "residual_check_failed"
-                        if record.status in _ACCEPTABLE_NLP_STATUSES
-                        else record.status,
+                        "residual_check_failed" if record.status in _ACCEPTABLE_NLP_STATUSES else record.status,
                         record.objective,
                         record.residuals,
                         message,
@@ -139,21 +144,13 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
             objective = float(record.objective) if record.objective is not None else float("inf")
             candidate = _Candidate(index, objective, state, record.residuals)
             candidates.append(candidate)
-            start_records.append(
-                StartRecord(index, record.status, record.objective, record.residuals)
-            )
+            start_records.append(StartRecord(index, record.status, record.objective, record.residuals))
         except Exception as error:
-            start_records.append(
-                StartRecord(index, "failed", message=f"{type(error).__name__}: {error}")
-            )
+            start_records.append(StartRecord(index, "failed", message=f"{type(error).__name__}: {error}"))
 
     if not candidates:
-        details = "; ".join(
-            f"start {record.index}: {record.message or record.status}" for record in start_records
-        )
-        raise InitializationError(
-            "No multistart initialization produced a lifted solution. " + details
-        )
+        details = "; ".join(f"start {record.index}: {record.message or record.status}" for record in start_records)
+        raise _automatic_initialization_error(model, variables_without_values, details)
 
     candidates.sort(key=lambda candidate: candidate.objective)
     best = candidates[0]
@@ -211,9 +208,7 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
                 iterations,
                 start_records,
                 message=f"Could not reduce epsilon below {last_successful_epsilon:.6g}.",
-                final_record=_restored_record(
-                    model, last_successful_epsilon, solver, feasibility_tolerance
-                ),
+                final_record=_restored_record(model, last_successful_epsilon, solver, feasibility_tolerance),
             )
         intermediate = sqrt(last_successful_epsilon * epsilon)
         if not epsilon < intermediate < last_successful_epsilon:
@@ -225,9 +220,7 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
                 iterations,
                 start_records,
                 message="Continuation could not insert a distinct intermediate epsilon.",
-                final_record=_restored_record(
-                    model, last_successful_epsilon, solver, feasibility_tolerance
-                ),
+                final_record=_restored_record(model, last_successful_epsilon, solver, feasibility_tolerance),
             )
         targets.insert(target_index, intermediate)
         retries += 1
@@ -237,11 +230,7 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
     try:
         final = _restored_record(model, last_successful_epsilon, solver, feasibility_tolerance)
     except Exception:
-        final = next(
-            record
-            for record in reversed(iterations)
-            if _record_is_acceptable(record, feasibility_tolerance)
-        )
+        final = next(record for record in reversed(iterations) if _record_is_acceptable(record, feasibility_tolerance))
     status = final.status
     message = None
     if not final.residuals.is_feasible(
@@ -268,42 +257,100 @@ def sample_upper_starts(
     starts: int,
     rng: np.random.Generator,
 ) -> tuple[dict[cp.Variable, NDArray[np.float64]], ...]:
-    """Generate reproducible upper starts from values and finite bounds."""
+    """Generate deterministic and optional randomized upper starts.
+
+    Existing values take precedence for the first start. Otherwise, each
+    component uses the midpoint of two finite bounds, or zero clipped to a
+    finite one-sided bound. Additional starts randomize only components with
+    two finite bounds.
+    """
 
     specifications: list[
         tuple[
             cp.Variable,
-            NDArray[np.float64] | None,
             NDArray[np.float64],
             NDArray[np.float64],
-            bool,
+            NDArray[np.float64],
+            NDArray[np.bool_],
         ]
     ] = []
     for variable in model.upper_variables:
-        explicit = _numeric_value(variable.value, variable.shape) if variable.value is not None else None
-        lower, upper, fully_bounded = _sampling_bounds(variable)
-        if explicit is None and not fully_bounded:
-            raise InitializationError(
-                f"Upper variable {variable.name()!r} has an unbounded component and no "
-                "initial value or finite sample_bounds."
+        lower, upper = _variable_bounds(variable)
+        bounded = np.isfinite(lower) & np.isfinite(upper)
+        if variable.value is not None:
+            deterministic = _numeric_value(variable.value, variable.shape)
+        else:
+            deterministic = np.zeros(variable.shape, dtype=float)
+            deterministic[bounded] = (lower[bounded] + upper[bounded]) / 2.0
+            deterministic = np.where(
+                np.isfinite(lower) & ~np.isfinite(upper),
+                np.maximum(deterministic, lower),
+                deterministic,
             )
-        specifications.append((variable, explicit, lower, upper, fully_bounded))
+            deterministic = np.where(
+                ~np.isfinite(lower) & np.isfinite(upper),
+                np.minimum(deterministic, upper),
+                deterministic,
+            )
+            deterministic = _project_variable_value(variable, deterministic)
+        specifications.append((variable, deterministic, lower, upper, bounded))
 
-    samples: list[dict[cp.Variable, NDArray[np.float64]]] = []
-    for index in range(starts):
+    deterministic_sample = {variable: deterministic.copy() for variable, deterministic, _, _, _ in specifications}
+    samples: list[dict[cp.Variable, NDArray[np.float64]]] = [deterministic_sample]
+    for _ in range(1, starts):
         sample: dict[cp.Variable, NDArray[np.float64]] = {}
-        for variable, explicit, lower, upper, fully_bounded in specifications:
-            if index == 0 and explicit is not None:
-                value = explicit
-            elif fully_bounded:
-                value = rng.uniform(lower, upper)
-            elif explicit is not None:
-                value = explicit
-            else:  # guarded above
-                raise AssertionError("Missing upper-variable initialization.")
-            sample[variable] = np.asarray(value, dtype=float).reshape(variable.shape)
+        for variable, deterministic, lower, upper, bounded in specifications:
+            value = deterministic.copy()
+            if np.any(bounded):
+                value[bounded] = rng.uniform(lower[bounded], upper[bounded])
+                value = _project_variable_value(variable, value)
+            sample[variable] = value
         samples.append(sample)
-    return tuple(samples)
+    return _deduplicate_starts(samples)
+
+
+def _project_upper_start(
+    model: BilevelProblem,
+    sample: Mapping[cp.Variable, ArrayLike],
+    solver: str,
+    options: Mapping[str, Any],
+    verbose: bool,
+) -> dict[cp.Variable, NDArray[np.float64]]:
+    """Best-effort projection of the deterministic start onto upper constraints."""
+
+    projected = {variable: _numeric_value(value, variable.shape) for variable, value in sample.items()}
+    constraints = model.lifted_problem.upper_constraints
+    if not constraints:
+        return projected
+    _assign_values(projected)
+    if _constraint_violation(constraints) == 0.0:
+        return projected
+
+    distance = sum(
+        (cp.sum_squares(variable - value) if variable.ndim else cp.square(variable - value))
+        for variable, value in projected.items()
+    )
+    projection = cp.Problem(cp.Minimize(distance), constraints)
+    if not projection.is_dcp():
+        return projected
+    try:
+        projection.solve(
+            solver=solver,
+            warm_start=True,
+            verbose=verbose,
+            **dict(options),
+        )
+    except Exception:
+        _assign_values(projected)
+        return projected
+    if projection.status not in cp.settings.SOLUTION_PRESENT:
+        _assign_values(projected)
+        return projected
+    try:
+        return {variable: _numeric_value(variable.value, variable.shape) for variable in projected}
+    except InitializationError:
+        _assign_values(projected)
+        return projected
 
 
 def compute_residuals(model: BilevelProblem, epsilon: float | None = None) -> Residuals:
@@ -312,9 +359,7 @@ def compute_residuals(model: BilevelProblem, epsilon: float | None = None) -> Re
     lifted = model.lifted_problem
     if epsilon is None:
         epsilon = float(lifted.epsilon.value)
-    values = {
-        parameter: variable.value for parameter, variable in model.parameter_map.items()
-    }
+    values = {parameter: variable.value for parameter, variable in model._parameter_map.items()}
     if any(value is None for value in values.values()):
         raise InitializationError("Mapped upper variables do not all have numeric values.")
     data = model.canonicalize().apply_numeric(values)
@@ -326,7 +371,7 @@ def compute_residuals(model: BilevelProblem, epsilon: float | None = None) -> Re
 
     recovered = model.canonicalize().recover_numeric(primal)
     recovery = 0.0
-    lower_by_id = {variable.id: variable for variable in model.lower_problem.variables()}
+    lower_by_id = {variable.id: variable for variable in model._cvxpy_lower_problem.variables()}
     for variable_id, expected in recovered.items():
         actual = lower_by_id[variable_id].value
         if actual is None:
@@ -353,7 +398,7 @@ def _initialize_lower(
     options: Mapping[str, Any],
     verbose: bool,
 ) -> None:
-    for parameter, variable in model.parameter_map.items():
+    for parameter, variable in model._parameter_map.items():
         try:
             parameter.value = variable.value
         except ValueError as error:
@@ -375,9 +420,7 @@ def _initialize_lower(
     except Exception as error:
         raise InitializationError(f"The fixed-data lower cone solve failed: {error}") from error
     if lower.status not in cp.settings.SOLUTION_PRESENT:
-        raise InitializationError(
-            f"The fixed-data lower cone problem returned status {lower.status!r}."
-        )
+        raise InitializationError(f"The fixed-data lower cone problem returned status {lower.status!r}.")
     if primal.value is None or slack.value is None or equality.dual_value is None:
         raise InitializationError("The conic solver omitted a primal or dual certificate.")
 
@@ -386,7 +429,7 @@ def _initialize_lower(
     lifted.slack.save_value(np.asarray(slack.value, dtype=float))
     lifted.dual.save_value(np.asarray(equality.dual_value, dtype=float))
     source_values = canonical.recover_numeric(primal.value)
-    for variable in model.lower_problem.variables():
+    for variable in model._cvxpy_lower_problem.variables():
         variable.project_and_assign(source_values[variable.id])
 
 
@@ -415,9 +458,7 @@ def _restore_feasibility(
         raise SolveError("The feasibility-restoration problem is not DNLP compliant.")
     _solve_problem(restoration_problem, solver, options, verbose)
     if restoration_problem.status not in cp.settings.SOLUTION_PRESENT:
-        raise InitializationError(
-            f"Feasibility restoration returned status {restoration_problem.status!r}."
-        )
+        raise InitializationError(f"Feasibility restoration returned status {restoration_problem.status!r}.")
     restored = compute_residuals(model, epsilon)
     if not restored.is_feasible(tolerance):
         raise InitializationError(
@@ -435,20 +476,14 @@ def _relaxed_cone_constraints(
     slack, dual = lifted.slack, lifted.dual
     constraints: list[cp.Constraint] = []
     if layout.zero:
-        constraints.extend(
-            [slack[layout.zero_slice] <= radius, -slack[layout.zero_slice] <= radius]
-        )
+        constraints.extend([slack[layout.zero_slice] <= radius, -slack[layout.zero_slice] <= radius])
     if layout.nonnegative:
-        constraints.extend(
-            [slack[layout.nonnegative_slice] >= -radius, dual[layout.nonnegative_slice] >= -radius]
-        )
+        constraints.extend([slack[layout.nonnegative_slice] >= -radius, dual[layout.nonnegative_slice] >= -radius])
     for block in layout.second_order_slices:
         constraints.extend(
             [
-                cp.norm(slack[block.start + 1 : block.stop], 2)
-                <= slack[block.start] + radius,
-                cp.norm(dual[block.start + 1 : block.stop], 2)
-                <= dual[block.start] + radius,
+                cp.norm(slack[block.start + 1 : block.stop], 2) <= slack[block.start] + radius,
+                cp.norm(dual[block.start + 1 : block.stop], 2) <= dual[block.start] + radius,
             ]
         )
     return tuple(constraints)
@@ -462,9 +497,7 @@ def _relax_constraint(
         return constraint.expr <= radius, -constraint.expr <= radius
     if isinstance(constraint, cp.constraints.nonpos.Inequality):
         return (constraint.expr <= radius,)
-    raise SolveError(
-        f"Cannot construct feasibility restoration for {type(constraint).__name__}."
-    )
+    raise SolveError(f"Cannot construct feasibility restoration for {type(constraint).__name__}.")
 
 
 def _solve_one(
@@ -561,31 +594,44 @@ def _require_solver(solver: str, *, nonlinear: bool) -> None:
     raise SolverUnavailableError(f"Requested solver {solver!r} is not installed in CVXPY.")
 
 
-def _sampling_bounds(
+def _variable_bounds(
     variable: cp.Variable,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], bool]:
-    sample_bounds = getattr(variable, "sample_bounds", None)
-    if sample_bounds is not None:
-        try:
-            lower, upper = sample_bounds
-        except (TypeError, ValueError) as error:
-            raise InitializationError(
-                f"Variable {variable.name()!r}.sample_bounds must be a (lower, upper) pair."
-            ) from error
-        lower_array = np.broadcast_to(np.asarray(lower, dtype=float), variable.shape).copy()
-        upper_array = np.broadcast_to(np.asarray(upper, dtype=float), variable.shape).copy()
-    else:
-        lower, upper = variable.get_bounds()
-        lower_array = np.broadcast_to(np.asarray(lower, dtype=float), variable.shape).copy()
-        upper_array = np.broadcast_to(np.asarray(upper, dtype=float), variable.shape).copy()
-    fully_bounded = bool(
-        np.all(np.isfinite(lower_array)) and np.all(np.isfinite(upper_array))
-    )
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    lower, upper = variable.get_bounds()
+    lower_array = np.broadcast_to(np.asarray(lower, dtype=float), variable.shape).copy()
+    upper_array = np.broadcast_to(np.asarray(upper, dtype=float), variable.shape).copy()
     if np.any(lower_array > upper_array):
+        raise InitializationError(f"Variable {variable.name()!r} has inconsistent bounds.")
+    return lower_array, upper_array
+
+
+def _project_variable_value(
+    variable: cp.Variable,
+    value: ArrayLike,
+) -> NDArray[np.float64]:
+    try:
+        projected = variable.project(value)
+    except (TypeError, ValueError) as error:
         raise InitializationError(
-            f"Variable {variable.name()!r} has inconsistent sampling bounds."
-        )
-    return lower_array, upper_array, fully_bounded
+            f"Could not project an automatic value for upper variable {variable.name()!r} onto its declared attributes."
+        ) from error
+    if hasattr(projected, "toarray"):
+        projected = projected.toarray()
+    return _numeric_value(projected, variable.shape)
+
+
+def _deduplicate_starts(
+    samples: list[Mapping[cp.Variable, ArrayLike]],
+) -> tuple[dict[cp.Variable, NDArray[np.float64]], ...]:
+    unique: list[dict[cp.Variable, NDArray[np.float64]]] = []
+    keys: set[tuple[tuple[int, bytes], ...]] = set()
+    for sample in samples:
+        normalized = {variable: _numeric_value(value, variable.shape) for variable, value in sample.items()}
+        key = tuple((variable.id, np.ascontiguousarray(value).tobytes()) for variable, value in normalized.items())
+        if key not in keys:
+            keys.add(key)
+            unique.append(normalized)
+    return tuple(unique)
 
 
 def _epsilon_schedule(initial: float, target: float, contraction: float):
@@ -607,9 +653,7 @@ def _snapshot_state(problem: cp.Problem) -> dict[int, NDArray[np.float64]]:
     state: dict[int, NDArray[np.float64]] = {}
     for variable in problem.variables():
         if variable.value is None:
-            raise InitializationError(
-                f"NLP solve did not return a value for variable {variable.name()!r}."
-            )
+            raise InitializationError(f"NLP solve did not return a value for variable {variable.name()!r}.")
         state[variable.id] = np.array(variable.value, dtype=float, copy=True)
     return state
 
@@ -623,6 +667,19 @@ def _restore_state(problem: cp.Problem, state: Mapping[int, ArrayLike]) -> None:
 def _assign_values(values: Mapping[cp.Variable, ArrayLike]) -> None:
     for variable, value in values.items():
         variable.project_and_assign(value)
+
+
+def _automatic_initialization_error(
+    model: BilevelProblem,
+    variables_without_values: tuple[cp.Variable, ...],
+    details: str,
+) -> InitializationError:
+    variables = variables_without_values or model.upper_variables
+    names = ", ".join(variable.name() for variable in variables)
+    error = InitializationError(f"Automatic initialization failed. Please initialize variables: {names}.")
+    if details:
+        error.add_note(f"Initialization details: {details}")
+    return error
 
 
 def _result(
@@ -659,9 +716,7 @@ def _result(
 
 
 def _record_is_acceptable(record: IterationRecord, tolerance: float) -> bool:
-    return record.status in _ACCEPTABLE_NLP_STATUSES and record.residuals.is_feasible(
-        tolerance
-    )
+    return record.status in _ACCEPTABLE_NLP_STATUSES and record.residuals.is_feasible(tolerance)
 
 
 def _restored_record(

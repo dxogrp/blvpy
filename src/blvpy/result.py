@@ -205,9 +205,7 @@ class IterationRecord:
                 _finite_nonnegative_float(self.solve_time, "solve_time"),
             )
         if self.num_iters is not None:
-            if isinstance(self.num_iters, (bool, np.bool_)) or not isinstance(
-                self.num_iters, (int, np.integer)
-            ):
+            if isinstance(self.num_iters, (bool, np.bool_)) or not isinstance(self.num_iters, (int, np.integer)):
                 raise ValueError("num_iters must be a nonnegative integer or None.")
             if self.num_iters < 0:
                 raise ValueError("num_iters must be a nonnegative integer or None.")
@@ -225,9 +223,7 @@ class StartRecord:
     message: str | None = None
 
     def __post_init__(self) -> None:
-        if isinstance(self.index, (bool, np.bool_)) or not isinstance(
-            self.index, (int, np.integer)
-        ):
+        if isinstance(self.index, (bool, np.bool_)) or not isinstance(self.index, (int, np.integer)):
             raise ValueError("index must be a nonnegative integer.")
         if self.index < 0:
             raise ValueError("index must be a nonnegative integer.")
@@ -392,6 +388,4 @@ def _vector(value: ArrayLike, name: str) -> NDArray[np.float64]:
 
 def _same_size(left: NDArray[np.float64], right: NDArray[np.float64], left_name: str, right_name: str) -> None:
     if left.size != right.size:
-        raise ValueError(
-            f"{left_name} has {left.size} entries but {right_name} has {right.size}."
-        )
+        raise ValueError(f"{left_name} has {left.size} entries but {right_name} has {right.size}.")

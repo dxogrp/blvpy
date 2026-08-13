@@ -22,13 +22,13 @@ from cvxpy.atoms.elementwise.abs import abs as abs_atom
 from cvxpy.atoms.elementwise.huber import huber
 from cvxpy.atoms.elementwise.maximum import maximum
 from cvxpy.atoms.elementwise.minimum import minimum
+from cvxpy.atoms.elementwise.power import PowerApprox
 from cvxpy.atoms.geo_mean import GeoMeanApprox
 from cvxpy.atoms.max import max as max_atom
 from cvxpy.atoms.min import min as min_atom
 from cvxpy.atoms.norm1 import norm1
 from cvxpy.atoms.norm_inf import norm_inf
 from cvxpy.atoms.pnorm import PnormApprox
-from cvxpy.atoms.elementwise.power import PowerApprox
 from cvxpy.atoms.quad_form import QuadForm
 from cvxpy.atoms.quad_over_lin import quad_over_lin
 from cvxpy.atoms.sum_largest import sum_largest
@@ -92,9 +92,7 @@ class CanonicalData:
         b = _readonly_vector(self.b)
         c = _readonly_vector(self.c)
         if matrix.shape != (b.size, c.size):
-            raise ValueError(
-                f"Canonical A has shape {matrix.shape}; expected {(b.size, c.size)}."
-            )
+            raise ValueError(f"Canonical A has shape {matrix.shape}; expected {(b.size, c.size)}.")
         if not np.isfinite(matrix.data).all() or not np.isfinite(b).all() or not np.isfinite(c).all():
             raise ValueError("Canonical data must be finite.")
         d = float(np.asarray(self.d).reshape(()))
@@ -154,9 +152,7 @@ class ParameterSpec:
 
         array = np.asarray(value, dtype=float)
         if array.shape != self.shape:
-            raise ParameterMappingError(
-                f"Parameter {self.name!r} expects shape {self.shape}, got {array.shape}."
-            )
+            raise ParameterMappingError(f"Parameter {self.name!r} expects shape {self.shape}, got {array.shape}.")
         if not np.isfinite(array).all():
             raise ParameterMappingError(f"Parameter {self.name!r} must have a finite value.")
         if self.transform == "identity":
@@ -174,13 +170,9 @@ class ParameterSpec:
 
         expression = cp.Expression.cast_to_const(value)
         if expression.shape != self.shape:
-            raise ParameterMappingError(
-                f"Parameter {self.name!r} expects shape {self.shape}, got {expression.shape}."
-            )
+            raise ParameterMappingError(f"Parameter {self.name!r} expects shape {self.shape}, got {expression.shape}.")
         if not expression.is_affine():
-            raise ParameterMappingError(
-                f"Expression linked to parameter {self.name!r} must be affine."
-            )
+            raise ParameterMappingError(f"Expression linked to parameter {self.name!r} must be affine.")
         if self.transform == "identity":
             return cp.reshape(expression, (self.internal_size,), order="F")
         if self.transform == "symmetric":
@@ -225,9 +217,7 @@ class RecoverySpec:
 
         vector = np.asarray(u, dtype=float).reshape(-1)
         if vector.size != self.matrix.shape[1]:
-            raise ValueError(
-                f"Canonical vector has length {vector.size}; expected {self.matrix.shape[1]}."
-            )
+            raise ValueError(f"Canonical vector has length {vector.size}; expected {self.matrix.shape[1]}.")
         return np.asarray(self.matrix @ vector + self.offset).reshape(self.shape, order="F")
 
 
@@ -367,9 +357,7 @@ class CanonicalLowerProblem:
             else:
                 value = _parameter_by_id(self.lower_problem, spec.parameter_id).value
             if value is None:
-                raise ParameterMappingError(
-                    f"No numeric value is available for lower parameter {spec.name!r}."
-                )
+                raise ParameterMappingError(f"No numeric value is available for lower parameter {spec.name!r}.")
             vector[spec.offset : spec.offset + spec.internal_size] = spec.pack_numeric(value)
         vector[-1] = 1.0
         return vector
@@ -387,9 +375,7 @@ class CanonicalLowerProblem:
             else:
                 value = _parameter_by_id(self.lower_problem, spec.parameter_id).value
                 if value is None:
-                    raise ParameterMappingError(
-                        f"Fixed lower parameter {spec.name!r} has no value."
-                    )
+                    raise ParameterMappingError(f"Fixed lower parameter {spec.name!r} has no value.")
                 expression = cp.Constant(value)
             packed = cp.reshape(spec.pack_expression(expression), (spec.internal_size,), order="F")
             for index in range(spec.internal_size):
@@ -427,9 +413,7 @@ def validate_lower(
         raise UnsupportedModelError("Mixed-integer lower problems are not supported.")
     for variable in lower_problem.variables():
         if variable.is_complex():
-            raise UnsupportedModelError(
-                f"Complex lower variable {variable.name()!r} is not supported."
-            )
+            raise UnsupportedModelError(f"Complex lower variable {variable.name()!r} is not supported.")
 
     lower_parameters = {parameter.id: parameter for parameter in lower_problem.parameters()}
     seen: set[int] = set()
@@ -441,9 +425,7 @@ def validate_lower(
         if not isinstance(parameter, cp.Parameter):
             raise ParameterMappingError("Every parameter_map key must be a cvxpy.Parameter.")
         if parameter.id not in lower_parameters:
-            raise ParameterMappingError(
-                f"Mapped parameter {parameter.name()!r} does not occur in the lower problem."
-            )
+            raise ParameterMappingError(f"Mapped parameter {parameter.name()!r} does not occur in the lower problem.")
         if parameter.id in seen:
             raise ParameterMappingError(f"Parameter {parameter.name()!r} is mapped more than once.")
         seen.add(parameter.id)
@@ -459,28 +441,19 @@ def validate_lower(
                 f"expression has shape {expression.shape}."
             )
         if expression.is_complex():
-            raise ParameterMappingError(
-                f"Expression linked to parameter {parameter.name()!r} must be real."
-            )
+            raise ParameterMappingError(f"Expression linked to parameter {parameter.name()!r} must be real.")
         if not expression.is_affine():
-            raise ParameterMappingError(
-                f"Expression linked to parameter {parameter.name()!r} must be affine."
-            )
+            raise ParameterMappingError(f"Expression linked to parameter {parameter.name()!r} must be affine.")
 
     for parameter in lower_problem.parameters():
         if parameter.id not in seen and parameter.value is None:
-            raise ParameterMappingError(
-                f"Unmapped lower parameter {parameter.name()!r} must have a fixed value."
-            )
+            raise ParameterMappingError(f"Unmapped lower parameter {parameter.name()!r} must have a fixed value.")
 
     canonical_problem = _freeze_unmapped_parameters(lower_problem, seen)
     if not canonical_problem.is_dcp():
         raise ValidationError("The lower problem must satisfy CVXPY's DCP rules.")
     if not canonical_problem.is_dpp():
-        raise ValidationError(
-            "The lower problem must satisfy CVXPY's DPP rules with respect to "
-            "the mapped parameters."
-        )
+        raise ValidationError("The lower problem must satisfy CVXPY's DPP rules with respect to the mapped parameters.")
 
     _reject_approximate_source_nodes(lower_problem)
 
@@ -493,9 +466,7 @@ def canonicalize_lower(
 
     validate_lower(lower_problem, parameter_map)
     mapping = dict(parameter_map)
-    canonical_problem = _freeze_unmapped_parameters(
-        lower_problem, {parameter.id for parameter in mapping}
-    )
+    canonical_problem = _freeze_unmapped_parameters(lower_problem, {parameter.id for parameter in mapping})
     try:
         data, chain, inverse_data = canonical_problem.get_problem_data(
             cp.CLARABEL,
@@ -504,8 +475,7 @@ def canonicalize_lower(
         )
     except Exception as error:
         raise CanonicalizationError(
-            "CVXPY could not canonicalize the lower problem for Clarabel with "
-            "use_quad_obj=False."
+            "CVXPY could not canonicalize the lower problem for Clarabel with use_quad_obj=False."
         ) from error
 
     if not isinstance(data, Mapping):
@@ -514,9 +484,7 @@ def canonicalize_lower(
             "constant-only lower problems are outside this release."
         )
     if "P" in data and data["P"] is not None and data["P"].nnz:
-        raise CanonicalizationError(
-            "CVXPY retained a quadratic objective despite use_quad_obj=False."
-        )
+        raise CanonicalizationError("CVXPY retained a quadratic objective despite use_quad_obj=False.")
     param_prog = data.get("param_prob")
     if param_prog is None:
         raise CanonicalizationError("CVXPY did not expose its ParamConeProg.")
@@ -545,9 +513,7 @@ def canonicalize_lower(
     }
     specs = _extract_parameter_specs(canonical_problem, internal_mapping, chain, param_prog)
     affine_map = _extract_affine_map(param_prog, constraint_size, canonical_size)
-    recoveries = _extract_recovery_specs(
-        canonical_problem, chain, inverse_data, param_prog, canonical_size
-    )
+    recoveries = _extract_recovery_specs(canonical_problem, chain, inverse_data, param_prog, canonical_size)
     return CanonicalLowerProblem(
         lower_problem=lower_problem,
         canonical_problem=canonical_problem,
@@ -594,9 +560,7 @@ def _freeze_unmapped_parameters(problem: cp.Problem, mapped_ids: set[int]) -> cp
     for constraint in problem.constraints:
         arguments = [replace(argument) for argument in constraint.args]
         data = constraint.get_data()
-        constraints.append(
-            type(constraint)(*(arguments + data)) if data is not None else type(constraint)(*arguments)
-        )
+        constraints.append(type(constraint)(*(arguments + data)) if data is not None else type(constraint)(*arguments))
     return cp.Problem(objective, constraints)
 
 
@@ -641,8 +605,7 @@ def _audit_source_atoms(problem: cp.Problem) -> None:
             atom_type = type(expression)
             if atom_type not in _AUDITED_NONLINEAR_ATOMS:
                 raise UnsupportedModelError(
-                    f"Atom {atom_type.__name__} is not in BLVpy's audited exact SOCP "
-                    "canonicalization allowlist."
+                    f"Atom {atom_type.__name__} is not in BLVpy's audited exact SOCP canonicalization allowlist."
                 )
             if isinstance(expression, PnormApprox):
                 p = float(expression.p)
@@ -655,8 +618,7 @@ def _audit_source_atoms(problem: cp.Problem) -> None:
                 p = float(expression.p.value)
                 if p not in {1.0, 2.0}:
                     raise UnsupportedModelError(
-                        f"Atom {atom_type.__name__} with p={p:g} is outside the "
-                        "audited affine/quadratic power cases."
+                        f"Atom {atom_type.__name__} with p={p:g} is outside the audited affine/quadratic power cases."
                     )
         stack.extend(getattr(expression, "args", ()))
 
@@ -671,9 +633,7 @@ def _audit_reduction_chain(chain: Any) -> None:
         "ConeMatrixStuffing",
         "CLARABEL",
     ):
-        raise CanonicalizationError(
-            "CVXPY selected an unaudited canonicalization chain: " + " -> ".join(names)
-        )
+        raise CanonicalizationError("CVXPY selected an unaudited canonicalization chain: " + " -> ".join(names))
 
 
 def _extract_parameter_specs(
@@ -697,9 +657,7 @@ def _extract_parameter_specs(
     for parameter in problem.parameters():
         internal, transform = internal_by_original[parameter.id]
         if internal.id not in param_prog.param_id_to_col:
-            raise CanonicalizationError(
-                f"CVXPY's canonical parameter vector omits {parameter.name()!r}."
-            )
+            raise CanonicalizationError(f"CVXPY's canonical parameter vector omits {parameter.name()!r}.")
         sparse_indices: tuple[tuple[int, ...], ...] = ()
         if transform == "sparse":
             sparse_indices = tuple(tuple(int(value) for value in axis) for axis in parameter.sparse_idx)
@@ -731,9 +689,7 @@ def _parameter_transform(parameter: cp.Parameter, internal: cp.Parameter) -> Par
         return "diagonal"
     if attributes.get("sparsity", False):
         return "sparse"
-    raise CanonicalizationError(
-        f"Unsupported parameter dimension reduction for {parameter.name()!r}."
-    )
+    raise CanonicalizationError(f"Unsupported parameter dimension reduction for {parameter.name()!r}.")
 
 
 def _extract_affine_map(param_prog: Any, rows: int, columns: int) -> _DataAffineMap:
@@ -769,9 +725,7 @@ def _matrix_and_offset(tensor: Any, parameter_vector: NDArray[np.float64], lengt
     # This is CVXPY's stable tensor contract used by ParamConeProg itself.
     from cvxpy.cvxcore.python import canonInterface
 
-    return canonInterface.get_matrix_from_tensor(
-        tensor, parameter_vector, length, with_offset=True
-    )
+    return canonInterface.get_matrix_from_tensor(tensor, parameter_vector, length, with_offset=True)
 
 
 def _extract_recovery_specs(
@@ -781,22 +735,16 @@ def _extract_recovery_specs(
     param_prog: Any,
     canonical_size: int,
 ) -> tuple[RecoverySpec, ...]:
-    zero = _recover_source_values(
-        np.zeros(canonical_size), problem, chain, inverse_data, param_prog
-    )
-    matrices = {
-        variable.id: np.empty((variable.size, canonical_size), dtype=float)
-        for variable in problem.variables()
-    }
+    zero = _recover_source_values(np.zeros(canonical_size), problem, chain, inverse_data, param_prog)
+    matrices = {variable.id: np.empty((variable.size, canonical_size), dtype=float) for variable in problem.variables()}
     for column in range(canonical_size):
         basis = np.zeros(canonical_size)
         basis[column] = 1.0
         recovered = _recover_source_values(basis, problem, chain, inverse_data, param_prog)
         for variable in problem.variables():
-            matrices[variable.id][:, column] = (
-                np.asarray(recovered[variable.id]).reshape(-1, order="F")
-                - np.asarray(zero[variable.id]).reshape(-1, order="F")
-            )
+            matrices[variable.id][:, column] = np.asarray(recovered[variable.id]).reshape(-1, order="F") - np.asarray(
+                zero[variable.id]
+            ).reshape(-1, order="F")
 
     specs: list[RecoverySpec] = []
     for variable in problem.variables():
@@ -823,10 +771,7 @@ def _recover_source_values(
     inverse_data: list[Any],
     param_prog: Any,
 ) -> dict[int, NDArray[np.float64]]:
-    dual_values = {
-        constraint.id: np.zeros(constraint.shape, dtype=float)
-        for constraint in param_prog.constraints
-    }
+    dual_values = {constraint.id: np.zeros(constraint.shape, dtype=float) for constraint in param_prog.constraints}
     solution = Solution(
         cvxpy_settings.OPTIMAL,
         0.0,
@@ -837,9 +782,7 @@ def _recover_source_values(
     try:
         # Skip the solver interface. Its invert step expects a Clarabel-native
         # object and has no role in the source-variable affine map.
-        for reduction, inverse in reversed(
-            list(zip(chain.reductions[:-1], inverse_data[:-1]))
-        ):
+        for reduction, inverse in reversed(list(zip(chain.reductions[:-1], inverse_data[:-1]))):
             # CvxAttr2Constr.invert projects ordinary sign/bound-attributed
             # variables. Projection is harmless for a feasible solver point
             # but nonlinear, so it cannot define the fixed affine recovery map

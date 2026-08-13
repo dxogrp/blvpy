@@ -24,6 +24,7 @@ from .errors import (
     UnsupportedModelError,
     ValidationError,
 )
+from .lower_problem import LowerProblem
 from .problem import BilevelProblem, LiftedProblem
 from .result import BilevelResult, GapDiagnostics, IterationRecord, Residuals, StartRecord
 
@@ -43,6 +44,7 @@ __all__ = [
     "InitializationError",
     "IterationRecord",
     "LiftedProblem",
+    "LowerProblem",
     "ParameterMappingError",
     "ParameterSpec",
     "RecoverySpec",
