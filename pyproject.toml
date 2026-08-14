@@ -11,6 +11,7 @@ keywords = [
     "bilevel optimization",
     "convex optimization",
     "disciplined parametrized programming",
+    "disciplined nonlinear programming",
     "CVXPY",
 ]
 requires-python = ">=3.12"
