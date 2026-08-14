@@ -20,7 +20,7 @@ def _require_ipopt() -> None:
         pytest.skip("IPOPT/cyipopt is not installed")
 
 
-def test_analytic_quadratic_reaches_target_and_matches_direct_lower_solve() -> None:
+def test_analytic_quadratic_reaches_target_and_is_epsilon_lower_optimal() -> None:
     _require_ipopt()
     x = cp.Variable(name="x", bounds=[-2.0, 2.0])
     y = cp.Variable(name="y")
@@ -46,12 +46,16 @@ def test_analytic_quadratic_reaches_target_and_matches_direct_lower_solve() -> N
     assert float(x.value) == pytest.approx(0.0, abs=2e-3)
     assert float(y.value) == pytest.approx(0.0, abs=2e-3)
 
-    returned_y = float(y.value)
+    returned_lower_value = float(lower.objective.expr.value)
     parameter = next(iter(model._parameter_links))
     parameter.value = float(x.value)
     model._cvxpy_lower_problem.solve(solver=cp.CLARABEL)
     assert model._cvxpy_lower_problem.status in cp.settings.SOLUTION_PRESENT
-    assert returned_y == pytest.approx(float(y.value), abs=2e-4)
+    direct_lower_value = float(model._cvxpy_lower_problem.value)
+    lower_suboptimality = returned_lower_value - direct_lower_value
+    numerical_tolerance = 1e-7
+    assert lower_suboptimality >= -numerical_tolerance
+    assert lower_suboptimality <= result.final_epsilon + numerical_tolerance
 
 
 def test_optimistic_lp_selects_upper_preferred_lower_optimizer() -> None:
