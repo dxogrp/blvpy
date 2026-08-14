@@ -23,7 +23,7 @@ def _quadratic_bilevel(*, bounded: bool = True):
         lower,
         outer_constraints=[x + y <= 3.0],
     )
-    parameter = next(iter(model._parameter_map))
+    parameter = next(iter(model._parameter_links))
     return model, x, y, parameter
 
 
@@ -221,7 +221,7 @@ def test_fixed_upper_initialization_recovers_direct_lower_solution() -> None:
     y = cp.Variable(2, name="y")
     lower = LowerProblem(cp.Minimize(cp.sum_squares(y - cp.hstack([x, -x]))), parameters=[x])
     model = BilevelProblem(cp.Minimize(cp.square(x) + cp.sum_squares(y)), lower)
-    parameter = next(iter(model._parameter_map))
+    parameter = next(iter(model._parameter_links))
     x.value = 0.65
 
     continuation._initialize_lower(model, cp.CLARABEL, {}, False)

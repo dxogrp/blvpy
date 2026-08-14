@@ -7,8 +7,6 @@ from .canonicalization import (
     CanonicalLowerProblem,
     ParameterSpec,
     RecoverySpec,
-    canonicalize_lower,
-    validate_lower,
 )
 from .cones import ConeBlock, ConeLayout
 from .continuation import SolveSettings
@@ -56,8 +54,6 @@ __all__ = [
     "UnsupportedConeError",
     "UnsupportedModelError",
     "ValidationError",
-    "canonicalize_lower",
-    "validate_lower",
 ]
 
 __version__ = "0.1.0"

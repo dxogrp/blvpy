@@ -235,9 +235,9 @@ class _DataAffineMap:
 class CanonicalLowerProblem:
     """A fixed exact SOCP canonicalization of a CVXPY lower problem."""
 
-    lower_problem: cp.Problem
-    canonical_problem: cp.Problem
-    parameter_map: Mapping[cp.Parameter, cp.Expression]
+    _source_problem: cp.Problem
+    _canonical_problem: cp.Problem
+    _parameter_links: Mapping[cp.Parameter, cp.Expression]
     param_prog: Any
     reduction_chain: tuple[Any, ...]
     inverse_data: tuple[Any, ...]
@@ -251,7 +251,11 @@ class CanonicalLowerProblem:
     fixed_parameter_values: Mapping[int, NDArray[np.float64]]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "parameter_map", MappingProxyType(dict(self.parameter_map)))
+        object.__setattr__(
+            self,
+            "_parameter_links",
+            MappingProxyType(dict(self._parameter_links)),
+        )
         object.__setattr__(
             self,
             "canonical_variable_offsets",
@@ -352,10 +356,10 @@ class CanonicalLowerProblem:
             if spec.parameter_id in overrides:
                 value = overrides[spec.parameter_id]
             elif spec.mapped:
-                expression = self.parameter_map[_parameter_by_id(self.lower_problem, spec.parameter_id)]
+                expression = self._parameter_links[_parameter_by_id(self._source_problem, spec.parameter_id)]
                 value = expression.value
             else:
-                value = _parameter_by_id(self.lower_problem, spec.parameter_id).value
+                value = _parameter_by_id(self._source_problem, spec.parameter_id).value
             if value is None:
                 raise ParameterMappingError(f"No numeric value is available for lower parameter {spec.name!r}.")
             vector[spec.offset : spec.offset + spec.internal_size] = spec.pack_numeric(value)
@@ -371,9 +375,9 @@ class CanonicalLowerProblem:
             if spec.parameter_id in expressions:
                 expression = expressions[spec.parameter_id]
             elif spec.mapped:
-                expression = self.parameter_map[_parameter_by_id(self.lower_problem, spec.parameter_id)]
+                expression = self._parameter_links[_parameter_by_id(self._source_problem, spec.parameter_id)]
             else:
-                value = _parameter_by_id(self.lower_problem, spec.parameter_id).value
+                value = _parameter_by_id(self._source_problem, spec.parameter_id).value
                 if value is None:
                     raise ParameterMappingError(f"Fixed lower parameter {spec.name!r} has no value.")
                 expression = cp.Constant(value)
@@ -397,9 +401,9 @@ class CanonicalLowerProblem:
         )
 
 
-def validate_lower(
+def _validate_lower(
     lower_problem: cp.Problem,
-    parameter_map: Mapping[cp.Parameter, cp.Expression],
+    parameter_links: Mapping[cp.Parameter, cp.Expression],
 ) -> None:
     """Validate the source-level requirements of an SOCP lower model."""
 
@@ -418,12 +422,12 @@ def validate_lower(
     lower_parameters = {parameter.id: parameter for parameter in lower_problem.parameters()}
     seen: set[int] = set()
     try:
-        items = tuple(parameter_map.items())
+        items = tuple(parameter_links.items())
     except AttributeError as error:
-        raise ParameterMappingError("parameter_map must be a mapping.") from error
+        raise ParameterMappingError("The linked-parameter data must be a mapping.") from error
     for parameter, linked_expression in items:
         if not isinstance(parameter, cp.Parameter):
-            raise ParameterMappingError("Every parameter_map key must be a cvxpy.Parameter.")
+            raise ParameterMappingError("Every linked-parameter key must be a cvxpy.Parameter.")
         if parameter.id not in lower_parameters:
             raise ParameterMappingError(f"Mapped parameter {parameter.name()!r} does not occur in the lower problem.")
         if parameter.id in seen:
@@ -458,14 +462,14 @@ def validate_lower(
     _reject_approximate_source_nodes(lower_problem)
 
 
-def canonicalize_lower(
+def _canonicalize_lower(
     lower_problem: cp.Problem,
-    parameter_map: Mapping[cp.Parameter, cp.Expression],
+    parameter_links: Mapping[cp.Parameter, cp.Expression],
 ) -> CanonicalLowerProblem:
     """Canonicalize a supported lower DPP once using CVXPY and Clarabel."""
 
-    validate_lower(lower_problem, parameter_map)
-    mapping = dict(parameter_map)
+    _validate_lower(lower_problem, parameter_links)
+    mapping = dict(parameter_links)
     canonical_problem = _freeze_unmapped_parameters(lower_problem, {parameter.id for parameter in mapping})
     try:
         data, chain, inverse_data = canonical_problem.get_problem_data(
@@ -515,9 +519,9 @@ def canonicalize_lower(
     affine_map = _extract_affine_map(param_prog, constraint_size, canonical_size)
     recoveries = _extract_recovery_specs(canonical_problem, chain, inverse_data, param_prog, canonical_size)
     return CanonicalLowerProblem(
-        lower_problem=lower_problem,
-        canonical_problem=canonical_problem,
-        parameter_map=internal_mapping,
+        _source_problem=lower_problem,
+        _canonical_problem=canonical_problem,
+        _parameter_links=internal_mapping,
         param_prog=param_prog,
         reduction_chain=tuple(chain.reductions),
         inverse_data=tuple(inverse_data),

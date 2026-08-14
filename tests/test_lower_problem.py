@@ -21,7 +21,6 @@ def test_replaces_linked_scalar_and_preserves_lower_variable_identity() -> None:
     assert lower.objective is objective
     assert lower.constraints == (constraint,)
     assert lower.parameters == (x,)
-    assert lower.linked_variables == (x,)
     assert lower._cvxpy_problem.objective is not objective
     assert lower._cvxpy_problem.variables() == [y]
     assert lower._cvxpy_problem.variables()[0] is y
@@ -29,8 +28,8 @@ def test_replaces_linked_scalar_and_preserves_lower_variable_identity() -> None:
     internal_parameter = lower._internal_parameters[0]
     assert internal_parameter.name() == "x_lower"
     assert lower._cvxpy_problem.parameters() == [internal_parameter]
-    assert lower._parameter_map[internal_parameter] is x
-    assert tuple(lower._parameter_map) == (internal_parameter,)
+    assert lower._parameter_links[internal_parameter] is x
+    assert tuple(lower._parameter_links) == (internal_parameter,)
 
 
 def test_replaces_vector_and_matrix_variables_with_matching_parameters() -> None:
@@ -47,8 +46,8 @@ def test_replaces_vector_and_matrix_variables_with_matching_parameters() -> None
     assert matrix_parameter.shape == matrix.shape
     assert matrix_parameter.attributes["symmetric"]
     assert set(lower._cvxpy_problem.variables()) == {y}
-    assert lower._parameter_map[vector_parameter] is x
-    assert lower._parameter_map[matrix_parameter] is matrix
+    assert lower._parameter_links[vector_parameter] is x
+    assert lower._parameter_links[matrix_parameter] is matrix
 
 
 def test_copies_bounds_without_aliasing_variable_metadata() -> None:

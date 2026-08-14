@@ -4,7 +4,7 @@ import cvxpy as cp
 import numpy as np
 import pytest
 
-from blvpy.canonicalization import canonicalize_lower
+from blvpy.canonicalization import _canonicalize_lower
 from blvpy.errors import (
     ApproximateCanonicalizationError,
     ParameterMappingError,
@@ -27,7 +27,7 @@ def test_affine_data_matches_cvxpy_for_parameter_dependent_A_b_c() -> None:
         [p[0] * x[0] + x[1] == p[1], x >= p],
     )
     upper = cp.Variable(2)
-    canonical = canonicalize_lower(problem, {p: upper})
+    canonical = _canonicalize_lower(problem, {p: upper})
 
     for value in (np.array([2.0, 3.0]), np.array([-0.5, 4.0])):
         actual = canonical.apply_numeric({p.id: value})
@@ -54,7 +54,7 @@ def test_affine_objective_offset_matches_cvxpy_at_multiple_values() -> None:
         cp.Minimize(parameter * source + 3.0 * parameter - 2.0),
         [source >= 1.0, source <= 4.0],
     )
-    canonical = canonicalize_lower(problem, {parameter: upper})
+    canonical = _canonicalize_lower(problem, {parameter: upper})
     symbolic = canonical.build_data_expressions({parameter: upper})
 
     for value in (-2.0, 0.0, 1.75):
@@ -73,7 +73,7 @@ def test_quadratic_objective_becomes_socp_and_recovers_source_variable() -> None
     parameter = cp.Parameter(2, value=np.array([1.0, -1.0]))
     source = cp.Variable(2, name="source", nonneg=True)
     problem = cp.Problem(cp.Minimize(cp.sum_squares(source - parameter)))
-    canonical = canonicalize_lower(problem, {parameter: cp.Variable(2)})
+    canonical = _canonicalize_lower(problem, {parameter: cp.Variable(2)})
 
     assert canonical.cone_layout.soc
     assert canonical.source_variable_ids == (source.id,)
@@ -90,7 +90,7 @@ def test_quadratic_objective_becomes_socp_and_recovers_source_variable() -> None
 def test_symmetric_source_recovery_is_affine_and_shaped() -> None:
     source = cp.Variable((3, 3), symmetric=True, name="matrix")
     problem = cp.Problem(cp.Minimize(cp.sum_squares(source)))
-    canonical = canonicalize_lower(problem, {})
+    canonical = _canonicalize_lower(problem, {})
     value = np.arange(canonical.canonical_size, dtype=float)
     recovered = canonical.recover_numeric(value)[source.id]
 
@@ -115,7 +115,7 @@ def test_recovery_agrees_with_direct_solve_for_multiple_shapes_and_attributes() 
             + cp.sum_squares(bounded - cp.hstack([0.5 * parameter, 1.5]))
         )
     )
-    canonical = canonicalize_lower(problem, {parameter: cp.Variable()})
+    canonical = _canonicalize_lower(problem, {parameter: cp.Variable()})
     data = canonical.apply_numeric({parameter: parameter.value})
     primal = cp.Variable(canonical.canonical_size)
     slack = cp.Variable(canonical.constraint_size)
@@ -147,15 +147,15 @@ def test_recovery_agrees_with_direct_solve_for_multiple_shapes_and_attributes() 
 )
 def test_unsupported_cones_are_rejected(problem: cp.Problem) -> None:
     with pytest.raises(UnsupportedConeError):
-        canonicalize_lower(problem, {})
+        _canonicalize_lower(problem, {})
 
 
 def test_only_genuine_soc_approximation_is_rejected() -> None:
     x = cp.Variable()
     with pytest.raises(ApproximateCanonicalizationError):
-        canonicalize_lower(cp.Problem(cp.Minimize(cp.power(x, 1.23456789))), {})
+        _canonicalize_lower(cp.Problem(cp.Minimize(cp.power(x, 1.23456789))), {})
 
-    exact_square = canonicalize_lower(cp.Problem(cp.Minimize(cp.square(x))), {})
+    exact_square = _canonicalize_lower(cp.Problem(cp.Minimize(cp.square(x))), {})
     assert exact_square.cone_layout.soc == (3,)
 
 
@@ -166,34 +166,32 @@ def test_exact_but_unaudited_socp_atom_is_rejected() -> None:
     direct = _direct_data(problem)
     assert direct["dims"].soc
     with pytest.raises(UnsupportedModelError, match="audited exact SOCP.*allowlist"):
-        canonicalize_lower(problem, {})
+        _canonicalize_lower(problem, {})
 
 
 def test_constant_only_lower_problem_has_explicit_rejection() -> None:
     problem = cp.Problem(cp.Minimize(cp.Constant(3.0)))
 
     with pytest.raises(UnsupportedModelError, match="constant-only lower problems"):
-        canonicalize_lower(problem, {})
+        _canonicalize_lower(problem, {})
 
 
-def test_invalid_source_models_and_parameter_mappings_are_rejected() -> None:
+def test_invalid_source_models_are_rejected() -> None:
     x = cp.Variable()
     parameter = cp.Parameter(2)
     fixed_missing = cp.Problem(cp.Minimize(cp.sum_squares(x - parameter[0])))
     with pytest.raises(ParameterMappingError, match="fixed value"):
-        canonicalize_lower(fixed_missing, {})
-    with pytest.raises(ParameterMappingError, match="shape"):
-        canonicalize_lower(fixed_missing, {parameter: cp.Variable(3)})
+        _canonicalize_lower(fixed_missing, {})
     with pytest.raises(ValidationError, match="minimization"):
-        canonicalize_lower(cp.Problem(cp.Maximize(x)), {})
+        _canonicalize_lower(cp.Problem(cp.Maximize(x)), {})
 
     integer = cp.Variable(integer=True)
     with pytest.raises(UnsupportedModelError, match="Mixed-integer"):
-        canonicalize_lower(cp.Problem(cp.Minimize(integer)), {})
+        _canonicalize_lower(cp.Problem(cp.Minimize(integer)), {})
 
     complex_variable = cp.Variable(complex=True)
     with pytest.raises(UnsupportedModelError, match="Complex"):
-        canonicalize_lower(cp.Problem(cp.Minimize(cp.square(cp.real(complex_variable)))), {})
+        _canonicalize_lower(cp.Problem(cp.Minimize(cp.square(cp.real(complex_variable)))), {})
 
 
 def test_dcp_but_non_dpp_lower_problem_is_rejected() -> None:
@@ -204,7 +202,7 @@ def test_dcp_but_non_dpp_lower_problem_is_rejected() -> None:
     assert problem.is_dcp()
     assert not problem.is_dpp()
     with pytest.raises(ValidationError, match="DPP"):
-        canonicalize_lower(problem, {parameter: cp.Variable(pos=True)})
+        _canonicalize_lower(problem, {parameter: cp.Variable(pos=True)})
 
 
 def test_dpp_is_checked_only_with_respect_to_mapped_parameters() -> None:
@@ -214,9 +212,9 @@ def test_dpp_is_checked_only_with_respect_to_mapped_parameters() -> None:
     problem = cp.Problem(cp.Minimize(cp.quad_over_lin(source, fixed) + cp.square(source - mapped)))
 
     assert not problem.is_dpp()
-    canonical = canonicalize_lower(problem, {mapped: cp.Variable()})
+    canonical = _canonicalize_lower(problem, {mapped: cp.Variable()})
     assert canonical.parameter_ids == (mapped.id,)
-    assert all(parameter.id != fixed.id for parameter in canonical.canonical_problem.parameters())
+    assert fixed.id in canonical.fixed_parameter_values
 
 
 def test_quadrature_approximation_is_rejected_before_cone_solving() -> None:
@@ -229,4 +227,4 @@ def test_quadrature_approximation_is_rejected_before_cone_solving() -> None:
     )
 
     with pytest.raises(ApproximateCanonicalizationError, match="quadrature"):
-        canonicalize_lower(problem, {})
+        _canonicalize_lower(problem, {})

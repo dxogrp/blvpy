@@ -359,9 +359,9 @@ def compute_residuals(model: BilevelProblem, epsilon: float | None = None) -> Re
     lifted = model.lifted_problem
     if epsilon is None:
         epsilon = float(lifted.epsilon.value)
-    values = {parameter: variable.value for parameter, variable in model._parameter_map.items()}
+    values = {parameter: variable.value for parameter, variable in model._parameter_links.items()}
     if any(value is None for value in values.values()):
-        raise InitializationError("Mapped upper variables do not all have numeric values.")
+        raise InitializationError("Linked upper variables do not all have numeric values.")
     data = model.canonicalize().apply_numeric(values)
     primal = _required_vector(lifted.primal.value, "canonical primal")
     slack = _required_vector(lifted.slack.value, "canonical slack")
@@ -398,13 +398,13 @@ def _initialize_lower(
     options: Mapping[str, Any],
     verbose: bool,
 ) -> None:
-    for parameter, variable in model._parameter_map.items():
+    for parameter, variable in model._parameter_links.items():
         try:
             parameter.value = variable.value
         except ValueError as error:
             raise InitializationError(
                 f"Upper start for {variable.name()!r} violates the declared domain "
-                f"of mapped parameter {parameter.name()!r}."
+                f"of generated lower parameter {parameter.name()!r}."
             ) from error
     canonical = model.canonicalize()
     data = canonical.apply_numeric()

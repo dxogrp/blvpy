@@ -105,18 +105,17 @@ print(result.residuals)
 ```
 
 Every variable listed in `LowerProblem(parameters=...)` is an upper-level
-variable and is held fixed while the lower problem is solved. BLVPy uses one
-deterministic upper start by default: it preserves an existing `.value`, uses
-the midpoint of finite bounds, or otherwise uses zero clipped to any one-sided
-bounds. It then attempts to project that point onto DCP upper constraints.
+variable and is held fixed while the lower problem is solved. Native CVXPY
+`bounds=` are optional mathematical constraints and initialization hints;
+BLVPy never requires bounds. BLVPy uses one deterministic upper start by
+default: it preserves an existing `.value`, uses the midpoint of finite bounds,
+or otherwise uses zero clipped to any one-sided bounds. It then attempts to
+project that point onto DCP upper constraints.
 
 Set `starts` above one to enable randomized multistart. Only components with
 finite two-sided CVXPY bounds are randomized; other components retain their
 deterministic values. If automatic initialization and feasibility restoration
 both fail, BLVPy names the variables whose `.value` should be initialized.
-
-Passing a raw `cp.Problem` with `parameter_map` remains available through
-BLVPy 0.1.x with a `FutureWarning`; it will be removed in 0.2.0.
 
 `validate()` raises a detailed modeling error, while `is_dbp()` provides the
 corresponding boolean check. `canonicalize()` exposes immutable cone-program
@@ -151,6 +150,10 @@ uv run python examples/analytic_quadratic.py
 ```
 
 ## Development
+
+BLVPy is currently a prototype. Until its API is declared stable, an API change
+replaces the earlier form immediately unless the change request explicitly
+requires otherwise.
 
 BLVPy follows the `uv` and Hatchling workflow used by the other `dxogrp`
 CVXPY extensions:

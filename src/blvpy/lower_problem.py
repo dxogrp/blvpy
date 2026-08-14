@@ -30,16 +30,16 @@ class LowerProblem:
         if not isinstance(objective, cp.Objective):
             raise TypeError("objective must be a CVXPY Objective.")
         constraint_tuple = _validate_constraints(constraints)
-        linked_variables = _validate_parameters(parameters)
-        _validate_parameter_usage(objective, constraint_tuple, linked_variables)
+        parameter_variables = _validate_parameters(parameters)
+        _validate_parameter_usage(objective, constraint_tuple, parameter_variables)
 
         replacements: dict[int, cp.Parameter] = {}
-        parameter_map: dict[cp.Parameter, cp.Variable] = {}
+        parameter_links: dict[cp.Parameter, cp.Variable] = {}
         internal_parameters: list[cp.Parameter] = []
-        for variable in linked_variables:
+        for variable in parameter_variables:
             parameter = _parameter_for(variable)
             replacements[id(variable)] = parameter
-            parameter_map[parameter] = variable
+            parameter_links[parameter] = variable
             internal_parameters.append(parameter)
 
         internal_objective = objective.tree_copy(replacements)
@@ -47,9 +47,9 @@ class LowerProblem:
 
         self._objective = objective
         self._constraints = constraint_tuple
-        self._linked_variables = linked_variables
+        self._parameters = parameter_variables
         self._cvxpy_problem = cp.Problem(internal_objective, list(internal_constraints))
-        self._parameter_map = MappingProxyType(parameter_map)
+        self._parameter_links = MappingProxyType(parameter_links)
         self._internal_parameters = tuple(internal_parameters)
 
     @property
@@ -68,13 +68,7 @@ class LowerProblem:
     def parameters(self) -> tuple[cp.Variable, ...]:
         """Upper variables treated as parameters by the lower problem."""
 
-        return self._linked_variables
-
-    @property
-    def linked_variables(self) -> tuple[cp.Variable, ...]:
-        """Alias for the upper variables declared through ``parameters``."""
-
-        return self._linked_variables
+        return self._parameters
 
 
 def _validate_constraints(
@@ -97,32 +91,34 @@ def _validate_parameters(
     if parameters is None:
         return ()
     try:
-        linked_variables = tuple(parameters)
+        parameter_variables = tuple(parameters)
     except TypeError as error:
         raise TypeError("parameters must be a sequence of CVXPY variables.") from error
 
     seen: set[int] = set()
-    for variable in linked_variables:
+    for variable in parameter_variables:
         if not isinstance(variable, cp.Variable):
             raise TypeError("Every LowerProblem parameter must be a CVXPY Variable.")
         identity = id(variable)
         if identity in seen:
-            raise ParameterMappingError(f"Linked variable {variable.name()!r} is listed more than once.")
+            raise ParameterMappingError(f"LowerProblem parameter {variable.name()!r} is listed more than once.")
         seen.add(identity)
-    return linked_variables
+    return parameter_variables
 
 
 def _validate_parameter_usage(
     objective: cp.Objective,
     constraints: tuple[cp.Constraint, ...],
-    linked_variables: tuple[cp.Variable, ...],
+    parameter_variables: tuple[cp.Variable, ...],
 ) -> None:
     used_ids = {id(variable) for variable in objective.variables()}
     for constraint in constraints:
         used_ids.update(id(variable) for variable in constraint.variables())
-    for variable in linked_variables:
+    for variable in parameter_variables:
         if id(variable) not in used_ids:
-            raise ParameterMappingError(f"Linked variable {variable.name()!r} does not occur in the lower problem.")
+            raise ParameterMappingError(
+                f"LowerProblem parameter {variable.name()!r} does not occur in the lower problem."
+            )
 
 
 def _parameter_for(variable: cp.Variable) -> cp.Parameter:

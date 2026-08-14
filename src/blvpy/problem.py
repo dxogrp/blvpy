@@ -7,7 +7,6 @@ affine inverse map, giving optimistic bilevel semantics.
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -19,8 +18,8 @@ import numpy as np
 from .canonicalization import (
     CanonicalExpressions,
     CanonicalLowerProblem,
-    canonicalize_lower,
-    validate_lower,
+    _canonicalize_lower,
+    _validate_lower,
 )
 from .errors import UnsupportedModelError, ValidationError
 from .lower_problem import LowerProblem
@@ -58,36 +57,12 @@ class BilevelProblem:
     def __init__(
         self,
         outer_objective: cp.Objective,
-        lower_problem: LowerProblem | cp.Problem,
-        parameter_map: Mapping[cp.Parameter, cp.Variable] | None = None,
+        lower_problem: LowerProblem,
         outer_constraints: Sequence[cp.Constraint] = (),
     ) -> None:
         if not isinstance(outer_objective, cp.Objective):
             raise TypeError("outer_objective must be a CVXPY Objective.")
-        if isinstance(lower_problem, LowerProblem):
-            if parameter_map is not None:
-                raise TypeError(
-                    "parameter_map cannot be supplied with LowerProblem; declare linked "
-                    "variables through LowerProblem(parameters=[...])."
-                )
-            cvxpy_lower_problem = lower_problem._cvxpy_problem
-            internal_parameter_map = lower_problem._parameter_map
-        elif isinstance(lower_problem, cp.Problem):
-            if not isinstance(parameter_map, Mapping):
-                raise TypeError(
-                    "A raw CVXPY lower problem requires the deprecated parameter_map. "
-                    "Use LowerProblem(objective, constraints, parameters=[...]) instead."
-                )
-            warnings.warn(
-                "Passing a cvxpy.Problem and parameter_map to BilevelProblem is "
-                "deprecated and will be removed in BLVpy 0.2.0; use LowerProblem "
-                "with parameters=[...] instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            cvxpy_lower_problem = lower_problem
-            internal_parameter_map = parameter_map
-        else:
+        if not isinstance(lower_problem, LowerProblem):
             raise TypeError("lower_problem must be a BLVpy LowerProblem.")
         try:
             constraints = tuple(outer_constraints)
@@ -98,8 +73,8 @@ class BilevelProblem:
 
         self.outer_objective = outer_objective
         self.lower_problem = lower_problem
-        self._cvxpy_lower_problem = cvxpy_lower_problem
-        self._parameter_map = MappingProxyType(dict(internal_parameter_map))
+        self._cvxpy_lower_problem = lower_problem._cvxpy_problem
+        self._parameter_links = lower_problem._parameter_links
         self.outer_constraints = constraints
         self._canonical: CanonicalLowerProblem | None = None
         self._lifted: LiftedProblem | None = None
@@ -110,7 +85,7 @@ class BilevelProblem:
 
         lower_ids = {variable.id for variable in self._cvxpy_lower_problem.variables()}
         candidates: list[cp.Variable] = []
-        candidates.extend(self._parameter_map.values())
+        candidates.extend(self._parameter_links.values())
         candidates.extend(self.outer_objective.expr.variables())
         for constraint in self.outer_constraints:
             candidates.extend(constraint.variables())
@@ -144,7 +119,7 @@ class BilevelProblem:
         """Validate the lower canonicalization and complete lifted DNLP model."""
 
         self._validate_outer()
-        validate_lower(self._cvxpy_lower_problem, self._parameter_map)
+        _validate_lower(self._cvxpy_lower_problem, self._parameter_links)
         canonical = self.canonicalize()
         if self._lifted is None:
             self._lifted = self._assemble_lifted(canonical)
@@ -153,7 +128,10 @@ class BilevelProblem:
         """Return immutable metadata for the fixed Clarabel SOCP reduction."""
 
         if self._canonical is None:
-            self._canonical = canonicalize_lower(self._cvxpy_lower_problem, self._parameter_map)
+            self._canonical = _canonicalize_lower(
+                self._cvxpy_lower_problem,
+                self._parameter_links,
+            )
         return self._canonical
 
     def solve(
@@ -207,22 +185,22 @@ class BilevelProblem:
 
         lower_ids = {variable.id for variable in self._cvxpy_lower_problem.variables()}
         lower_parameter_ids = {parameter.id for parameter in self._cvxpy_lower_problem.parameters()}
-        for parameter, variable in self._parameter_map.items():
+        for parameter, variable in self._parameter_links.items():
             if not isinstance(parameter, cp.Parameter):
-                raise ValidationError("Every parameter_map key must be a CVXPY Parameter.")
+                raise ValidationError("Every generated lower parameter must be a CVXPY Parameter.")
             if parameter.id not in lower_parameter_ids:
-                raise ValidationError(f"Mapped parameter {parameter.name()!r} does not occur in the lower problem.")
+                raise ValidationError(f"Generated parameter {parameter.name()!r} does not occur in the lower problem.")
             if not isinstance(variable, cp.Variable):
-                raise ValidationError(f"Mapped value for {parameter.name()!r} must be a CVXPY Variable.")
+                raise ValidationError(f"Linked value for {parameter.name()!r} must be a CVXPY Variable.")
             if variable.id in lower_ids:
-                raise ValidationError(f"Mapped variable {variable.name()!r} is also a lower-level variable.")
+                raise ValidationError(f"Linked variable {variable.name()!r} is also a lower-level variable.")
             if parameter.shape != variable.shape:
                 raise ValidationError(
-                    f"Mapped parameter {parameter.name()!r} has shape {parameter.shape}, "
+                    f"Generated parameter {parameter.name()!r} has shape {parameter.shape}, "
                     f"but variable {variable.name()!r} has shape {variable.shape}."
                 )
             if not variable.is_real():
-                raise UnsupportedModelError(f"Mapped upper variable {variable.name()!r} must be real-valued.")
+                raise UnsupportedModelError(f"Linked upper variable {variable.name()!r} must be real-valued.")
 
         for parameter in _all_parameters(self.outer_objective, self.outer_constraints):
             if parameter.id not in lower_parameter_ids and parameter.value is None:
@@ -237,7 +215,7 @@ class BilevelProblem:
                 raise UnsupportedModelError(f"Variable {variable.name()!r} is complex; real variables are required.")
 
     def _assemble_lifted(self, canonical: CanonicalLowerProblem) -> LiftedProblem:
-        parameter_expressions = {parameter.id: variable for parameter, variable in self._parameter_map.items()}
+        parameter_expressions = {parameter.id: variable for parameter, variable in self._parameter_links.items()}
         data = canonical.build_data_expressions(parameter_expressions)
         primal = cp.Variable(canonical.canonical_size, name="blvpy_primal")
         slack = cp.Variable(canonical.constraint_size, name="blvpy_slack")
@@ -256,7 +234,7 @@ class BilevelProblem:
             *canonical.cone_layout.dual_constraints(dual),
         )
         gap_constraint = slack @ dual <= epsilon
-        domain_constraints = _mapped_parameter_domain_constraints(self._parameter_map)
+        domain_constraints = _linked_parameter_domain_constraints(self._parameter_links)
         upper_constraints = (*self.outer_constraints, *domain_constraints)
         constraints = (
             *upper_constraints,
@@ -315,21 +293,21 @@ def _all_parameters(
     return tuple(parameters.values())
 
 
-def _mapped_parameter_domain_constraints(
-    parameter_map: Mapping[cp.Parameter, cp.Variable],
+def _linked_parameter_domain_constraints(
+    linked_parameters: Mapping[cp.Parameter, cp.Variable],
 ) -> tuple[cp.Constraint, ...]:
     """Carry parameter-domain assumptions into the upper-variable model."""
 
     constraints: list[cp.Constraint] = []
-    for parameter, variable in parameter_map.items():
+    for parameter, variable in linked_parameters.items():
         attributes = parameter.attributes
         if attributes.get("complex") or attributes.get("imag"):
-            raise UnsupportedModelError(f"Mapped parameter {parameter.name()!r} must be real-valued.")
+            raise UnsupportedModelError(f"Generated parameter {parameter.name()!r} must be real-valued.")
         if attributes.get("boolean") or attributes.get("integer"):
-            raise UnsupportedModelError(f"Mapped parameter {parameter.name()!r} has a discrete domain.")
+            raise UnsupportedModelError(f"Generated parameter {parameter.name()!r} has a discrete domain.")
         if attributes.get("PSD") or attributes.get("NSD") or attributes.get("hermitian"):
             raise UnsupportedModelError(
-                f"Mapped parameter {parameter.name()!r} requires a matrix cone outside SOCP mode."
+                f"Generated parameter {parameter.name()!r} requires a matrix cone outside SOCP mode."
             )
         if attributes.get("nonneg") or attributes.get("pos"):
             constraints.append(variable >= 0)

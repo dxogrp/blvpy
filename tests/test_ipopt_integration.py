@@ -47,7 +47,7 @@ def test_analytic_quadratic_reaches_target_and_matches_direct_lower_solve() -> N
     assert float(y.value) == pytest.approx(0.0, abs=2e-3)
 
     returned_y = float(y.value)
-    parameter = next(iter(model._parameter_map))
+    parameter = next(iter(model._parameter_links))
     parameter.value = float(x.value)
     model._cvxpy_lower_problem.solve(solver=cp.CLARABEL)
     assert model._cvxpy_lower_problem.status in cp.settings.SOLUTION_PRESENT
