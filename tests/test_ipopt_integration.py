@@ -15,13 +15,7 @@ from blvpy import BilevelProblem, LowerProblem
 pytestmark = pytest.mark.ipopt
 
 
-def _require_ipopt() -> None:
-    if "IPOPT" not in {str(solver).upper() for solver in cp.installed_solvers()}:
-        pytest.skip("IPOPT/cyipopt is not installed")
-
-
 def test_analytic_quadratic_reaches_target_and_is_epsilon_lower_optimal() -> None:
-    _require_ipopt()
     x = cp.Variable(name="x", bounds=[-2.0, 2.0])
     y = cp.Variable(name="y")
     lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
@@ -59,7 +53,6 @@ def test_analytic_quadratic_reaches_target_and_is_epsilon_lower_optimal() -> Non
 
 
 def test_optimistic_lp_selects_upper_preferred_lower_optimizer() -> None:
-    _require_ipopt()
     x = cp.Variable(name="x", bounds=[0.0, 1.0])
     y = cp.Variable(name="y")
     lower = LowerProblem(cp.Minimize(0.0 * y), [y >= x, y <= 1.0], parameters=[x])
