@@ -1,4 +1,4 @@
-"""Tests for BLVpy's private human-readable progress reporter."""
+"""Tests for BLVPY's private human-readable progress reporter."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def test_problem_transcript_uses_stderr_and_stable_plain_sections(capfd) -> None
     assert captured.out == ""
     lines = captured.err.splitlines()
     assert lines[0] == "=" * 79
-    assert lines[1].strip() == "BLVpy"
+    assert lines[1].strip() == "BLVPY"
     assert lines[2].strip().startswith("v")
     assert len(lines[0]) == len(lines[1]) == len(lines[2]) == len(lines[3]) == 79
     assert "Problem" in lines[5]

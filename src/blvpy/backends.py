@@ -72,7 +72,7 @@ def _solver_unavailable_error(solver: str, *, detail: str | None = None) -> Solv
     if str(solver).upper() == "IPOPT":
         message = (
             "IPOPT is not available. Install its native library, then reinstall "
-            "BLVpy so its required cyipopt binding can be built."
+            "BLVPY so its required cyipopt binding can be built."
         )
     else:
         message = f"Requested solver {solver!r} is not installed or could not be loaded by CVXPY."

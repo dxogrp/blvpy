@@ -1,6 +1,6 @@
 """An SOCP whose constraint matrix depends on the upper variable.
 
-Requires BLVPy's native IPOPT dependency.
+Requires BLVPY's native IPOPT dependency.
 """
 
 import cvxpy as cp

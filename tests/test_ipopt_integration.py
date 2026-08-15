@@ -1,7 +1,7 @@
 """Native IPOPT end-to-end checks against independent numerical oracles.
 
 These tests are marked because they execute against the native IPOPT library.
-Every returned bilevel point is checked without using BLVpy's residual helper,
+Every returned bilevel point is checked without using BLVPY's residual helper,
 and its fixed-upper lower problem is solved again with Clarabel.
 """
 

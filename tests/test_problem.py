@@ -168,7 +168,7 @@ def test_constructor_accepts_lower_problem_and_rejects_raw_cvxpy_problem() -> No
     assert problem.lower_problem is lower
 
     raw = cp.Problem(cp.Minimize(cp.square(y - x)))
-    with pytest.raises(TypeError, match="BLVpy LowerProblem"):
+    with pytest.raises(TypeError, match="BLVPY LowerProblem"):
         BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), raw)  # type: ignore[arg-type]
 
 

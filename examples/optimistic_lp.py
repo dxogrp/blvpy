@@ -1,6 +1,6 @@
 """Optimistic selection from a lower LP with many optimal solutions.
 
-Requires BLVPy's native IPOPT dependency.
+Requires BLVPY's native IPOPT dependency.
 """
 
 import cvxpy as cp

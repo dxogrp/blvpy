@@ -1,6 +1,6 @@
 """Automatic multistart with an initially violated upper constraint.
 
-Requires BLVpy's native IPOPT dependency.
+Requires BLVPY's native IPOPT dependency.
 """
 
 import cvxpy as cp

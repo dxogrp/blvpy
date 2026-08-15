@@ -1,6 +1,6 @@
 """A bilevel quadratic with the analytic solution x = y = 0.
 
-Requires BLVPy's native IPOPT dependency.
+Requires BLVPY's native IPOPT dependency.
 """
 
 import cvxpy as cp

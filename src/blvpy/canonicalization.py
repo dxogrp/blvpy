@@ -609,7 +609,7 @@ def _audit_source_atoms(problem: cp.Problem) -> None:
             atom_type = type(expression)
             if atom_type not in _AUDITED_NONLINEAR_ATOMS:
                 raise UnsupportedModelError(
-                    f"Atom {atom_type.__name__} is not in BLVpy's audited exact SOCP canonicalization allowlist."
+                    f"Atom {atom_type.__name__} is not in BLVPY's audited exact SOCP canonicalization allowlist."
                 )
             if isinstance(expression, PnormApprox):
                 p = float(expression.p)
@@ -709,7 +709,7 @@ def _extract_affine_map(param_prog: Any, rows: int, columns: int) -> _DataAffine
         c_sparse, d = _matrix_and_offset(param_prog.q, basis, columns)
         A, b = param_prog.reduced_A.get_matrix_from_tensor(basis, with_offset=True)
         # ConeMatrixStuffing stores the affine constraint expression F @ u + g
-        # while conic solver interfaces expose ``A=-F`` and ``b=g``.  BLVpy's
+        # while conic solver interfaces expose ``A=-F`` and ``b=g``.  BLVPY's
         # public convention follows the latter: A @ u + s == b.
         A_coefficients.append(-sp.csc_array(A, dtype=float))
         b_coefficients[:, index] = np.asarray(b, dtype=float).reshape(-1)

@@ -1,10 +1,10 @@
-"""Public exception hierarchy for BLVpy."""
+"""Public exception hierarchy for BLVPY."""
 
 from __future__ import annotations
 
 
 class BilevelError(Exception):
-    """Base class for errors raised by BLVpy."""
+    """Base class for errors raised by BLVPY."""
 
 
 class ValidationError(BilevelError, ValueError):
@@ -16,7 +16,7 @@ class ParameterMappingError(ValidationError):
 
 
 class UnsupportedModelError(ValidationError):
-    """The lower model uses a feature outside BLVpy's supported subset."""
+    """The lower model uses a feature outside BLVPY's supported subset."""
 
 
 class UnsupportedConeError(UnsupportedModelError):

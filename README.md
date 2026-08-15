@@ -1,9 +1,9 @@
-# BLVPy: Disciplined Bilevel Programming
+# BLVPY: Disciplined Bilevel Programming
 
-BLVPy is a [CVXPY](https://www.cvxpy.org/) extension for modeling and locally
+BLVPY is a [CVXPY](https://www.cvxpy.org/) extension for modeling and locally
 solving optimistic bilevel programs. The lower-level problem is written as a
 disciplined parametrized program (DPP), with selected upper variables declared
-as its parameters. BLVPy canonicalizes that family once and replaces
+as its parameters. BLVPY canonicalizes that family once and replaces
 lower-level optimality with primal feasibility, dual feasibility, and a conic
 duality-gap constraint.
 
@@ -25,7 +25,7 @@ method then decreases $\epsilon$. When those feasibility conditions hold, the
 gap bounds lower-level objective suboptimality by $\epsilon$.
 
 > [!IMPORTANT]
-> BLVPy uses a local nonlinear solver. A successful solve is not a certificate
+> BLVPY uses a local nonlinear solver. A successful solve is not a certificate
 > of global upper-level optimality. Inspect the reported feasibility and gap
 > residuals; solver termination alone is not a bilevel certificate.
 
@@ -41,7 +41,7 @@ only:
 This includes LPs, losslessly conic-representable QPs, and SOCPs. Models that
 canonicalize to positive-semidefinite, exponential, or power cones are rejected
 before the nonlinear solve. Lower problems must be real, continuous,
-minimization problems and DPP with respect to their linked parameters. BLVPy
+minimization problems and DPP with respect to their linked parameters. BLVPY
 implements optimistic semantics: if the lower problem has several minimizers,
 the upper problem may select the one most favorable to it.
 
@@ -58,15 +58,15 @@ conservative policy avoids treating cone type alone as a losslessness proof.
 
 ## Installation
 
-BLVPy requires Python 3.12 or newer, CVXPY 1.9 or newer, and IPOPT. Install
-the native IPOPT library for your operating system first, then install BLVPy:
+BLVPY requires Python 3.12 or newer, CVXPY 1.9 or newer, and IPOPT. Install
+the native IPOPT library for your operating system first, then install BLVPY:
 
 ```shell
 pip install blvpy
 ```
 
-The required `cyipopt` Python binding is installed with BLVPy. It needs the
-native IPOPT library to be present while BLVPy is installed and used.
+The required `cyipopt` Python binding is installed with BLVPY. It needs the
+native IPOPT library to be present while BLVPY is installed and used.
 
 Canonicalization and lower-level initialization use Clarabel, which is included
 with CVXPY.
@@ -107,7 +107,7 @@ print(result.residuals)
 Every variable listed in `LowerProblem(parameters=...)` is an upper-level
 variable and is held fixed while the lower problem is solved. Native CVXPY
 `bounds=` are optional mathematical constraints and initialization hints;
-BLVPy never requires bounds. BLVPy uses one deterministic upper start by
+BLVPY never requires bounds. BLVPY uses one deterministic upper start by
 default: it preserves an existing `.value`, uses the midpoint of finite bounds,
 or otherwise uses zero clipped to any one-sided bounds. It then attempts to
 project that point onto DCP upper constraints.
@@ -115,7 +115,7 @@ project that point onto DCP upper constraints.
 Set `starts` above one to enable randomized multistart. Only components with
 finite two-sided CVXPY bounds are randomized; other components retain their
 deterministic values. If automatic initialization and feasibility restoration
-both fail, BLVPy names the variables whose `.value` should be initialized.
+both fail, BLVPY names the variables whose `.value` should be initialized.
 
 `validate()` raises a detailed modeling error, while `is_dbp()` provides the
 corresponding boolean check. `canonicalize()` exposes immutable cone-program
@@ -130,15 +130,15 @@ local and residual-based, not a rigorous finite-precision certificate.
 
 ## Progress and solver output
 
-BLVPy separates its concise progress transcript from CVXPY and native solver
+BLVPY separates its concise progress transcript from CVXPY and native solver
 output. The two controls on `solve()` are independent:
 
 | `verbose` | `solver_verbose` | Output |
 |---|---|---|
 | `False` | `False` | Quiet, with backend output suppressed on a best-effort basis |
-| `True` | `False` | BLVPy progress only |
+| `True` | `False` | BLVPY progress only |
 | `False` | `True` | CVXPY and native solver output only |
-| `True` | `True` | BLVPy progress and backend output |
+| `True` | `True` | BLVPY progress and backend output |
 
 For a readable account of a solve without the repeated backend transcripts,
 use:
@@ -153,13 +153,13 @@ result = bilevel.solve(
 A typical continuation excerpt is:
 
 ```text
-(BLVpy) Start 1/1 | accepted | status=optimal | objective=5.003e-01 | max_feasibility=2.100e-08
-(BLVpy) Selected start 1/1 | objective=5.003e-01
-(BLVpy) Attempt 1 | scheduled | epsilon=1.000e-02 | accepted | status=optimal | objective=5.001e-01
-(BLVpy) Status: optimal | objective=5.000e-01 | final_epsilon=1.000e-06
+(BLVPY) Start 1/1 | accepted | status=optimal | objective=5.003e-01 | max_feasibility=2.100e-08
+(BLVPY) Selected start 1/1 | objective=5.003e-01
+(BLVPY) Attempt 1 | scheduled | epsilon=1.000e-02 | accepted | status=optimal | objective=5.001e-01
+(BLVPY) Status: optimal | objective=5.000e-01 | final_epsilon=1.000e-06
 ```
 
-The BLVPy transcript is written to standard error and groups information into
+The BLVPY transcript is written to standard error and groups information into
 `Problem`, `Initialization`, `Continuation`, and `Summary` sections. It reports
 model dimensions and cone layout, requested and usable starts, start selection,
 each scheduled or retry epsilon, solver status, objective, available residuals,
@@ -197,11 +197,11 @@ uv run python examples/analytic_quadratic.py
 
 ## Development
 
-BLVPy is currently a prototype. Until its API is declared stable, an API change
+BLVPY is currently a prototype. Until its API is declared stable, an API change
 replaces the earlier form immediately unless the change request explicitly
 requires otherwise.
 
-BLVPy follows the `uv` and Hatchling workflow used by the other `dxogrp`
+BLVPY follows the `uv` and Hatchling workflow used by the other `dxogrp`
 CVXPY extensions:
 
 ```shell
@@ -214,10 +214,10 @@ make build      # build the source and wheel distributions
 CI runs the full test suite, lint checks, and package builds on Linux, macOS,
 and Windows for Python 3.12 through 3.14. Linux and macOS use `uv` with their
 native IPOPT installations. Windows uses one Miniforge environment for the
-conda-forge IPOPT, `cyipopt`, and OpenBLAS packages; `uv` installs BLVPy and its
+conda-forge IPOPT, `cyipopt`, and OpenBLAS packages; `uv` installs BLVPY and its
 locked Python development dependencies directly into that environment and
 builds the package artifacts.
 
 ## License
 
-BLVPy is licensed under the [Apache License 2.0](LICENSE).
+BLVPY is licensed under the [Apache License 2.0](LICENSE).

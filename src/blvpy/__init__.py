@@ -1,4 +1,4 @@
-"""BLVpy: disciplined optimistic bilevel optimization with CVXPY."""
+"""BLVPY: disciplined optimistic bilevel optimization with CVXPY."""
 
 from .canonicalization import (
     AffineRecoveryMap,

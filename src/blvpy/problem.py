@@ -63,7 +63,7 @@ class BilevelProblem:
         if not isinstance(outer_objective, cp.Objective):
             raise TypeError("outer_objective must be a CVXPY Objective.")
         if not isinstance(lower_problem, LowerProblem):
-            raise TypeError("lower_problem must be a BLVpy LowerProblem.")
+            raise TypeError("lower_problem must be a BLVPY LowerProblem.")
         try:
             constraints = tuple(outer_constraints)
         except TypeError as error:
@@ -156,7 +156,7 @@ class BilevelProblem:
 
         IPOPT is the default nonlinear backend. Solver options are passed
         through CVXPY; returned feasibility and gap diagnostics are computed
-        independently from the solver status. ``verbose`` controls BLVpy's
+        independently from the solver status. ``verbose`` controls BLVPY's
         progress transcript, while ``solver_verbose`` controls CVXPY and
         native solver output.
         """

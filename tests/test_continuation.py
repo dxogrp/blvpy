@@ -159,7 +159,7 @@ def test_default_solve_reports_actionable_missing_ipopt_error(monkeypatch) -> No
     def unavailable_ipopt(*args, **kwargs):
         raise SolverUnavailableError(
             "IPOPT is not available. Install its native library, then reinstall "
-            "BLVpy so its required cyipopt binding can be built."
+            "BLVPY so its required cyipopt binding can be built."
         )
 
     monkeypatch.setattr(continuation, "solve_dnlp", unavailable_ipopt)

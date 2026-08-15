@@ -1,4 +1,4 @@
-"""Integration tests for BLVpy-owned progress and backend verbosity."""
+"""Integration tests for BLVPY-owned progress and backend verbosity."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def test_verbosity_matrix_routes_progress_and_backend_flags(
     assert result.succeeded
     assert observed == [solver_verbose]
     assert captured.out == ""
-    assert ("BLVpy" in captured.err) is verbose
+    assert ("BLVPY" in captured.err) is verbose
 
 
 @pytest.mark.parametrize(("name", "value"), [("verbose", 1), ("solver_verbose", "yes")])
@@ -238,7 +238,7 @@ def test_progress_is_numerically_inert_and_reports_real_restoration(capfd) -> No
     )
     reported_output = capfd.readouterr()
 
-    assert "(BLVpy)" not in silent_output.err
+    assert "(BLVPY)" not in silent_output.err
     assert "Restoration | start=1/1" in reported_output.err
     assert "Initialization" in reported_output.err
     assert "Continuation" in reported_output.err

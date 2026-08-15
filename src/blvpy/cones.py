@@ -1,4 +1,4 @@
-"""Product-cone utilities for BLVpy's SOCP canonical form.
+"""Product-cone utilities for BLVPY's SOCP canonical form.
 
 CVXPY orders conic rows as zero, nonnegative, and then second-order
 cone blocks.  :class:`ConeLayout` records that order once and uses it for

@@ -1,4 +1,4 @@
-"""Private human-readable progress reporting for BLVpy solves."""
+"""Private human-readable progress reporting for BLVPY solves."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from .result import BilevelResult, IterationRecord, StartRecord
 
 _WIDTH = 79
-_PREFIX = "(BLVpy)"
+_PREFIX = "(BLVPY)"
 _MAX_MESSAGE_LENGTH = 160
 _HANDLER_MARKER = "_blvpy_progress_handler"
 _ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)|[@-_])")
@@ -56,7 +56,7 @@ def _package_version() -> str:
 
 @dataclass(slots=True)
 class ProgressReporter:
-    """Solve-scoped writer for the concise BLVpy progress transcript."""
+    """Solve-scoped writer for the concise BLVPY progress transcript."""
 
     enabled: bool = False
     _phase_started_at: float = field(default_factory=perf_counter, init=False)
@@ -348,7 +348,7 @@ class ProgressReporter:
         if self._banner_emitted:
             return
         self._write("=" * _WIDTH)
-        self._write("BLVpy".center(_WIDTH))
+        self._write("BLVPY".center(_WIDTH))
         self._write(f"v{_package_version()}".center(_WIDTH))
         self._write("=" * _WIDTH)
         self._banner_emitted = True

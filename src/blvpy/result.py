@@ -237,7 +237,7 @@ class StartRecord:
 
 @dataclass(frozen=True, slots=True)
 class BilevelResult:
-    """Public result of a BLVpy solve.
+    """Public result of a BLVPY solve.
 
     All numeric values are copied into read-only arrays. ``certified`` is
     deliberately false by default: a local solver status and small numerical

@@ -1,8 +1,8 @@
 """Inspect continuation attempts and reproduce multistart sampling.
 
-If a requested contraction fails, BLVpy records the failed attempt and inserts
+If a requested contraction fails, BLVPY records the failed attempt and inserts
 an intermediate epsilon automatically. Reusing the seed reproduces starts.
-Requires BLVpy's native IPOPT dependency.
+Requires BLVPY's native IPOPT dependency.
 """
 
 import cvxpy as cp
