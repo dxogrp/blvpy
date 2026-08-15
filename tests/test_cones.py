@@ -4,7 +4,14 @@ import cvxpy as cp
 import numpy as np
 import pytest
 
-from blvpy.cones import ConeLayout, soc_distance
+from blvpy.cones import (
+    ConeLayout,
+    dual_cone_constraints,
+    dual_cone_distance,
+    primal_cone_constraints,
+    primal_cone_distance,
+    soc_distance,
+)
 from blvpy.result import BilevelResult, GapDiagnostics, IterationRecord, Residuals
 
 
@@ -99,6 +106,149 @@ def test_product_cone_distances_distinguish_zero_cone_dual() -> None:
 
     assert layout.primal_distance(value) == pytest.approx(np.sqrt(16.0 + 9.0 + 0.5))
     assert layout.dual_distance(value) == pytest.approx(np.sqrt(9.0 + 0.5))
+
+
+def test_functional_cone_adapters_match_layout_methods() -> None:
+    layout = ConeLayout(zero=1, nonnegative=2, second_order=(3,))
+    primal = cp.Variable(layout.size)
+    dual = cp.Variable(layout.size)
+    primal_value = np.array([0.0, 1.0, 2.0, 2.0, 1.0, 1.0])
+    dual_value = np.array([-8.0, 1.0, 2.0, 2.0, 1.0, 1.0])
+    primal.value = primal_value
+    dual.value = dual_value
+
+    functional_primal = primal_cone_constraints(primal, layout)
+    functional_dual = dual_cone_constraints(dual, layout)
+
+    assert len(functional_primal) == len(layout.primal_constraints(primal)) == 3
+    assert len(functional_dual) == len(layout.dual_constraints(dual)) == 2
+    assert all(np.max(constraint.violation()) <= 1e-12 for constraint in functional_primal)
+    assert all(np.max(constraint.violation()) <= 1e-12 for constraint in functional_dual)
+    assert primal_cone_distance(primal_value, layout) == pytest.approx(layout.primal_distance(primal_value))
+    assert dual_cone_distance(dual_value, layout) == pytest.approx(layout.dual_distance(dual_value))
+
+
+def test_symbolic_cone_constraints_report_each_infeasible_block() -> None:
+    layout = ConeLayout(zero=1, nonnegative=1, second_order=(3,))
+    primal = cp.Variable(layout.size)
+    dual = cp.Variable(layout.size)
+    value = np.array([1.0, -2.0, 0.0, 2.0, 0.0])
+    primal.value = value
+    dual.value = value
+
+    primal_violations = [float(np.max(constraint.violation())) for constraint in layout.primal_constraints(primal)]
+    dual_violations = [float(np.max(constraint.violation())) for constraint in layout.dual_constraints(dual)]
+
+    assert primal_violations == pytest.approx([1.0, 2.0, 2.0])
+    assert dual_violations == pytest.approx([2.0, 2.0])
+
+
+def test_empty_cone_layout_has_no_constraints_or_distance() -> None:
+    layout = ConeLayout()
+    empty = np.empty(0)
+
+    assert layout.size == 0
+    assert layout.blocks == ()
+    assert layout.primal_constraints(empty) == ()
+    assert layout.dual_constraints(empty) == ()
+    assert layout.primal_distance(empty) == 0.0
+    assert layout.dual_distance(empty) == 0.0
+    assert layout.complementarity(empty, empty) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"zero": -1}, "zero must be a nonnegative integer"),
+        ({"nonnegative": 1.5}, "nonnegative must be a nonnegative integer"),
+        ({"second_order": (1,)}, "dimension at least 2"),
+        ({"second_order": 3}, "second_order must be a sequence"),
+    ],
+)
+def test_layout_rejects_invalid_dimensions(kwargs: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        ConeLayout(**kwargs)
+
+
+def test_cone_operations_reject_wrong_vector_sizes() -> None:
+    layout = ConeLayout(zero=1, nonnegative=1, second_order=(3,))
+
+    with pytest.raises(ValueError, match=r"4 entries; expected 5"):
+        layout.primal_constraints(np.zeros(4))
+    with pytest.raises(ValueError, match=r"6 entries; expected 5"):
+        layout.dual_constraints(np.zeros(6))
+    with pytest.raises(ValueError, match=r"4 entries; expected 5"):
+        layout.primal_distance(np.zeros(4))
+    with pytest.raises(ValueError, match=r"6 entries; expected 5"):
+        layout.dual_distance(np.zeros(6))
+    with pytest.raises(ValueError, match=r"4 entries; expected 5"):
+        layout.complementarity(np.zeros(4), np.zeros(5))
+    with pytest.raises(ValueError, match="at least two entries"):
+        soc_distance([1.0])
+
+
+def test_cone_operations_reject_complex_vectors() -> None:
+    layout = ConeLayout(zero=1, nonnegative=1, second_order=(3,))
+    symbolic = cp.Variable(layout.size, complex=True)
+    numeric = np.ones(layout.size, dtype=complex)
+
+    with pytest.raises(ValueError, match="real-valued"):
+        layout.primal_constraints(symbolic)
+    with pytest.raises(ValueError, match="real-valued"):
+        layout.dual_constraints(symbolic)
+    with pytest.raises(ValueError, match="real-valued"):
+        layout.primal_distance(numeric)
+    with pytest.raises(ValueError, match="real-valued"):
+        layout.dual_distance(numeric)
+    with pytest.raises(ValueError, match="real-valued"):
+        layout.complementarity(numeric, np.ones(layout.size))
+    with pytest.raises(ValueError, match="real-valued"):
+        soc_distance(np.array([1.0, 1.0j]))
+
+
+@pytest.mark.parametrize("nonfinite", [np.nan, np.inf, -np.inf])
+def test_nonfinite_constrained_blocks_have_infinite_distance(nonfinite: float) -> None:
+    layout = ConeLayout(zero=1, nonnegative=1, second_order=(3,))
+    nonnegative_nonfinite = np.array([0.0, nonfinite, 2.0, 0.0, 0.0])
+    soc_nonfinite = np.array([0.0, 0.0, 2.0, nonfinite, 0.0])
+
+    assert np.isinf(layout.primal_distance(nonnegative_nonfinite))
+    assert np.isinf(layout.dual_distance(nonnegative_nonfinite))
+    assert np.isinf(layout.primal_distance(soc_nonfinite))
+    assert np.isinf(layout.dual_distance(soc_nonfinite))
+    assert np.isinf(soc_distance([2.0, nonfinite]))
+
+
+def _independent_product_cone_distance(point: np.ndarray, *, dual: bool) -> float:
+    projected = cp.Variable(12)
+    constraints: list[cp.Constraint] = [
+        projected[2:5] >= 0,
+        cp.SOC(projected[5], projected[6:8]),
+        cp.SOC(projected[8], projected[9:12]),
+    ]
+    if not dual:
+        constraints.insert(0, projected[:2] == 0)
+    problem = cp.Problem(cp.Minimize(cp.sum_squares(projected - point)), constraints)
+
+    problem.solve(solver=cp.CLARABEL)
+
+    assert problem.status in cp.settings.SOLUTION_PRESENT
+    return float(np.sqrt(max(float(problem.value), 0.0)))
+
+
+def test_product_cone_distances_match_independent_cvxpy_projections() -> None:
+    layout = ConeLayout(zero=2, nonnegative=3, second_order=(3, 4))
+    points = np.random.default_rng(90210).normal(size=(6, layout.size))
+
+    for point in points:
+        assert layout.primal_distance(point) == pytest.approx(
+            _independent_product_cone_distance(point, dual=False),
+            abs=2e-6,
+        )
+        assert layout.dual_distance(point) == pytest.approx(
+            _independent_product_cone_distance(point, dual=True),
+            abs=2e-6,
+        )
 
 
 def test_complementarity_uses_unmodified_canonical_order() -> None:
