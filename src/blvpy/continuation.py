@@ -87,6 +87,9 @@ def _solve_bilevel(
 ) -> BilevelResult:
     """Execute deterministic or best-of complete continuation runs."""
 
+    if settings.solver is None:
+        raise ValueError("solver must name a CVXPY DNLP backend; None is not supported.")
+
     epsilon_initial = _finite_nonnegative(settings.epsilon_initial, "epsilon_initial")
     epsilon_target = _finite_nonnegative(settings.epsilon_target, "epsilon_target")
     if epsilon_initial <= 0 or epsilon_target <= 0:
@@ -360,7 +363,7 @@ def _initialize_run(
             feasibility_tolerance,
         )
 
-    _compile_probe(lifted, use_hessian=_uses_exact_hessian(solver_options))
+    _compile_probe(lifted)
     record = _checked_record(
         _solve_one(
             model,
@@ -981,31 +984,26 @@ def _solve_one(
     )
 
 
-def _compile_probe(lifted: _LiftedProblem, *, use_hessian: bool) -> None:
-    """Build derivative oracles after all lifted variables have initial values."""
+def _compile_probe(lifted: _LiftedProblem) -> None:
+    """Compile and evaluate solver-neutral first-order DNLP oracles."""
 
     try:
         from cvxpy.reductions.dnlp2smooth.dnlp2smooth import Dnlp2Smooth
-        from cvxpy.reductions.solvers.nlp_solvers.ipopt_nlpif import IPOPT
-        from cvxpy.reductions.solvers.nlp_solvers.nlp_solver import Oracles
+        from cvxpy.reductions.solvers.nlp_solvers.nlp_solver import Bounds, Oracles
 
         smooth, _ = Dnlp2Smooth().apply(lifted.problem)
-        data, _ = IPOPT().apply(smooth)
+        bounds = Bounds(smooth)
         oracles = Oracles(
-            data["_bounds"].new_problem,
+            bounds.new_problem,
             verbose=False,
-            use_hessian=use_hessian,
+            use_hessian=False,
         )
-        oracles.objective(data["x0"])
-        oracles.constraints(data["x0"])
-        oracles.gradient(data["x0"])
-        oracles.jacobian(data["x0"])
+        oracles.objective(bounds.x0)
+        oracles.constraints(bounds.x0)
+        oracles.gradient(bounds.x0)
+        oracles.jacobian(bounds.x0)
     except Exception as error:
         raise SolveError(f"DNLP derivative compilation failed: {error}") from error
-
-
-def _uses_exact_hessian(options: Mapping[str, Any]) -> bool:
-    return options.get("hessian_approximation", "exact") == "exact"
 
 
 def _variable_bounds(

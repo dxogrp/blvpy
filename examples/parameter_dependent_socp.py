@@ -27,7 +27,13 @@ def main() -> None:
     )
 
     result = problem.solve()
-    diagnostics = problem.gap_diagnostics(result)
+    # Gap diagnosis uses Clarabel by default. Any compatible CVXPY conic
+    # backend can instead perform its one fixed-upper reference solve.
+    diagnostics = problem.gap_diagnostics(
+        result,
+        solver=cp.SCS,
+        solver_options={"eps": 1e-8},
+    )
     print(f"status: {result.status}")
     print(f"x: {x.value:.6f}")
     print(f"y: {y.value}")

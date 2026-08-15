@@ -327,10 +327,118 @@ def test_default_solve_reports_actionable_missing_ipopt_error(monkeypatch) -> No
 def test_solve_argument_validation_precedes_numerical_backends() -> None:
     model, _, _, _ = _quadratic_bilevel()
 
+    with pytest.raises(ValueError, match="solver must name a CVXPY DNLP backend"):
+        model.solve(solver=None)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="epsilon_target cannot exceed"):
         model.solve(epsilon_initial=1e-3, epsilon_target=1e-2)
     with pytest.raises(ValueError, match="contraction"):
         model.solve(contraction=1.0)
+
+
+def test_compile_probe_evaluates_solver_neutral_first_order_oracles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cvxpy.reductions.solvers.nlp_solvers.nlp_solver import Oracles
+
+    model, x, _, _ = _quadratic_bilevel()
+    x.value = 0.25
+    continuation._initialize_lower(model, cp.CLARABEL, {}, False)
+
+    configuration: list[tuple[bool, bool]] = []
+    evaluations: list[tuple[str, np.ndarray]] = []
+    original_init = Oracles.__init__
+
+    def recording_init(self, problem, verbose=True, use_hessian=True):
+        configuration.append((verbose, use_hessian))
+        original_init(self, problem, verbose=verbose, use_hessian=use_hessian)
+
+    monkeypatch.setattr(Oracles, "__init__", recording_init)
+    for name in ("objective", "constraints", "gradient", "jacobian"):
+        original = getattr(Oracles, name)
+
+        def recording_evaluation(self, point, *, _name=name, _original=original):
+            evaluations.append((_name, np.array(point, copy=True)))
+            return _original(self, point)
+
+        monkeypatch.setattr(Oracles, name, recording_evaluation)
+
+    continuation._compile_probe(model._lifted_problem)
+
+    assert configuration == [(False, False)]
+    assert [name for name, _ in evaluations] == ["objective", "constraints", "gradient", "jacobian"]
+    for _, point in evaluations[1:]:
+        np.testing.assert_array_equal(point, evaluations[0][1])
+
+
+@pytest.mark.parametrize(
+    "solver",
+    [
+        cp.IPOPT,
+        cp.KNITRO,
+        cp.UNO,
+        cp.COPT,
+        "knitro_ipm",
+        "knitro_sqp",
+        "knitro_alm",
+        "uno_ipm",
+        "uno_sqp",
+    ],
+)
+def test_selected_nlp_solver_reaches_restoration_continuation_and_records(
+    monkeypatch,
+    solver: str,
+) -> None:
+    model, x, y, _ = _quadratic_bilevel()
+    infeasible = Residuals(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    restoration_calls: list[tuple[str, dict[str, object], bool]] = []
+    solve_calls: list[tuple[float, str, dict[str, object], bool]] = []
+    options = {"backend_option": "preserved"}
+
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda current, *args, **kwargs: _mock_compatible_state(current, x, y),
+    )
+    monkeypatch.setattr(continuation, "compute_residuals", lambda *args, **kwargs: infeasible)
+
+    def fake_restore(
+        current,
+        epsilon,
+        selected_solver,
+        selected_options,
+        selected_verbose,
+        tolerance,
+    ) -> None:
+        restoration_calls.append((selected_solver, dict(selected_options), selected_verbose))
+
+    def fake_solve(current, epsilon, selected_solver, selected_options, selected_verbose):
+        solve_calls.append((epsilon, selected_solver, dict(selected_options), selected_verbose))
+        return IterationRecord(
+            epsilon,
+            cp.OPTIMAL,
+            float(current.outer_objective.value),
+            _ZERO_RESIDUALS,
+            solver_name=str(selected_solver),
+        )
+
+    monkeypatch.setattr(continuation, "_restore_feasibility", fake_restore)
+    monkeypatch.setattr(continuation, "_solve_one", fake_solve)
+
+    result = model.solve(
+        epsilon_initial=1e-1,
+        epsilon_target=1e-2,
+        solver=solver,
+        solver_options=options,
+        solver_verbose=True,
+        verbose=False,
+    )
+
+    assert restoration_calls == [(solver, options, True)]
+    assert [epsilon for epsilon, *_ in solve_calls] == pytest.approx([1e-1, 1e-2])
+    assert all(call[1:] == (solver, options, True) for call in solve_calls)
+    assert all(record.solver_name == str(solver) for record in result.iterations)
+    assert options == {"backend_option": "preserved"}
 
 
 @pytest.mark.parametrize("best_of", [0, -1, True, 1.5, "2"])

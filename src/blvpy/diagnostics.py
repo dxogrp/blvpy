@@ -19,13 +19,25 @@ if TYPE_CHECKING:
     from .problem import BilevelProblem
 
 
-def _gap_diagnostics(model: BilevelProblem, result: BilevelResult) -> GapDiagnostics:
+def _gap_diagnostics(
+    model: BilevelProblem,
+    result: BilevelResult,
+    *,
+    solver: str = cp.CLARABEL,
+    solver_options: Mapping[str, Any] | None = None,
+    solver_verbose: bool = False,
+) -> GapDiagnostics:
     """Build complete diagnostics for one result without changing model state."""
 
     if not isinstance(result, BilevelResult):
         raise TypeError("result must be a BilevelResult.")
     if not result.succeeded and result.status.lower() != "continuation_failed":
         raise ValueError("Gap diagnostics require a successful or continuation_failed BilevelResult.")
+    if solver is None:
+        raise ValueError("solver must name a CVXPY conic backend; None is not supported.")
+    if not isinstance(solver_verbose, (bool, np.bool_)):
+        raise ValueError("solver_verbose must be boolean.")
+    solve_options = dict(solver_options) if solver_options is not None else {}
 
     source_values = _source_value_snapshots(model, result.variable_values)
     canonical = model.canonicalize()
@@ -47,7 +59,12 @@ def _gap_diagnostics(model: BilevelProblem, result: BilevelResult) -> GapDiagnos
         _assign_reference_parameters(model, canonical.fixed_parameter_values, source_values)
 
         returned_value = _source_objective_value(model)
-        reference_value = _solve_reference_lower(model)
+        reference_value = _solve_reference_lower(
+            model,
+            solver,
+            solve_options,
+            bool(solver_verbose),
+        )
         source_gap = returned_value - reference_value
     finally:
         for variable, state in variable_states.items():
@@ -178,13 +195,18 @@ def _source_objective_value(model: BilevelProblem) -> float:
     return result
 
 
-def _solve_reference_lower(model: BilevelProblem) -> float:
+def _solve_reference_lower(
+    model: BilevelProblem,
+    solver: str,
+    solver_options: Mapping[str, Any],
+    solver_verbose: bool,
+) -> float:
     generated = model._cvxpy_lower_problem
     objective = generated.objective.tree_copy()
     constraints = [constraint.tree_copy() for constraint in generated.constraints]
     reference = cp.Problem(objective, constraints)
     try:
-        solve_conic(reference, cp.CLARABEL, {}, False)
+        solve_conic(reference, solver, solver_options, solver_verbose)
     except SolverUnavailableError:
         raise
     except cp.SolverError as error:

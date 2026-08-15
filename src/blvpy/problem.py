@@ -157,13 +157,14 @@ class BilevelProblem:
     ) -> BilevelResult:
         """Solve locally with deterministic or best-of epsilon continuation.
 
-        IPOPT is the default nonlinear backend. Solver options are passed
-        through CVXPY; returned feasibility and gap diagnostics are computed
-        independently from the solver status. ``verbose`` controls BLVPY's
-        progress transcript, while ``solver_verbose`` controls CVXPY and
-        native solver output. Explicit ``best_of=N`` runs ``N`` independently
-        initialized complete continuations and returns the best acceptable
-        target-epsilon result.
+        IPOPT is the default nonlinear backend. Any backend accepted by
+        CVXPY's DNLP solve path may be selected when installed independently.
+        Solver options are passed through CVXPY; returned feasibility and gap
+        diagnostics are computed independently from solver status. ``verbose``
+        controls BLVPY's progress transcript, while ``solver_verbose`` controls
+        CVXPY and native solver output. Explicit ``best_of=N`` runs ``N``
+        independently initialized complete continuations and returns the best
+        acceptable target-epsilon result.
         """
 
         from .continuation import _SolveSettings, solve_bilevel
@@ -186,17 +187,32 @@ class BilevelProblem:
         )
         return solve_bilevel(self, settings)
 
-    def gap_diagnostics(self, result: BilevelResult) -> GapDiagnostics:
+    def gap_diagnostics(
+        self,
+        result: BilevelResult,
+        *,
+        solver: str = cp.CLARABEL,
+        solver_options: Mapping[str, Any] | None = None,
+        solver_verbose: bool = False,
+    ) -> GapDiagnostics:
         """Diagnose the returned lower point with one reference lower solve.
 
         The diagnostic is computed from immutable result snapshots. It
         includes both the canonical inexact-gap identity and the signed
-        source-level lower suboptimality at the returned upper point.
+        source-level lower suboptimality at the returned upper point. The
+        selected conic solver is used only for that reference lower solve;
+        its options and verbosity are passed through to CVXPY.
         """
 
         from .diagnostics import _gap_diagnostics
 
-        return _gap_diagnostics(self, result)
+        return _gap_diagnostics(
+            self,
+            result,
+            solver=solver,
+            solver_options=solver_options,
+            solver_verbose=solver_verbose,
+        )
 
     def _validate_outer(self) -> None:
         if not isinstance(self.outer_objective, cp.Minimize):

@@ -188,6 +188,72 @@ def test_gap_diagnostics_invokes_exactly_one_additional_quiet_clarabel_solve(
     assert calls == [(cp.CLARABEL, {}, False)]
 
 
+def test_gap_diagnostics_forwards_selected_solver_copied_options_and_verbosity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, x, y, _, _ = _scalar_lp()
+    result = _complete_result(x, y)
+    from blvpy import diagnostics as diagnostics_module
+
+    original_options = {"eps": 1e-7, "max_iters": 250}
+    calls: list[tuple[str, dict[str, float | int], bool]] = []
+
+    def recording_solve(problem, solver, options, solver_verbose):
+        assert solver == cp.SCS
+        assert options == original_options
+        assert options is not original_options
+        calls.append((solver, dict(options), solver_verbose))
+        diagnostics_module.cp.Problem.solve(
+            problem,
+            solver=cp.CLARABEL,
+            warm_start=True,
+            verbose=False,
+        )
+
+    monkeypatch.setattr(diagnostics_module, "solve_conic", recording_solve)
+
+    diagnostics = model.gap_diagnostics(
+        result,
+        solver=cp.SCS,
+        solver_options=original_options,
+        solver_verbose=True,
+    )
+
+    assert calls == [(cp.SCS, original_options, True)]
+    assert original_options == {"eps": 1e-7, "max_iters": 250}
+    assert diagnostics.source_gap == pytest.approx(0.25, abs=1e-8)
+
+
+def test_gap_diagnostics_solves_reference_problem_with_scs() -> None:
+    model, x, y, _, _ = _scalar_lp()
+    result = _complete_result(x, y)
+
+    diagnostics = model.gap_diagnostics(
+        result,
+        solver=cp.SCS,
+        solver_options={"eps": 1e-8, "max_iters": 10_000},
+    )
+
+    assert diagnostics.source_gap == pytest.approx(0.25, abs=5e-7)
+
+
+@pytest.mark.parametrize("solver_verbose", [0, 1, "false", None])
+def test_gap_diagnostics_rejects_non_boolean_solver_verbose(solver_verbose: object) -> None:
+    model, x, y, _, _ = _scalar_lp()
+    result = _complete_result(x, y)
+
+    with pytest.raises(ValueError, match="solver_verbose must be boolean"):
+        model.gap_diagnostics(result, solver_verbose=solver_verbose)  # type: ignore[arg-type]
+
+
+def test_gap_diagnostics_requires_an_explicit_conic_solver() -> None:
+    model, x, y, _, _ = _scalar_lp()
+    result = _complete_result(x, y)
+
+    with pytest.raises(ValueError, match="solver must name a CVXPY conic backend"):
+        model.gap_diagnostics(result, solver=None)  # type: ignore[arg-type]
+
+
 def test_gap_diagnostics_preserves_a_small_signed_negative_source_gap() -> None:
     model, x, y, _, _ = _scalar_lp()
     below_reference = 0.4 - 1e-8
@@ -301,15 +367,28 @@ def test_gap_diagnostics_wraps_reference_solver_error_and_restores_state(
 ) -> None:
     model, x, y, fixed_weight, linked_parameter = _scalar_lp()
     result = _complete_result(x, y)
+    options = {"custom_tolerance": 1e-9}
 
-    def fail(*args, **kwargs):
+    def fail(problem, solver, received_options, solver_verbose):
+        assert problem is not model._cvxpy_lower_problem
+        assert solver == "CUSTOM"
+        assert received_options == options
+        assert received_options is not options
+        assert solver_verbose is True
         raise cp.SolverError("reference numerical failure")
 
     monkeypatch.setattr("blvpy.diagnostics.solve_conic", fail)
 
     with _non_result_state(model, x, y, fixed_weight, linked_parameter):
         with pytest.raises(SolveError, match="reference numerical failure"):
-            model.gap_diagnostics(result)
+            model.gap_diagnostics(
+                result,
+                solver="CUSTOM",
+                solver_options=options,
+                solver_verbose=True,
+            )
+
+    assert options == {"custom_tolerance": 1e-9}
 
 
 def test_gap_diagnostics_reports_reference_failure_and_restores_state(

@@ -68,8 +68,16 @@ pip install blvpy
 The required `cyipopt` Python binding is installed with BLVPY. It needs the
 native IPOPT library to be present while BLVPY is installed and used.
 
-Canonicalization and lower-level initialization use Clarabel, which is included
-with CVXPY.
+IPOPT is BLVPY's mandatory, default, and natively tested nonlinear backend.
+CVXPY 1.9 also exposes DNLP interfaces for KNITRO, UNO, and COPT. Those
+alternatives may be selected when their Python packages, native libraries, and
+any required licenses are installed independently; BLVPY does not install or
+natively test them.
+
+Canonicalization uses a fixed Clarabel-compatible reduction. Clarabel, which is
+included with CVXPY, is also the default conic backend for upper projection and
+fixed-upper lower initialization; `solve(conic_solver=...)` may select another
+compatible backend for those numerical solves.
 
 ## Basic usage
 
@@ -159,24 +167,61 @@ tie-breakers.
 Use the returned solution to request a complete primal-dual gap diagnosis:
 
 ```python
-diagnostics = bilevel.gap_diagnostics(result)
+diagnostics = bilevel.gap_diagnostics(
+    result,
+    solver=cp.SCS,
+    solver_options={"eps": 1e-8},
+    solver_verbose=False,
+)
 
 print(diagnostics.source_gap)
 print(diagnostics.identity_error)
 ```
 
-This call performs one additional silent Clarabel solve of the lower problem
-at the returned upper point. `source_gap` is the signed difference between the
-returned lower objective and that reference optimum, in the original lower
-objective's units. Small negative values can occur within solver tolerance.
-The remaining fields decompose the canonical primal-dual gap and check its
-inexact identity.
+This call performs one additional conic solve of the lower problem at the
+returned upper point. Clarabel is the quiet default; `solver` may name another
+CVXPY conic backend compatible with the lower problem. `solver_options` are
+copied and passed through unchanged, while `solver_verbose` independently
+controls its backend output.
+
+`source_gap` is the signed difference between the returned lower objective and
+that reference optimum, in the original lower objective's units. Small
+negative values can occur within solver tolerance. The remaining fields
+decompose the canonical primal-dual gap and check its inexact identity.
+Pass an explicit solver name when overriding Clarabel; `solver=None` is not
+supported.
 
 Diagnosis is opt-in and does not change the result or model state. It provides
 a numerical consistency check, not a certificate of global bilevel
 optimality.
 
 ## Progress and solver output
+
+`solve(solver=...)` selects the nonlinear backend used for feasibility
+restoration and every continuation step. IPOPT is the default and the only
+backend exercised by BLVPY's native integration suite. With independently
+installed solver software, CVXPY 1.9 also accepts `cp.KNITRO`, `cp.UNO`, and
+`cp.COPT` through its DNLP path:
+
+```python
+result = bilevel.solve(
+    solver=cp.UNO,
+    solver_options={"preset": "filtersqp"},
+)
+```
+
+Solver-specific modes remain options: for example, UNO provides `filtersqp`
+and `ipopt` presets, while KNITRO exposes algorithm choices through
+`solver_options`. BLVPY copies and passes these options to CVXPY without
+normalizing them. Users are responsible for installing each alternative's
+Python package and native runtime, and for obtaining any required license.
+Results from every backend retain the same local, non-certifying semantics.
+BLVPY does not auto-select a nonlinear backend: pass an explicit solver name,
+and do not use `solver=None`.
+
+CVXPY also accepts the string aliases `"knitro_ipm"`, `"knitro_sqp"`,
+`"knitro_alm"`, `"uno_ipm"`, and `"uno_sqp"`. These aliases select presets
+for their base solver; they are not separate BLVPY backends.
 
 BLVPY separates its concise progress transcript from CVXPY and native solver
 output. Progress is enabled by default (`verbose=True`), while raw backend
@@ -225,7 +270,8 @@ outcome row followed by indented diagnostic rows, and every BLVPY-owned line is
 limited to 79 columns.
 
 With IPOPT, `solver_verbose=False` adds quiet defaults (`print_level=0` and
-`sb="yes"`) only when those keys are absent from `solver_options`. Explicit
+`sb="yes"`) only when those keys are absent from `solver_options`. These
+IPOPT-specific defaults are not injected into alternative backends. Explicit
 solver options always take precedence, so a user-supplied `print_level` or `sb`
 may intentionally produce output even when `solver_verbose` is false. Silence
 is best-effort because some native-library messages are emitted below CVXPY's

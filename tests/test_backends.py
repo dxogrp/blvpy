@@ -31,26 +31,41 @@ def test_solve_conic_uses_regular_cvxpy_path() -> None:
     assert "nlp" not in problem.solve.call_args.kwargs
 
 
-def test_solve_dnlp_uses_nonlinear_cvxpy_path() -> None:
+@pytest.mark.parametrize(
+    "solver",
+    [
+        cp.IPOPT,
+        cp.KNITRO,
+        cp.UNO,
+        cp.COPT,
+        "knitro_ipm",
+        "knitro_sqp",
+        "knitro_alm",
+        "uno_ipm",
+        "uno_sqp",
+    ],
+)
+def test_solve_dnlp_uses_selected_nonlinear_cvxpy_path(solver: str) -> None:
     problem = Mock(spec=cp.Problem)
 
     result = solve_dnlp(
         problem,
-        solver="IPOPT",
+        solver=solver,
         options={"max_iter": 50},
         solver_verbose=False,
     )
 
     assert result is None
-    problem.solve.assert_called_once_with(
-        solver="IPOPT",
-        nlp=True,
-        warm_start=True,
-        verbose=False,
-        max_iter=50,
-        print_level=0,
-        sb="yes",
-    )
+    expected = {
+        "solver": solver,
+        "nlp": True,
+        "warm_start": True,
+        "verbose": False,
+        "max_iter": 50,
+    }
+    if solver == cp.IPOPT:
+        expected.update(print_level=0, sb="yes")
+    problem.solve.assert_called_once_with(**expected)
 
 
 def test_solve_dnlp_does_not_add_quiet_options_when_solver_is_verbose() -> None:
@@ -83,17 +98,24 @@ def test_solve_dnlp_preserves_explicit_ipopt_output_options() -> None:
     assert options == {"print_level": 4, "sb": "no"}
 
 
-def test_quiet_ipopt_defaults_do_not_apply_to_other_dnlp_solvers() -> None:
+@pytest.mark.parametrize(
+    "solver",
+    [cp.KNITRO, cp.UNO, cp.COPT, "knitro_ipm", "knitro_sqp", "knitro_alm", "uno_ipm", "uno_sqp"],
+)
+def test_quiet_ipopt_defaults_do_not_apply_to_other_dnlp_solvers(solver: str) -> None:
     problem = Mock(spec=cp.Problem)
+    options = {"backend_option": "preserved"}
 
-    solve_dnlp(problem, solver="CUSTOM", options={}, solver_verbose=False)
+    solve_dnlp(problem, solver=solver, options=options, solver_verbose=False)
 
     problem.solve.assert_called_once_with(
-        solver="CUSTOM",
+        solver=solver,
         nlp=True,
         warm_start=True,
         verbose=False,
+        backend_option="preserved",
     )
+    assert options == {"backend_option": "preserved"}
 
 
 @pytest.mark.parametrize(
