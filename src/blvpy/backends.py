@@ -14,47 +14,51 @@ def solve_conic(
     problem: cp.Problem,
     solver: str,
     options: Mapping[str, Any],
-    verbose: bool,
+    solver_verbose: bool,
 ) -> None:
     """Solve a conic problem through CVXPY's regular solve path."""
 
-    _solve(problem, solver, options, verbose, nlp=False)
+    _solve(problem, solver, options, solver_verbose, nlp=False)
 
 
 def solve_dnlp(
     problem: cp.Problem,
     solver: str,
     options: Mapping[str, Any],
-    verbose: bool,
+    solver_verbose: bool,
 ) -> None:
     """Solve a DNLP problem through CVXPY's nonlinear solve path."""
 
-    _solve(problem, solver, options, verbose, nlp=True)
+    _solve(problem, solver, options, solver_verbose, nlp=True)
 
 
 def _solve(
     problem: cp.Problem,
     solver: str,
     options: Mapping[str, Any],
-    verbose: bool,
+    solver_verbose: bool,
     *,
     nlp: bool,
 ) -> None:
+    solve_options = dict(options)
+    if nlp and str(solver).upper() == "IPOPT" and not solver_verbose:
+        solve_options.setdefault("print_level", 0)
+        solve_options.setdefault("sb", "yes")
     try:
         if nlp:
             problem.solve(
                 solver=solver,
                 nlp=True,
                 warm_start=True,
-                verbose=verbose,
-                **dict(options),
+                verbose=solver_verbose,
+                **solve_options,
             )
         else:
             problem.solve(
                 solver=solver,
                 warm_start=True,
-                verbose=verbose,
-                **dict(options),
+                verbose=solver_verbose,
+                **solve_options,
             )
     except cp.SolverError as error:
         if "not installed" in str(error).lower():

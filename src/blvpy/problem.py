@@ -150,12 +150,15 @@ class BilevelProblem:
         restoration: bool = True,
         max_retries: int = 8,
         verbose: bool = False,
+        solver_verbose: bool = False,
     ):
         """Solve locally with multistart epsilon-gap continuation.
 
         IPOPT is the default nonlinear backend. Solver options are passed
         through CVXPY; returned feasibility and gap diagnostics are computed
-        independently from the solver status.
+        independently from the solver status. ``verbose`` controls BLVpy's
+        progress transcript, while ``solver_verbose`` controls CVXPY and
+        native solver output.
         """
 
         from .continuation import SolveSettings, solve_bilevel
@@ -174,6 +177,7 @@ class BilevelProblem:
             restoration=restoration,
             max_retries=max_retries,
             verbose=verbose,
+            solver_verbose=solver_verbose,
         )
         return solve_bilevel(self, settings)
 

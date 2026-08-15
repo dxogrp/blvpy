@@ -128,6 +128,52 @@ tolerances. `result.attempted_epsilon_history` also includes failed solves and
 retry points. `result.certified` remains false because numerical NLP output is
 local and residual-based, not a rigorous finite-precision certificate.
 
+## Progress and solver output
+
+BLVPy separates its concise progress transcript from CVXPY and native solver
+output. The two controls on `solve()` are independent:
+
+| `verbose` | `solver_verbose` | Output |
+|---|---|---|
+| `False` | `False` | Quiet, with backend output suppressed on a best-effort basis |
+| `True` | `False` | BLVPy progress only |
+| `False` | `True` | CVXPY and native solver output only |
+| `True` | `True` | BLVPy progress and backend output |
+
+For a readable account of a solve without the repeated backend transcripts,
+use:
+
+```python
+result = bilevel.solve(
+    verbose=True,
+    solver_verbose=False,
+)
+```
+
+A typical continuation excerpt is:
+
+```text
+(BLVpy) Start 1/1 | accepted | status=optimal | objective=5.003e-01 | max_feasibility=2.100e-08
+(BLVpy) Selected start 1/1 | objective=5.003e-01
+(BLVpy) Attempt 1 | scheduled | epsilon=1.000e-02 | accepted | status=optimal | objective=5.001e-01
+(BLVpy) Status: optimal | objective=5.000e-01 | final_epsilon=1.000e-06
+```
+
+The BLVPy transcript is written to standard error and groups information into
+`Problem`, `Initialization`, `Continuation`, and `Summary` sections. It reports
+model dimensions and cone layout, requested and usable starts, start selection,
+each scheduled or retry epsilon, solver status, objective, available residuals,
+solver time and iteration counts, and the final continuation outcome. It does
+not print variable values or complete solver-option dictionaries. The returned
+result and its iteration records remain the machine-readable source of truth.
+
+With IPOPT, `solver_verbose=False` adds quiet defaults (`print_level=0` and
+`sb="yes"`) only when those keys are absent from `solver_options`. Explicit
+solver options always take precedence, so a user-supplied `print_level` or `sb`
+may intentionally produce output even when `solver_verbose` is false. Silence
+is best-effort because some native-library messages are emitted below CVXPY's
+logging controls.
+
 ## Examples
 
 The [`examples`](examples) directory contains:

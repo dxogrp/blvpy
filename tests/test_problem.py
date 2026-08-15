@@ -191,3 +191,33 @@ def test_solve_defaults_match_documented_continuation_settings() -> None:
     assert parameters["feasibility_tolerance"].default == pytest.approx(1e-7)
     assert parameters["solver"].default == cp.IPOPT
     assert parameters["conic_solver"].default == cp.CLARABEL
+    assert parameters["verbose"].default is False
+    assert parameters["solver_verbose"].default is False
+
+
+@pytest.mark.parametrize(
+    ("verbose", "solver_verbose"),
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+def test_solve_passes_independent_verbosity_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    verbose: bool,
+    solver_verbose: bool,
+) -> None:
+    problem, _, _, _ = _quadratic_bilevel()
+    captured = None
+
+    def fake_solve_bilevel(model, settings):
+        nonlocal captured
+        assert model is problem
+        captured = settings
+        return "result"
+
+    monkeypatch.setattr("blvpy.continuation.solve_bilevel", fake_solve_bilevel)
+
+    result = problem.solve(verbose=verbose, solver_verbose=solver_verbose)
+
+    assert result == "result"
+    assert captured is not None
+    assert captured.verbose is verbose
+    assert captured.solver_verbose is solver_verbose

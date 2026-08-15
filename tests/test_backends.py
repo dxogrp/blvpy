@@ -18,7 +18,7 @@ def test_solve_conic_uses_regular_cvxpy_path() -> None:
         problem,
         solver="CLARABEL",
         options={"max_iter": 25},
-        verbose=True,
+        solver_verbose=True,
     )
 
     assert result is None
@@ -38,7 +38,7 @@ def test_solve_dnlp_uses_nonlinear_cvxpy_path() -> None:
         problem,
         solver="IPOPT",
         options={"max_iter": 50},
-        verbose=False,
+        solver_verbose=False,
     )
 
     assert result is None
@@ -48,6 +48,51 @@ def test_solve_dnlp_uses_nonlinear_cvxpy_path() -> None:
         warm_start=True,
         verbose=False,
         max_iter=50,
+        print_level=0,
+        sb="yes",
+    )
+
+
+def test_solve_dnlp_does_not_add_quiet_options_when_solver_is_verbose() -> None:
+    problem = Mock(spec=cp.Problem)
+
+    solve_dnlp(problem, solver="IPOPT", options={}, solver_verbose=True)
+
+    problem.solve.assert_called_once_with(
+        solver="IPOPT",
+        nlp=True,
+        warm_start=True,
+        verbose=True,
+    )
+
+
+def test_solve_dnlp_preserves_explicit_ipopt_output_options() -> None:
+    problem = Mock(spec=cp.Problem)
+    options = {"print_level": 4, "sb": "no"}
+
+    solve_dnlp(problem, solver="IPOPT", options=options, solver_verbose=False)
+
+    problem.solve.assert_called_once_with(
+        solver="IPOPT",
+        nlp=True,
+        warm_start=True,
+        verbose=False,
+        print_level=4,
+        sb="no",
+    )
+    assert options == {"print_level": 4, "sb": "no"}
+
+
+def test_quiet_ipopt_defaults_do_not_apply_to_other_dnlp_solvers() -> None:
+    problem = Mock(spec=cp.Problem)
+
+    solve_dnlp(problem, solver="CUSTOM", options={}, solver_verbose=False)
+
+    problem.solve.assert_called_once_with(
+        solver="CUSTOM",
+        nlp=True,
+        warm_start=True,
+        verbose=False,
     )
 
 
@@ -64,7 +109,7 @@ def test_missing_solver_error_is_translated(solver: str, message: str) -> None:
     problem.solve.side_effect = original
 
     with pytest.raises(SolverUnavailableError, match=message) as raised:
-        solve_dnlp(problem, solver=solver, options={}, verbose=False)
+        solve_dnlp(problem, solver=solver, options={}, solver_verbose=False)
 
     assert raised.value.__cause__ is original
 
@@ -82,7 +127,7 @@ def test_native_loading_error_is_translated_with_detail(original: Exception) -> 
     problem.solve.side_effect = original
 
     with pytest.raises(SolverUnavailableError) as raised:
-        solve_conic(problem, solver="CUSTOM", options={}, verbose=False)
+        solve_conic(problem, solver="CUSTOM", options={}, solver_verbose=False)
 
     assert str(original) in str(raised.value)
     assert "Native loading error" in str(raised.value)
@@ -95,6 +140,6 @@ def test_unrelated_solver_error_is_preserved() -> None:
     problem.solve.side_effect = original
 
     with pytest.raises(cp.SolverError) as raised:
-        solve_dnlp(problem, solver="IPOPT", options={}, verbose=False)
+        solve_dnlp(problem, solver="IPOPT", options={}, solver_verbose=False)
 
     assert raised.value is original

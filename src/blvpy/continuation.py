@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from math import sqrt
+from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
 import cvxpy as cp
@@ -13,6 +14,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from .backends import solve_conic, solve_dnlp
 from .errors import InitializationError, SolveError, SolverUnavailableError
+from .progress import ProgressReporter
 from .result import BilevelResult, IterationRecord, Residuals, StartRecord
 
 if TYPE_CHECKING:
@@ -46,10 +48,49 @@ class SolveSettings:
     restoration: bool = True
     max_retries: int = 8
     verbose: bool = False
+    solver_verbose: bool = False
 
 
 def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResult:
     """Internal implementation of :meth:`BilevelProblem.solve`."""
+
+    progress_verbose = _boolean(settings.verbose, "verbose")
+    reporter = ProgressReporter(enabled=progress_verbose)
+    started_at = perf_counter()
+    try:
+        solver_verbose = _boolean(settings.solver_verbose, "solver_verbose")
+        result = _solve_bilevel(model, settings, reporter, solver_verbose)
+    except Exception as error:
+        reporter.failure(error, elapsed=perf_counter() - started_at)
+        raise
+
+    tolerance = float(settings.feasibility_tolerance)
+    successful_starts = sum(
+        record.status in _ACCEPTABLE_NLP_STATUSES
+        and record.residuals is not None
+        and record.residuals.is_feasible(tolerance)
+        for record in result.starts
+    )
+    continuation_records = result.iterations[1:]
+    accepted_attempts = sum(_record_is_acceptable(record, tolerance) for record in continuation_records)
+    reporter.summary(
+        result=result,
+        successful_starts=successful_starts,
+        requested_starts=int(settings.starts),
+        accepted_attempts=accepted_attempts,
+        attempted_solves=len(continuation_records),
+        elapsed=perf_counter() - started_at,
+    )
+    return result
+
+
+def _solve_bilevel(
+    model: BilevelProblem,
+    settings: SolveSettings,
+    reporter: ProgressReporter,
+    solver_verbose: bool,
+) -> BilevelResult:
+    """Execute one solve while emitting semantic lifecycle progress."""
 
     epsilon_initial = settings.epsilon_initial
     epsilon_target = settings.epsilon_target
@@ -63,7 +104,6 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
     conic_solver_options = settings.conic_solver_options
     restoration = settings.restoration
     max_retries = settings.max_retries
-    verbose = settings.verbose
 
     epsilon_initial = _finite_nonnegative(epsilon_initial, "epsilon_initial")
     epsilon_target = _finite_nonnegative(epsilon_target, "epsilon_target")
@@ -84,37 +124,73 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
 
     model.validate()
     lifted = model.lifted_problem
+    canonical = model.canonicalize()
+    layout = canonical.cone_layout
+    reporter.problem(
+        upper_dimension=sum(variable.size for variable in model.upper_variables),
+        lower_dimension=sum(variable.size for variable in model._cvxpy_lower_problem.variables()),
+        canonical_variables=canonical.canonical_size,
+        canonical_constraints=canonical.constraint_size,
+        zero=layout.zero,
+        nonnegative=layout.nonnegative,
+        soc=layout.second_order,
+        lower_solver=str(conic_solver),
+        nonlinear_solver=str(solver),
+        requested_starts=int(starts),
+        epsilon_initial=epsilon_initial,
+        epsilon_target=epsilon_target,
+        contraction=contraction,
+    )
+    reporter.initialization()
     rng = seed if isinstance(seed, np.random.Generator) else np.random.default_rng(seed)
     variables_without_values = tuple(variable for variable in model.upper_variables if variable.value is None)
     try:
         samples = list(sample_upper_starts(model, int(starts), rng))
         if samples:
+            _assign_values(samples[0])
+            before_projection = _constraint_violation(lifted.upper_constraints)
+            if before_projection > 0.0:
+                reporter.projection(
+                    start_index=0,
+                    total_starts=len(samples),
+                    before_violation=before_projection,
+                )
             samples[0] = _project_upper_start(
                 model,
                 samples[0],
                 conic_solver,
                 conic_solver_options,
-                verbose,
+                solver_verbose,
             )
             samples = list(_deduplicate_starts(samples))
     except InitializationError as error:
         raise _automatic_initialization_error(model, variables_without_values, str(error)) from error
+
+    reporter.starts(
+        requested_starts=int(starts),
+        deduplicated_starts=len(samples),
+    )
 
     start_records: list[StartRecord] = []
     candidates: list[_Candidate] = []
     for index, sample in enumerate(samples):
         try:
             _assign_values(sample)
-            _initialize_lower(model, conic_solver, conic_solver_options, verbose)
+            _initialize_lower(model, conic_solver, conic_solver_options, solver_verbose)
             lifted.epsilon.value = epsilon_initial
             initial_residuals = compute_residuals(model, epsilon_initial)
             if restoration and not initial_residuals.is_feasible(feasibility_tolerance):
+                reporter.restoration(
+                    start_index=index,
+                    total_starts=len(samples),
+                    before_violation=initial_residuals.max_violation,
+                )
                 _restore_feasibility(
                     model,
                     epsilon_initial,
                     solver,
                     solver_options,
-                    verbose,
+                    solver_verbose,
                     feasibility_tolerance,
                 )
             _compile_probe(lifted, use_hessian=_uses_exact_hessian(solver_options))
@@ -123,31 +199,60 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
                 epsilon_initial,
                 solver,
                 solver_options,
-                verbose,
+                solver_verbose,
             )
             if not _record_is_acceptable(record, feasibility_tolerance):
                 message = record.message
                 if record.status in _ACCEPTABLE_NLP_STATUSES:
                     message = f"Independent residual check failed: max violation {record.residuals.max_violation:.3g}."
-                start_records.append(
-                    StartRecord(
-                        index,
-                        "residual_check_failed" if record.status in _ACCEPTABLE_NLP_STATUSES else record.status,
-                        record.objective,
-                        record.residuals,
-                        message,
-                    )
+                start_record = StartRecord(
+                    index,
+                    "residual_check_failed" if record.status in _ACCEPTABLE_NLP_STATUSES else record.status,
+                    record.objective,
+                    record.residuals,
+                    message,
+                )
+                start_records.append(start_record)
+                reporter.start(
+                    start_index=index,
+                    total_starts=len(samples),
+                    record=start_record,
+                    accepted=False,
+                    solve_time=record.solve_time,
+                    num_iters=record.num_iters,
                 )
                 continue
             state = _snapshot_state(lifted.problem)
             objective = float(record.objective) if record.objective is not None else float("inf")
             candidate = _Candidate(index, objective, state, record.residuals)
             candidates.append(candidate)
-            start_records.append(StartRecord(index, record.status, record.objective, record.residuals))
-        except SolverUnavailableError:
+            start_record = StartRecord(index, record.status, record.objective, record.residuals)
+            start_records.append(start_record)
+            reporter.start(
+                start_index=index,
+                total_starts=len(samples),
+                record=start_record,
+                accepted=True,
+                solve_time=record.solve_time,
+                num_iters=record.num_iters,
+            )
+        except SolverUnavailableError as error:
+            reporter.start(
+                start_index=index,
+                total_starts=len(samples),
+                record=StartRecord(index, "failed", message=f"{type(error).__name__}: {error}"),
+                accepted=False,
+            )
             raise
         except Exception as error:
-            start_records.append(StartRecord(index, "failed", message=f"{type(error).__name__}: {error}"))
+            start_record = StartRecord(index, "failed", message=f"{type(error).__name__}: {error}")
+            start_records.append(start_record)
+            reporter.start(
+                start_index=index,
+                total_starts=len(samples),
+                record=start_record,
+                accepted=False,
+            )
 
     if not candidates:
         details = "; ".join(f"start {record.index}: {record.message or record.status}" for record in start_records)
@@ -156,6 +261,11 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
     candidates.sort(key=lambda candidate: candidate.objective)
     best = candidates[0]
     _restore_state(lifted.problem, best.state)
+    reporter.selected_start(
+        start_index=best.index,
+        total_starts=len(samples),
+        objective=best.objective,
+    )
     initial_record = IterationRecord(
         epsilon=epsilon_initial,
         status=start_records[best.index].status,
@@ -172,12 +282,23 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
     target_index = 0
     retries = 0
     alternatives = candidates[1:]
+    attempt_index = 0
+    reporter.continuation()
     while target_index < len(targets):
         epsilon = targets[target_index]
         _restore_state(lifted.problem, last_successful_state)
-        record = _solve_one(model, epsilon, solver, solver_options, verbose)
+        record = _solve_one(model, epsilon, solver, solver_options, solver_verbose)
         iterations.append(record)
-        if _record_is_acceptable(record, feasibility_tolerance):
+        accepted = _record_is_acceptable(record, feasibility_tolerance)
+        reporter.attempt(
+            attempt_index=attempt_index,
+            kind="scheduled" if epsilon in scheduled_targets else "inserted",
+            epsilon=epsilon,
+            record=record,
+            accepted=accepted,
+        )
+        attempt_index += 1
+        if accepted:
             last_successful_epsilon = epsilon
             last_successful_state = _snapshot_state(lifted.problem)
             target_index += 1
@@ -188,9 +309,19 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
         recovered = False
         for alternative in alternatives:
             _restore_state(lifted.problem, alternative.state)
-            retry_record = _solve_one(model, epsilon, solver, solver_options, verbose)
+            retry_record = _solve_one(model, epsilon, solver, solver_options, solver_verbose)
             iterations.append(retry_record)
-            if _record_is_acceptable(retry_record, feasibility_tolerance):
+            retry_accepted = _record_is_acceptable(retry_record, feasibility_tolerance)
+            reporter.attempt(
+                attempt_index=attempt_index,
+                kind="alternative-start",
+                epsilon=epsilon,
+                record=retry_record,
+                accepted=retry_accepted,
+                start_index=alternative.index,
+            )
+            attempt_index += 1
+            if retry_accepted:
                 last_successful_epsilon = epsilon
                 last_successful_state = _snapshot_state(lifted.problem)
                 target_index += 1
@@ -201,6 +332,10 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
         if recovered:
             continue
         if retries >= max_retries:
+            reporter.retry_exhausted(
+                last_successful_epsilon=last_successful_epsilon,
+                max_retries=int(max_retries),
+            )
             _restore_state(lifted.problem, last_successful_state)
             lifted.epsilon.value = last_successful_epsilon
             return _result(
@@ -225,6 +360,7 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
             )
         targets.insert(target_index, intermediate)
         retries += 1
+        reporter.inserting_epsilon(epsilon=intermediate, target=epsilon)
 
     _restore_state(lifted.problem, last_successful_state)
     lifted.epsilon.value = last_successful_epsilon
@@ -315,7 +451,7 @@ def _project_upper_start(
     sample: Mapping[cp.Variable, ArrayLike],
     solver: str,
     options: Mapping[str, Any],
-    verbose: bool,
+    solver_verbose: bool,
 ) -> dict[cp.Variable, NDArray[np.float64]]:
     """Best-effort projection of the deterministic start onto upper constraints."""
 
@@ -335,7 +471,7 @@ def _project_upper_start(
     if not projection.is_dcp():
         return projected
     try:
-        solve_conic(projection, solver, options, verbose)
+        solve_conic(projection, solver, options, solver_verbose)
     except cp.SolverError:
         _assign_values(projected)
         return projected
@@ -392,7 +528,7 @@ def _initialize_lower(
     model: BilevelProblem,
     conic_solver: str,
     options: Mapping[str, Any],
-    verbose: bool,
+    solver_verbose: bool,
 ) -> None:
     for parameter, variable in model._parameter_links.items():
         try:
@@ -412,7 +548,7 @@ def _initialize_lower(
         [equality, *canonical.cone_layout.primal_constraints(slack)],
     )
     try:
-        solve_conic(lower, conic_solver, options, verbose)
+        solve_conic(lower, conic_solver, options, solver_verbose)
     except cp.SolverError as error:
         raise InitializationError(f"The fixed-data lower cone solve failed: {error}") from error
     if lower.status not in cp.settings.SOLUTION_PRESENT:
@@ -434,7 +570,7 @@ def _restore_feasibility(
     epsilon: float,
     solver: str,
     options: Mapping[str, Any],
-    verbose: bool,
+    solver_verbose: bool,
     tolerance: float = 1e-7,
 ) -> None:
     lifted = model.lifted_problem
@@ -452,7 +588,7 @@ def _restore_feasibility(
     restoration_problem = cp.Problem(cp.Minimize(radius), constraints)
     if not restoration_problem.is_dnlp():
         raise SolveError("The feasibility-restoration problem is not DNLP compliant.")
-    solve_dnlp(restoration_problem, solver, options, verbose)
+    solve_dnlp(restoration_problem, solver, options, solver_verbose)
     if restoration_problem.status not in cp.settings.SOLUTION_PRESENT:
         raise InitializationError(f"Feasibility restoration returned status {restoration_problem.status!r}.")
     restored = compute_residuals(model, epsilon)
@@ -501,13 +637,13 @@ def _solve_one(
     epsilon: float,
     solver: str,
     options: Mapping[str, Any],
-    verbose: bool,
+    solver_verbose: bool,
 ) -> IterationRecord:
     lifted = model.lifted_problem
     lifted.epsilon.value = epsilon
     message: str | None = None
     try:
-        solve_dnlp(lifted.problem, solver, options, verbose)
+        solve_dnlp(lifted.problem, solver, options, solver_verbose)
         status = lifted.problem.status or "solver_error"
     except SolverUnavailableError:
         raise
@@ -743,6 +879,12 @@ def _norm(value: ArrayLike) -> float:
     if not np.all(np.isfinite(array)):
         return float("inf")
     return float(np.linalg.norm(array))
+
+
+def _boolean(value: Any, name: str) -> bool:
+    if not isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{name} must be boolean.")
+    return bool(value)
 
 
 def _finite_nonnegative(value: Any, name: str) -> float:
