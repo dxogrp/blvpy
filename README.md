@@ -165,10 +165,11 @@ make lint       # run Ruff without modifying files
 make build      # build the source and wheel distributions
 ```
 
-CI runs tests, linting, and package builds on Linux with IPOPT for Python 3.12
-through 3.14. macOS and Windows jobs build the distributions without resolving
-runtime dependencies, so packaging remains portable without requiring IPOPT on
-those runners.
+CI runs the full test suite, lint checks, and package builds on Linux, macOS,
+and Windows for Python 3.12 through 3.14. Every platform installs BLVpy with
+`uv` and builds `cyipopt` against a native IPOPT installation. Windows uses a
+checksum-verified official COIN-OR IPOPT binary distribution and builds the
+locked `cyipopt` source release with MSVC.
 
 ## License
 

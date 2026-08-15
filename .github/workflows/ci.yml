@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  test-linux:
     name: Test (Linux, Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
@@ -51,15 +51,14 @@ jobs:
       - name: Build package
         run: uv build
 
-  build:
-    name: Build (${{ matrix.os }}, Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
+  test-macos:
+    name: Test (macOS, Python ${{ matrix.python-version }})
+    runs-on: macos-latest
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-latest
-          - windows-latest
         python-version:
           - "3.12"
           - "3.13"
@@ -68,6 +67,11 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+
+      - name: Install native IPOPT and build dependencies
+        run: |
+          brew install ipopt pkgconf
+          echo "PKG_CONFIG_PATH=$(brew --prefix ipopt)/lib/pkgconfig" >> "$GITHUB_ENV"
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
@@ -79,8 +83,102 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Compile Python sources without runtime dependencies
-        run: python -m compileall -q src examples tests
+      - name: Install dependencies
+        run: uv sync --group dev
 
-      - name: Build package without resolving runtime dependencies
+      - name: Verify native IPOPT binding
+        run: uv run python -c "import cyipopt; print(cyipopt.__version__)"
+
+      - name: Run tests
+        run: uv run python -m pytest tests
+
+      - name: Run lint checks
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Build package
+        run: uv build
+
+  test-windows:
+    name: Test (Windows, Python ${{ matrix.python-version }})
+    runs-on: windows-latest
+    env:
+      IPOPT_VERSION: "3.14.19"
+      IPOPT_SHA256: bd7818a19c2a627f1dcd538358833fbcb17c35080e19b4228be3f66cadf8c8fd
+      CYIPOPT_VERSION: "1.7.0"
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
+          - "3.14"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            .github/workflows/ci.yml
+
+      - name: Install native IPOPT
+        shell: pwsh
+        run: |
+          $asset = "Ipopt-$env:IPOPT_VERSION-win64-msvs2022-md.zip"
+          $archive = Join-Path $env:RUNNER_TEMP $asset
+          $extractRoot = Join-Path $env:RUNNER_TEMP "ipopt-$env:IPOPT_VERSION"
+          $ipoptRoot = Join-Path $extractRoot "Ipopt-$env:IPOPT_VERSION-win64-msvs2022-md"
+          $url = "https://github.com/coin-or/Ipopt/releases/download/releases/$env:IPOPT_VERSION/$asset"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+
+          $actualSha256 = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $env:IPOPT_SHA256) {
+            throw "IPOPT archive checksum mismatch: expected $env:IPOPT_SHA256, got $actualSha256"
+          }
+
+          Expand-Archive -Path $archive -DestinationPath $extractRoot
+          foreach ($directory in @("bin", "include", "lib")) {
+            if (-not (Test-Path (Join-Path $ipoptRoot $directory))) {
+              throw "IPOPT archive is missing its $directory directory"
+            }
+          }
+
+          "IPOPTWINDIR=$ipoptRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          (Join-Path $ipoptRoot "bin") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          uv venv --python "${{ matrix.python-version }}"
+          uv pip install "numpy>=2" "cython>=0.29.37" "setuptools>=68.1.2"
+          uv sync --group dev --no-build-isolation-package cyipopt
+
+      - name: Verify installed environment
+        shell: pwsh
+        run: |
+          uv run python -c "import cyipopt; assert cyipopt.__version__ == '$env:CYIPOPT_VERSION'"
+          uv pip check
+
+      - name: Run tests
+        shell: pwsh
+        run: uv run python -m pytest tests
+
+      - name: Run lint checks
+        shell: pwsh
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Build package
         run: uv build
