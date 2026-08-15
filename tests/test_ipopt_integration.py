@@ -297,13 +297,13 @@ def _solve(
     *,
     epsilon_initial: float = 1e-2,
     epsilon_target: float = 1e-5,
-    starts: int = 1,
+    best_of: int | None = None,
     seed: int = 0,
 ) -> BilevelResult:
     return model.solve(
         epsilon_initial=epsilon_initial,
         epsilon_target=epsilon_target,
-        starts=starts,
+        best_of=best_of,
         seed=seed,
         solver_options=_SOLVER_OPTIONS,
     )
@@ -326,7 +326,7 @@ def _quadratic_model() -> tuple[BilevelProblem, cp.Variable, cp.Variable]:
 def test_analytic_quadratic_reaches_target_and_is_epsilon_lower_optimal() -> None:
     model, x, y = _quadratic_model()
 
-    result = _solve(model, starts=3, seed=4)
+    result = _solve(model, seed=4)
 
     assert result.final_epsilon == pytest.approx(1e-5)
     assert all(left > right for left, right in zip(result.epsilon_history, result.epsilon_history[1:]))
@@ -353,7 +353,7 @@ def test_optimistic_lp_selects_upper_preferred_lower_optimizer() -> None:
         lower,
     )
 
-    result = _solve(model, starts=3, seed=11)
+    result = _solve(model, seed=11)
 
     np.testing.assert_allclose([x.value, y.value], [0.0, 1.0], atol=_ANALYTIC_ATOL)
     assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
@@ -488,7 +488,6 @@ def test_quadratic_relaxation_has_expected_sqrt_epsilon_solution(epsilon_target:
         model,
         epsilon_initial=epsilon_target,
         epsilon_target=epsilon_target,
-        starts=3,
         seed=31,
     )
 
@@ -506,7 +505,6 @@ def test_quadratic_relaxation_converges_at_sqrt_epsilon_rate() -> None:
             model,
             epsilon_initial=epsilon_target,
             epsilon_target=epsilon_target,
-            starts=3,
             seed=37,
         )
         assert result.succeeded

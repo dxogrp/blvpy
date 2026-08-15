@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cvxpy as cp
 import numpy as np
@@ -23,6 +23,9 @@ from .canonicalization import (
 )
 from .errors import UnsupportedModelError, ValidationError
 from .lower_problem import LowerProblem
+
+if TYPE_CHECKING:
+    from .result import BilevelResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,7 +143,7 @@ class BilevelProblem:
         epsilon_initial: float = 1e-1,
         epsilon_target: float = 1e-6,
         contraction: float = 0.1,
-        starts: int = 1,
+        best_of: int | None = None,
         feasibility_tolerance: float = 1e-7,
         seed: int | np.random.Generator | None = None,
         solver: str = cp.IPOPT,
@@ -151,14 +154,16 @@ class BilevelProblem:
         max_retries: int = 8,
         verbose: bool = True,
         solver_verbose: bool = False,
-    ):
-        """Solve locally with multistart epsilon-gap continuation.
+    ) -> BilevelResult:
+        """Solve locally with deterministic or best-of epsilon continuation.
 
         IPOPT is the default nonlinear backend. Solver options are passed
         through CVXPY; returned feasibility and gap diagnostics are computed
         independently from the solver status. ``verbose`` controls BLVPY's
         progress transcript, while ``solver_verbose`` controls CVXPY and
-        native solver output.
+        native solver output. Explicit ``best_of=N`` runs ``N`` independently
+        initialized complete continuations and returns the best acceptable
+        target-epsilon result.
         """
 
         from .continuation import SolveSettings, solve_bilevel
@@ -167,7 +172,7 @@ class BilevelProblem:
             epsilon_initial=epsilon_initial,
             epsilon_target=epsilon_target,
             contraction=contraction,
-            starts=starts,
+            best_of=best_of,
             feasibility_tolerance=feasibility_tolerance,
             seed=seed,
             solver=solver,

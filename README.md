@@ -107,15 +107,33 @@ print(result.residuals)
 Every variable listed in `LowerProblem(parameters=...)` is an upper-level
 variable and is held fixed while the lower problem is solved. Native CVXPY
 `bounds=` are optional mathematical constraints and initialization hints;
-BLVPY never requires bounds. BLVPY uses one deterministic upper start by
+BLVPY never requires bounds. BLVPY uses one deterministic upper point by
 default: it preserves an existing `.value`, uses the midpoint of finite bounds,
-or otherwise uses zero clipped to any one-sided bounds. It then attempts to
-project that point onto DCP upper constraints.
+uses `lower + 1` or `upper - 1` for a one-sided bound, and otherwise uses zero.
+It then attempts to project that point onto DCP upper constraints.
 
-Set `starts` above one to enable randomized multistart. Only components with
-finite two-sided CVXPY bounds are randomized; other components retain their
-deterministic values. If automatic initialization and feasibility restoration
-both fail, BLVPY names the variables whose `.value` should be initialized.
+Pass `best_of=N` to request randomized local search. BLVPY requests exactly
+`N` sampled initialization attempts without discarding duplicates. Each viable
+initialization runs a complete, independent epsilon continuation, and BLVPY
+returns the acceptable target-epsilon result with the lowest upper objective.
+Even `best_of=1` requests one random initialization; omitting `best_of` selects
+the deterministic policy.
+
+Set CVXPY's sampling-only `sample_bounds` for an upper variable that should be
+randomized without constraining the mathematical problem:
+
+```python
+x.sample_bounds = (-2.0, 2.0)
+result = bilevel.solve(best_of=5, seed=7)
+```
+
+For an explicit `best_of`, `sample_bounds` takes precedence over `.value`.
+Otherwise an existing `.value` is reused in every run, or finite native
+`bounds=` supply the sampling interval. BLVPY raises a named initialization
+error when none of these is available. Sampling uses a solve-local random
+generator, so a fixed `seed` reproduces the runs without changing NumPy's
+global random state. Runtime scales approximately linearly with `best_of`
+because every viable run performs its own full continuation.
 
 `validate()` raises a detailed modeling error, while `is_dbp()` provides the
 corresponding boolean check. `canonicalize()` exposes immutable cone-program
@@ -124,9 +142,17 @@ variables, solver and continuation histories, complementarity, and separate
 upper, recovery, primal, dual, cone, and gap residuals.
 
 `result.epsilon_history` contains only accepted, strictly decreasing
-tolerances. `result.attempted_epsilon_history` also includes failed solves and
-retry points. `result.certified` remains false because numerical NLP output is
-local and residual-based, not a rigorous finite-precision certificate.
+tolerances for the selected run. `result.attempted_epsilon_history` also
+includes its failed solves and retry points. `result.runs` preserves every
+complete or failed run, while `result.selected_run` identifies the returned
+one. `result.certified` remains false because numerical NLP output is local and
+residual-based, not a rigorous finite-precision certificate.
+
+Each `RunRecord.index` is zero-based, and `initial_values` snapshots the actual
+post-projection upper point. `all_objectives` reports terminal objectives in run
+order. If no run reaches the target, BLVPY returns `continuation_failed` at the
+partial run that attained the smallest epsilon, with objective and run index as
+tie-breakers.
 
 ## Progress and solver output
 
@@ -155,23 +181,26 @@ result = bilevel.solve(
 A typical abbreviated continuation excerpt is:
 
 ```text
-(BLVPY) Start 1/1: accepted | status=optimal
+(BLVPY) Run 1/3 | begin | mode=random
+(BLVPY) Run 1/3, attempt 1 [initial]: accepted | eps=1.000e-01
+(BLVPY)   status=optimal
 (BLVPY)   objective=5.003e-01 | feasibility=2.100e-08 | gap=0.000e+00
-(BLVPY) Selected start 1/1 | objective=5.003e-01
-(BLVPY) Attempt 1 [scheduled]: accepted | eps=1.000e-02 | status=optimal
-(BLVPY)   objective=5.001e-01 | feasibility=3.200e-08 | gap=0.000e+00
-(BLVPY) Status: optimal | objective=5.000e-01 | final_epsilon=1.000e-06
+(BLVPY) Run 1/3: succeeded | status=optimal
+(BLVPY) Selected run 1/3 | objective=5.000e-01
+(BLVPY) Status: status=optimal | objective=5.000e-01
+(BLVPY)   final_epsilon=1.000e-06
 ```
 
 The BLVPY transcript is written to standard error and groups information into
 `Problem`, `Initialization`, `Continuation`, and `Summary` sections. It reports
-model dimensions and cone layout, requested and usable starts, start selection,
-each scheduled or retry epsilon, solver status, objective, available residuals,
-solver time and iteration counts, and the final continuation outcome. It does
-not print variable values or complete solver-option dictionaries. The returned
-result and its iteration records remain the machine-readable source of truth.
-Start and continuation records use a short outcome row followed by indented
-diagnostic rows, and every BLVPY-owned line is limited to 79 columns.
+model dimensions and cone layout, search mode and run count, each run's
+scheduled or retry epsilon, solver status and objective, available residuals,
+solver time and iteration counts, terminal run outcomes, and the selected run.
+It does not print sampled variable values or complete solver-option
+dictionaries. The returned result and its run and iteration records remain the
+machine-readable source of truth. Run and continuation records use a short
+outcome row followed by indented diagnostic rows, and every BLVPY-owned line is
+limited to 79 columns.
 
 With IPOPT, `solver_verbose=False` adds quiet defaults (`print_level=0` and
 `sb="yes"`) only when those keys are absent from `solver_options`. Explicit
@@ -190,10 +219,10 @@ The [`examples`](examples) directory contains:
   a set of lower-level minimizers;
 - [`parameter_dependent_socp.py`](examples/parameter_dependent_socp.py), with
   an upper-dependent constraint matrix and a second-order cone;
-- [`multistart_restoration.py`](examples/multistart_restoration.py), showing
-  automatic bounded sampling and feasibility restoration; and
+- [`best_of_restoration.py`](examples/best_of_restoration.py), showing
+  sampling-only ranges, full best-of runs, and feasibility restoration; and
 - [`continuation_reproducibility.py`](examples/continuation_reproducibility.py),
-  exposing accepted tolerances, retries, and seeded reproducibility.
+  exposing per-run tolerances, retries, and seeded reproducibility.
 
 Run an example with:
 

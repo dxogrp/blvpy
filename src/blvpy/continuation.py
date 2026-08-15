@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import sqrt
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
@@ -15,7 +15,7 @@ from numpy.typing import ArrayLike, NDArray
 from .backends import solve_conic, solve_dnlp
 from .errors import InitializationError, SolveError, SolverUnavailableError
 from .progress import ProgressReporter
-from .result import BilevelResult, IterationRecord, Residuals, StartRecord
+from .result import BilevelResult, IterationRecord, Residuals, RunRecord
 
 if TYPE_CHECKING:
     from .problem import BilevelProblem, LiftedProblem
@@ -24,21 +24,21 @@ _ACCEPTABLE_NLP_STATUSES = {cp.OPTIMAL, cp.OPTIMAL_INACCURATE}
 
 
 @dataclass(frozen=True, slots=True)
-class _Candidate:
-    index: int
-    objective: float
-    state: Mapping[int, NDArray[np.float64]]
-    residuals: Residuals
+class _RunOutcome:
+    record: RunRecord
+    state: Mapping[int, NDArray[np.float64]] | None
+    accepted_initial: bool
+    reached_target: bool
 
 
 @dataclass(frozen=True, slots=True)
 class SolveSettings:
-    """Numerical settings for multistart gap continuation."""
+    """Numerical settings for deterministic or best-of gap continuation."""
 
     epsilon_initial: float = 1e-1
     epsilon_target: float = 1e-6
     contraction: float = 0.1
-    starts: int = 1
+    best_of: int | None = None
     feasibility_tolerance: float = 1e-7
     seed: int | np.random.Generator | None = None
     solver: str = cp.IPOPT
@@ -65,20 +65,15 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
         raise
 
     tolerance = float(settings.feasibility_tolerance)
-    successful_starts = sum(
-        record.status in _ACCEPTABLE_NLP_STATUSES
-        and record.residuals is not None
-        and record.residuals.is_feasible(tolerance)
-        for record in result.starts
-    )
-    continuation_records = result.iterations[1:]
-    accepted_attempts = sum(_record_is_acceptable(record, tolerance) for record in continuation_records)
+    successful_runs = sum(record.succeeded for record in result.runs)
+    attempted_records = tuple(record for run in result.runs for record in run.iterations)
+    accepted_attempts = sum(_record_is_acceptable(record, tolerance) for record in attempted_records)
     reporter.summary(
         result=result,
-        successful_starts=successful_starts,
-        requested_starts=int(settings.starts),
+        successful_runs=successful_runs,
+        requested_runs=1 if settings.best_of is None else int(settings.best_of),
         accepted_attempts=accepted_attempts,
-        attempted_solves=len(continuation_records),
+        attempted_solves=len(attempted_records),
         elapsed=perf_counter() - started_at,
     )
     return result
@@ -90,37 +85,36 @@ def _solve_bilevel(
     reporter: ProgressReporter,
     solver_verbose: bool,
 ) -> BilevelResult:
-    """Execute one solve while emitting semantic lifecycle progress."""
+    """Execute deterministic or best-of complete continuation runs."""
 
-    epsilon_initial = settings.epsilon_initial
-    epsilon_target = settings.epsilon_target
-    contraction = settings.contraction
-    starts = settings.starts
-    feasibility_tolerance = settings.feasibility_tolerance
-    seed = settings.seed
-    solver = settings.solver
-    conic_solver = settings.conic_solver
-    solver_options = settings.solver_options
-    conic_solver_options = settings.conic_solver_options
-    restoration = settings.restoration
-    max_retries = settings.max_retries
-
-    epsilon_initial = _finite_nonnegative(epsilon_initial, "epsilon_initial")
-    epsilon_target = _finite_nonnegative(epsilon_target, "epsilon_target")
+    epsilon_initial = _finite_nonnegative(settings.epsilon_initial, "epsilon_initial")
+    epsilon_target = _finite_nonnegative(settings.epsilon_target, "epsilon_target")
     if epsilon_initial <= 0 or epsilon_target <= 0:
         raise ValueError("epsilon_initial and epsilon_target must be positive.")
     if epsilon_target > epsilon_initial:
         raise ValueError("epsilon_target cannot exceed epsilon_initial.")
-    contraction = _finite_nonnegative(contraction, "contraction")
+
+    contraction = _finite_nonnegative(settings.contraction, "contraction")
     if not 0 < contraction < 1:
         raise ValueError("contraction must lie strictly between zero and one.")
-    if isinstance(starts, bool) or not isinstance(starts, (int, np.integer)) or starts < 1:
-        raise ValueError("starts must be a positive integer.")
-    if isinstance(max_retries, bool) or not isinstance(max_retries, (int, np.integer)) or max_retries < 0:
+
+    best_of = settings.best_of
+    if best_of is not None:
+        if isinstance(best_of, (bool, np.bool_)) or not isinstance(best_of, (int, np.integer)) or best_of < 1:
+            raise ValueError("best_of must be a positive integer or None.")
+        best_of = int(best_of)
+
+    max_retries = settings.max_retries
+    if isinstance(max_retries, (bool, np.bool_)) or not isinstance(max_retries, (int, np.integer)) or max_retries < 0:
         raise ValueError("max_retries must be a nonnegative integer.")
-    feasibility_tolerance = _finite_nonnegative(feasibility_tolerance, "feasibility_tolerance")
-    solver_options = dict(solver_options or {})
-    conic_solver_options = dict(conic_solver_options or {})
+
+    feasibility_tolerance = _finite_nonnegative(
+        settings.feasibility_tolerance,
+        "feasibility_tolerance",
+    )
+    solver_options = dict(settings.solver_options or {})
+    conic_solver_options = dict(settings.conic_solver_options or {})
+    requested_runs = 1 if best_of is None else best_of
 
     model.validate()
     lifted = model.lifted_problem
@@ -134,316 +128,629 @@ def _solve_bilevel(
         zero=layout.zero,
         nonnegative=layout.nonnegative,
         soc=layout.second_order,
-        lower_solver=str(conic_solver),
-        nonlinear_solver=str(solver),
-        requested_starts=int(starts),
+        lower_solver=str(settings.conic_solver),
+        nonlinear_solver=str(settings.solver),
+        best_of=best_of,
+        requested_runs=requested_runs,
         epsilon_initial=epsilon_initial,
         epsilon_target=epsilon_target,
         contraction=contraction,
     )
-    reporter.initialization()
-    rng = seed if isinstance(seed, np.random.Generator) else np.random.default_rng(seed)
+
+    rng = settings.seed if isinstance(settings.seed, np.random.Generator) else np.random.default_rng(settings.seed)
     variables_without_values = tuple(variable for variable in model.upper_variables if variable.value is None)
     try:
-        samples = list(sample_upper_starts(model, int(starts), rng))
-        if samples:
-            _assign_values(samples[0])
+        initializations = _generate_upper_initializations(model, best_of, rng)
+    except InitializationError as error:
+        if best_of is None:
+            raise _automatic_initialization_error(
+                model,
+                variables_without_values,
+                str(error),
+            ) from error
+        raise
+    reporter.initialization()
+
+    outcomes: list[_RunOutcome] = []
+    for index, raw_initialization in enumerate(initializations):
+        recorded_initialization = {
+            variable: _numeric_value(value, variable.shape) for variable, value in raw_initialization.items()
+        }
+        reporter.run_begin(
+            run_index=index,
+            total_runs=requested_runs,
+            randomized=best_of is not None,
+        )
+        try:
+            _assign_values(raw_initialization)
             before_projection = _constraint_violation(lifted.upper_constraints)
             if before_projection > 0.0:
                 reporter.projection(
-                    start_index=0,
-                    total_starts=len(samples),
+                    run_index=index,
+                    total_runs=requested_runs,
                     before_violation=before_projection,
                 )
-            samples[0] = _project_upper_start(
+            initialization = _project_upper_start(
                 model,
-                samples[0],
-                conic_solver,
+                raw_initialization,
+                settings.conic_solver,
                 conic_solver_options,
                 solver_verbose,
             )
-            samples = list(_deduplicate_starts(samples))
-    except InitializationError as error:
-        raise _automatic_initialization_error(model, variables_without_values, str(error)) from error
+            recorded_initialization = {
+                variable: _numeric_value(value, variable.shape) for variable, value in initialization.items()
+            }
+            outcome = _initialize_run(
+                model,
+                index,
+                requested_runs,
+                initialization,
+                epsilon_initial=epsilon_initial,
+                feasibility_tolerance=feasibility_tolerance,
+                solver=settings.solver,
+                conic_solver=settings.conic_solver,
+                solver_options=solver_options,
+                conic_solver_options=conic_solver_options,
+                restoration=settings.restoration,
+                solver_verbose=solver_verbose,
+                reporter=reporter,
+            )
+        except SolverUnavailableError:
+            raise
+        except Exception as error:
+            record = RunRecord(
+                index=index,
+                initial_values=recorded_initialization,
+                status="initialization_failed",
+                message=f"{type(error).__name__}: {error}",
+            )
+            outcome = _RunOutcome(record, None, False, False)
+            reporter.run(
+                run_index=index,
+                total_runs=requested_runs,
+                record=record,
+            )
+        outcomes.append(outcome)
 
-    reporter.starts(
-        requested_starts=int(starts),
-        deduplicated_starts=len(samples),
+    initialized = [outcome for outcome in outcomes if outcome.accepted_initial]
+    if not initialized:
+        details = "; ".join(
+            f"run {outcome.record.index + 1}: {outcome.record.message or outcome.record.status}" for outcome in outcomes
+        )
+        if best_of is None:
+            raise _automatic_initialization_error(
+                model,
+                variables_without_values,
+                details,
+            )
+        error = InitializationError("All best-of runs failed at the initial epsilon.")
+        if details:
+            error.add_note(f"Run details: {details}")
+        raise error
+
+    reporter.continuation()
+    for position, outcome in enumerate(outcomes):
+        if not outcome.accepted_initial:
+            continue
+        try:
+            completed = _solve_run(
+                model,
+                outcome,
+                total_runs=requested_runs,
+                epsilon_initial=epsilon_initial,
+                epsilon_target=epsilon_target,
+                contraction=contraction,
+                feasibility_tolerance=feasibility_tolerance,
+                solver=settings.solver,
+                solver_options=solver_options,
+                solver_verbose=solver_verbose,
+                max_retries=int(max_retries),
+                reporter=reporter,
+            )
+        except SolverUnavailableError:
+            raise
+        except Exception as error:
+            failed = RunRecord(
+                index=outcome.record.index,
+                initial_values=outcome.record.initial_values,
+                status="continuation_failed",
+                objective=outcome.record.objective,
+                iterations=outcome.record.iterations,
+                final_iteration=outcome.record.final_iteration,
+                message=f"{type(error).__name__}: {error}",
+            )
+            completed = _RunOutcome(failed, outcome.state, True, False)
+        outcomes[position] = completed
+        reporter.run(
+            run_index=completed.record.index,
+            total_runs=requested_runs,
+            record=completed.record,
+        )
+
+    successful = [
+        outcome
+        for outcome in outcomes
+        if outcome.reached_target
+        and outcome.record.succeeded
+        and outcome.record.objective is not None
+        and np.isfinite(outcome.record.objective)
+    ]
+    if successful:
+        selected = min(
+            successful,
+            key=lambda outcome: (
+                float(outcome.record.objective),
+                outcome.record.index,
+            ),
+        )
+        result_status = selected.record.status
+        result_message = selected.record.message
+    else:
+        partial = [outcome for outcome in outcomes if outcome.accepted_initial and outcome.state is not None]
+        selected = min(partial, key=_partial_run_key)
+        result_status = "continuation_failed"
+        result_message = "No run reached the requested target epsilon with acceptable residuals."
+
+    assert selected.state is not None
+    _restore_state(lifted.problem, selected.state)
+    _sync_linked_parameters(model)
+    final = selected.record.final_iteration
+    if final is not None:
+        lifted.epsilon.value = final.epsilon
+    reporter.selected_run(
+        run_index=selected.record.index,
+        total_runs=requested_runs,
+        objective=selected.record.objective,
+    )
+    return _result(
+        model,
+        result_status,
+        list(selected.record.iterations),
+        [outcome.record for outcome in outcomes],
+        selected_run_index=selected.record.index,
+        objective=selected.record.objective,
+        message=result_message,
+        final_record=final,
     )
 
-    start_records: list[StartRecord] = []
-    candidates: list[_Candidate] = []
-    for index, sample in enumerate(samples):
-        try:
-            _assign_values(sample)
-            _initialize_lower(model, conic_solver, conic_solver_options, solver_verbose)
-            lifted.epsilon.value = epsilon_initial
-            initial_residuals = compute_residuals(model, epsilon_initial)
-            if restoration and not initial_residuals.is_feasible(feasibility_tolerance):
-                reporter.restoration(
-                    start_index=index,
-                    total_starts=len(samples),
-                    before_violation=initial_residuals.max_violation,
-                )
-                _restore_feasibility(
-                    model,
-                    epsilon_initial,
-                    solver,
-                    solver_options,
-                    solver_verbose,
-                    feasibility_tolerance,
-                )
-            _compile_probe(lifted, use_hessian=_uses_exact_hessian(solver_options))
-            record = _solve_one(
+
+def _initialize_run(
+    model: BilevelProblem,
+    index: int,
+    total_runs: int,
+    initial_values: Mapping[cp.Variable, ArrayLike],
+    *,
+    epsilon_initial: float,
+    feasibility_tolerance: float,
+    solver: str,
+    conic_solver: str,
+    solver_options: Mapping[str, Any],
+    conic_solver_options: Mapping[str, Any],
+    restoration: bool,
+    solver_verbose: bool,
+    reporter: ProgressReporter,
+) -> _RunOutcome:
+    """Initialize and solve one run at the initial continuation tolerance."""
+
+    normalized_initial_values = {
+        variable: _numeric_value(value, variable.shape) for variable, value in initial_values.items()
+    }
+    _assign_values(normalized_initial_values)
+    _initialize_lower(
+        model,
+        conic_solver,
+        conic_solver_options,
+        solver_verbose,
+    )
+    lifted = model.lifted_problem
+    lifted.epsilon.value = epsilon_initial
+    initial_residuals = compute_residuals(model, epsilon_initial)
+    if restoration and not initial_residuals.is_feasible(feasibility_tolerance):
+        reporter.restoration(
+            run_index=index,
+            total_runs=total_runs,
+            before_violation=initial_residuals.max_violation,
+        )
+        _restore_feasibility(
+            model,
+            epsilon_initial,
+            solver,
+            solver_options,
+            solver_verbose,
+            feasibility_tolerance,
+        )
+
+    _compile_probe(lifted, use_hessian=_uses_exact_hessian(solver_options))
+    record = _checked_record(
+        _solve_one(
+            model,
+            epsilon_initial,
+            solver,
+            solver_options,
+            solver_verbose,
+        ),
+        feasibility_tolerance,
+    )
+    accepted = _record_is_acceptable(record, feasibility_tolerance)
+    reporter.attempt(
+        run_index=index,
+        total_runs=total_runs,
+        attempt_index=0,
+        kind="initial",
+        epsilon=epsilon_initial,
+        record=record,
+        accepted=accepted,
+    )
+    run = RunRecord(
+        index=index,
+        initial_values=normalized_initial_values,
+        status=record.status,
+        objective=record.objective,
+        iterations=(record,),
+        final_iteration=record,
+        message=record.message,
+    )
+    if not accepted:
+        reporter.run(run_index=index, total_runs=total_runs, record=run)
+        return _RunOutcome(run, None, False, False)
+    return _RunOutcome(
+        run,
+        _snapshot_state(lifted.problem),
+        True,
+        False,
+    )
+
+
+def _solve_run(
+    model: BilevelProblem,
+    initial: _RunOutcome,
+    *,
+    total_runs: int,
+    epsilon_initial: float,
+    epsilon_target: float,
+    contraction: float,
+    feasibility_tolerance: float,
+    solver: str,
+    solver_options: Mapping[str, Any],
+    solver_verbose: bool,
+    max_retries: int,
+    reporter: ProgressReporter,
+) -> _RunOutcome:
+    """Complete one independent epsilon continuation from its saved state."""
+
+    if not initial.accepted_initial or initial.state is None:
+        return initial
+
+    lifted = model.lifted_problem
+    _restore_state(lifted.problem, initial.state)
+    _sync_linked_parameters(model)
+    iterations = list(initial.record.iterations)
+    last_successful_epsilon = epsilon_initial
+    last_successful_state = dict(initial.state)
+    targets: list[tuple[float, str]] = [
+        (epsilon, "scheduled")
+        for epsilon in _epsilon_schedule(
+            epsilon_initial,
+            epsilon_target,
+            contraction,
+        )
+    ][1:]
+    target_index = 0
+    retries = 0
+    attempt_index = 1
+
+    while target_index < len(targets):
+        epsilon, kind = targets[target_index]
+        _restore_state(lifted.problem, last_successful_state)
+        _sync_linked_parameters(model)
+        record = _checked_record(
+            _solve_one(
                 model,
-                epsilon_initial,
+                epsilon,
                 solver,
                 solver_options,
                 solver_verbose,
-            )
-            if not _record_is_acceptable(record, feasibility_tolerance):
-                message = record.message
-                if record.status in _ACCEPTABLE_NLP_STATUSES:
-                    message = f"Independent residual check failed: max violation {record.residuals.max_violation:.3g}."
-                start_record = StartRecord(
-                    index,
-                    "residual_check_failed" if record.status in _ACCEPTABLE_NLP_STATUSES else record.status,
-                    record.objective,
-                    record.residuals,
-                    message,
-                )
-                start_records.append(start_record)
-                reporter.start(
-                    start_index=index,
-                    total_starts=len(samples),
-                    record=start_record,
-                    accepted=False,
-                    solve_time=record.solve_time,
-                    num_iters=record.num_iters,
-                )
-                continue
-            state = _snapshot_state(lifted.problem)
-            objective = float(record.objective) if record.objective is not None else float("inf")
-            candidate = _Candidate(index, objective, state, record.residuals)
-            candidates.append(candidate)
-            start_record = StartRecord(index, record.status, record.objective, record.residuals)
-            start_records.append(start_record)
-            reporter.start(
-                start_index=index,
-                total_starts=len(samples),
-                record=start_record,
-                accepted=True,
-                solve_time=record.solve_time,
-                num_iters=record.num_iters,
-            )
-        except SolverUnavailableError as error:
-            reporter.start(
-                start_index=index,
-                total_starts=len(samples),
-                record=StartRecord(index, "failed", message=f"{type(error).__name__}: {error}"),
-                accepted=False,
-            )
-            raise
-        except Exception as error:
-            start_record = StartRecord(index, "failed", message=f"{type(error).__name__}: {error}")
-            start_records.append(start_record)
-            reporter.start(
-                start_index=index,
-                total_starts=len(samples),
-                record=start_record,
-                accepted=False,
-            )
-
-    if not candidates:
-        details = "; ".join(f"start {record.index}: {record.message or record.status}" for record in start_records)
-        raise _automatic_initialization_error(model, variables_without_values, details)
-
-    candidates.sort(key=lambda candidate: candidate.objective)
-    best = candidates[0]
-    _restore_state(lifted.problem, best.state)
-    reporter.selected_start(
-        start_index=best.index,
-        total_starts=len(samples),
-        objective=best.objective,
-    )
-    initial_record = IterationRecord(
-        epsilon=epsilon_initial,
-        status=start_records[best.index].status,
-        objective=best.objective,
-        residuals=best.residuals,
-        solver_name=str(solver),
-    )
-    iterations: list[IterationRecord] = [initial_record]
-    last_successful_epsilon = epsilon_initial
-    last_successful_state = dict(best.state)
-
-    targets = list(_epsilon_schedule(epsilon_initial, epsilon_target, contraction))[1:]
-    scheduled_targets = set(targets)
-    target_index = 0
-    retries = 0
-    alternatives = candidates[1:]
-    attempt_index = 0
-    reporter.continuation()
-    while target_index < len(targets):
-        epsilon = targets[target_index]
-        _restore_state(lifted.problem, last_successful_state)
-        record = _solve_one(model, epsilon, solver, solver_options, solver_verbose)
+            ),
+            feasibility_tolerance,
+        )
         iterations.append(record)
         accepted = _record_is_acceptable(record, feasibility_tolerance)
         reporter.attempt(
+            run_index=initial.record.index,
+            total_runs=total_runs,
             attempt_index=attempt_index,
-            kind="scheduled" if epsilon in scheduled_targets else "inserted",
+            kind=kind,
             epsilon=epsilon,
             record=record,
             accepted=accepted,
         )
         attempt_index += 1
+
         if accepted:
             last_successful_epsilon = epsilon
             last_successful_state = _snapshot_state(lifted.problem)
             target_index += 1
-            if epsilon in scheduled_targets:
+            if kind == "scheduled":
                 retries = 0
             continue
 
-        recovered = False
-        for alternative in alternatives:
-            _restore_state(lifted.problem, alternative.state)
-            retry_record = _solve_one(model, epsilon, solver, solver_options, solver_verbose)
-            iterations.append(retry_record)
-            retry_accepted = _record_is_acceptable(retry_record, feasibility_tolerance)
-            reporter.attempt(
-                attempt_index=attempt_index,
-                kind="alternative-start",
-                epsilon=epsilon,
-                record=retry_record,
-                accepted=retry_accepted,
-                start_index=alternative.index,
-            )
-            attempt_index += 1
-            if retry_accepted:
-                last_successful_epsilon = epsilon
-                last_successful_state = _snapshot_state(lifted.problem)
-                target_index += 1
-                if epsilon in scheduled_targets:
-                    retries = 0
-                recovered = True
-                break
-        if recovered:
-            continue
         if retries >= max_retries:
             reporter.retry_exhausted(
+                run_index=initial.record.index,
+                total_runs=total_runs,
                 last_successful_epsilon=last_successful_epsilon,
-                max_retries=int(max_retries),
+                max_retries=max_retries,
             )
-            _restore_state(lifted.problem, last_successful_state)
-            lifted.epsilon.value = last_successful_epsilon
-            return _result(
+            return _partial_run_outcome(
                 model,
-                "continuation_failed",
+                initial.record,
                 iterations,
-                start_records,
-                message=f"Could not reduce epsilon below {last_successful_epsilon:.6g}.",
-                final_record=_restored_record(model, last_successful_epsilon, solver, feasibility_tolerance),
+                last_successful_state,
+                last_successful_epsilon,
+                solver,
+                feasibility_tolerance,
+                f"Could not reduce epsilon below {last_successful_epsilon:.6g}.",
             )
+
         intermediate = sqrt(last_successful_epsilon * epsilon)
         if not epsilon < intermediate < last_successful_epsilon:
-            _restore_state(lifted.problem, last_successful_state)
-            lifted.epsilon.value = last_successful_epsilon
-            return _result(
+            return _partial_run_outcome(
                 model,
-                "continuation_failed",
+                initial.record,
                 iterations,
-                start_records,
-                message="Continuation could not insert a distinct intermediate epsilon.",
-                final_record=_restored_record(model, last_successful_epsilon, solver, feasibility_tolerance),
+                last_successful_state,
+                last_successful_epsilon,
+                solver,
+                feasibility_tolerance,
+                "Continuation could not insert a distinct intermediate epsilon.",
             )
-        targets.insert(target_index, intermediate)
+        targets.insert(target_index, (intermediate, "inserted"))
         retries += 1
-        reporter.inserting_epsilon(epsilon=intermediate, target=epsilon)
+        reporter.inserting_epsilon(
+            run_index=initial.record.index,
+            total_runs=total_runs,
+            epsilon=intermediate,
+            target=epsilon,
+        )
 
     _restore_state(lifted.problem, last_successful_state)
+    _sync_linked_parameters(model)
     lifted.epsilon.value = last_successful_epsilon
     try:
-        final = _restored_record(model, last_successful_epsilon, solver, feasibility_tolerance)
-    except Exception:
-        final = next(record for record in reversed(iterations) if _record_is_acceptable(record, feasibility_tolerance))
+        final = _restored_record(
+            model,
+            last_successful_epsilon,
+            solver,
+            feasibility_tolerance,
+        )
+    except Exception as error:
+        final = _diagnostic_failure_record(
+            model,
+            last_successful_epsilon,
+            solver,
+            error,
+        )
+
     status = final.status
-    message = None
+    message = final.message
     if not final.residuals.is_feasible(
         feasibility_tolerance,
         gap_tolerance=feasibility_tolerance,
     ):
         status = "residual_check_failed"
-        message = (
+        message = message or (
             "The NLP solver returned a point, but one or more independently "
             "computed residuals exceed the requested feasibility tolerance."
         )
-    return _result(
-        model,
-        status,
-        iterations,
-        start_records,
+        final = replace(final, status=status, message=message)
+
+    objective = final.objective
+    if status in _ACCEPTABLE_NLP_STATUSES and (objective is None or not np.isfinite(objective)):
+        status = "objective_unavailable"
+        message = "The target-epsilon point has no finite upper objective."
+        final = replace(final, status=status, message=message)
+    reached_target = (
+        np.isclose(
+            last_successful_epsilon,
+            epsilon_target,
+            rtol=1e-12,
+            atol=0.0,
+        )
+        and status in _ACCEPTABLE_NLP_STATUSES
+        and objective is not None
+        and np.isfinite(objective)
+    )
+    run = RunRecord(
+        index=initial.record.index,
+        initial_values=initial.record.initial_values,
+        status=status,
+        objective=objective,
+        iterations=tuple(iterations),
+        final_iteration=final,
         message=message,
-        final_record=final,
+    )
+    return _RunOutcome(
+        run,
+        dict(last_successful_state),
+        True,
+        reached_target,
     )
 
 
-def sample_upper_starts(
+def _partial_run_outcome(
     model: BilevelProblem,
-    starts: int,
+    initial_record: RunRecord,
+    iterations: list[IterationRecord],
+    state: Mapping[int, ArrayLike],
+    epsilon: float,
+    solver: str,
+    tolerance: float,
+    message: str,
+) -> _RunOutcome:
+    lifted = model.lifted_problem
+    _restore_state(lifted.problem, state)
+    _sync_linked_parameters(model)
+    lifted.epsilon.value = epsilon
+    try:
+        final = _restored_record(model, epsilon, solver, tolerance)
+    except Exception as error:
+        final = _diagnostic_failure_record(model, epsilon, solver, error)
+    run = RunRecord(
+        index=initial_record.index,
+        initial_values=initial_record.initial_values,
+        status="continuation_failed",
+        objective=final.objective,
+        iterations=tuple(iterations),
+        final_iteration=final,
+        message=message,
+    )
+    return _RunOutcome(run, dict(state), True, False)
+
+
+def _partial_run_key(
+    outcome: _RunOutcome,
+) -> tuple[float, float, int]:
+    epsilon = outcome.record.final_epsilon
+    objective = outcome.record.objective
+    return (
+        float("inf") if epsilon is None else float(epsilon),
+        float("inf") if objective is None or not np.isfinite(objective) else float(objective),
+        outcome.record.index,
+    )
+
+
+def _checked_record(
+    record: IterationRecord,
+    tolerance: float,
+) -> IterationRecord:
+    if record.status not in _ACCEPTABLE_NLP_STATUSES:
+        return record
+    if record.residuals.is_feasible(tolerance):
+        return record
+    return replace(
+        record,
+        status="residual_check_failed",
+        message=(f"Independent residual check failed: max violation {record.residuals.max_violation:.3g}."),
+    )
+
+
+def _generate_upper_initializations(
+    model: BilevelProblem,
+    best_of: int | None,
     rng: np.random.Generator,
 ) -> tuple[dict[cp.Variable, NDArray[np.float64]], ...]:
-    """Generate deterministic and optional randomized upper starts.
+    """Generate deterministic or CVXPY-style randomized upper points."""
 
-    Existing values take precedence for the first start. Otherwise, each
-    component uses the midpoint of two finite bounds, or zero clipped to a
-    finite one-sided bound. Additional starts randomize only components with
-    two finite bounds.
-    """
+    if best_of is None:
+        sample: dict[cp.Variable, NDArray[np.float64]] = {}
+        for variable in model.upper_variables:
+            if variable.value is not None:
+                value = _numeric_value(variable.value, variable.shape)
+            else:
+                lower, upper = _variable_bounds(variable)
+                both = np.isfinite(lower) & np.isfinite(upper)
+                lower_only = np.isfinite(lower) & ~np.isfinite(upper)
+                upper_only = ~np.isfinite(lower) & np.isfinite(upper)
+                value = np.zeros(variable.shape, dtype=float)
+                value[both] = (lower[both] + upper[both]) / 2.0
+                value[lower_only] = lower[lower_only] + 1.0
+                value[upper_only] = upper[upper_only] - 1.0
+                value = _project_variable_value(variable, value)
+            sample[variable] = value
+        return (sample,)
 
     specifications: list[
         tuple[
             cp.Variable,
-            NDArray[np.float64],
-            NDArray[np.float64],
-            NDArray[np.float64],
-            NDArray[np.bool_],
+            NDArray[np.float64] | None,
+            NDArray[np.float64] | None,
+            NDArray[np.float64] | None,
         ]
     ] = []
+    missing: list[str] = []
     for variable in model.upper_variables:
-        lower, upper = _variable_bounds(variable)
-        bounded = np.isfinite(lower) & np.isfinite(upper)
-        if variable.value is not None:
-            deterministic = _numeric_value(variable.value, variable.shape)
+        sample_bounds = getattr(variable, "sample_bounds", None)
+        if sample_bounds is not None:
+            lower, upper = _validated_sample_bounds(variable, sample_bounds)
+            specifications.append((variable, None, lower, upper))
+        elif variable.value is not None:
+            specifications.append(
+                (
+                    variable,
+                    _numeric_value(variable.value, variable.shape),
+                    None,
+                    None,
+                )
+            )
         else:
-            deterministic = np.zeros(variable.shape, dtype=float)
-            deterministic[bounded] = (lower[bounded] + upper[bounded]) / 2.0
-            deterministic = np.where(
-                np.isfinite(lower) & ~np.isfinite(upper),
-                np.maximum(deterministic, lower),
-                deterministic,
-            )
-            deterministic = np.where(
-                ~np.isfinite(lower) & np.isfinite(upper),
-                np.minimum(deterministic, upper),
-                deterministic,
-            )
-            deterministic = _project_variable_value(variable, deterministic)
-        specifications.append((variable, deterministic, lower, upper, bounded))
+            lower, upper = _variable_bounds(variable)
+            if np.all(np.isfinite(lower)) and np.all(np.isfinite(upper)):
+                specifications.append((variable, None, lower, upper))
+            else:
+                missing.append(variable.name())
+    if missing:
+        names = ", ".join(missing)
+        raise InitializationError(
+            "Random best-of initialization requires .value, finite "
+            ".sample_bounds, or finite native bounds for variables: "
+            f"{names}."
+        )
 
-    deterministic_sample = {variable: deterministic.copy() for variable, deterministic, _, _, _ in specifications}
-    samples: list[dict[cp.Variable, NDArray[np.float64]]] = [deterministic_sample]
-    for _ in range(1, starts):
-        sample: dict[cp.Variable, NDArray[np.float64]] = {}
-        for variable, deterministic, lower, upper, bounded in specifications:
-            value = deterministic.copy()
-            if np.any(bounded):
-                value[bounded] = rng.uniform(lower[bounded], upper[bounded])
+    samples: list[dict[cp.Variable, NDArray[np.float64]]] = []
+    for _ in range(best_of):
+        sample = {}
+        for variable, fixed, lower, upper in specifications:
+            if fixed is not None:
+                value = fixed.copy()
+            else:
+                assert lower is not None and upper is not None
+                value = np.asarray(
+                    rng.uniform(lower, upper),
+                    dtype=float,
+                ).reshape(variable.shape, order="F")
                 value = _project_variable_value(variable, value)
             sample[variable] = value
         samples.append(sample)
-    return _deduplicate_starts(samples)
+    return tuple(samples)
+
+
+def _validated_sample_bounds(
+    variable: cp.Variable,
+    sample_bounds: Any,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    try:
+        lower_value, upper_value = sample_bounds
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"sample_bounds for variable {variable.name()!r} must be a (lower, upper) pair.") from error
+    if np.iscomplexobj(lower_value) or np.iscomplexobj(upper_value):
+        raise ValueError(f"sample_bounds for variable {variable.name()!r} must be real.")
+    try:
+        lower = np.broadcast_to(
+            np.asarray(lower_value, dtype=float),
+            variable.shape,
+        ).copy()
+        upper = np.broadcast_to(
+            np.asarray(upper_value, dtype=float),
+            variable.shape,
+        ).copy()
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"sample_bounds for variable {variable.name()!r} cannot be broadcast to shape {variable.shape}."
+        ) from error
+    if not np.all(np.isfinite(lower)) or not np.all(np.isfinite(upper)):
+        raise ValueError(f"sample_bounds for variable {variable.name()!r} must be finite.")
+    if np.any(lower > upper):
+        raise ValueError(
+            f"sample_bounds for variable {variable.name()!r} have lower entries greater than upper entries."
+        )
+    return lower, upper
+
+
+def _sync_linked_parameters(model: BilevelProblem) -> None:
+    for parameter, variable in model._parameter_links.items():
+        if variable.value is None:
+            raise InitializationError(f"Linked upper variable {variable.name()!r} has no value.")
+        parameter.value = np.asarray(variable.value, dtype=float)
 
 
 def _project_upper_start(
@@ -727,20 +1034,6 @@ def _project_variable_value(
     return _numeric_value(projected, variable.shape)
 
 
-def _deduplicate_starts(
-    samples: list[Mapping[cp.Variable, ArrayLike]],
-) -> tuple[dict[cp.Variable, NDArray[np.float64]], ...]:
-    unique: list[dict[cp.Variable, NDArray[np.float64]]] = []
-    keys: set[tuple[tuple[int, bytes], ...]] = set()
-    for sample in samples:
-        normalized = {variable: _numeric_value(value, variable.shape) for variable, value in sample.items()}
-        key = tuple((variable.id, np.ascontiguousarray(value).tobytes()) for variable, value in normalized.items())
-        if key not in keys:
-            keys.add(key)
-            unique.append(normalized)
-    return tuple(unique)
-
-
 def _epsilon_schedule(initial: float, target: float, contraction: float):
     epsilon = initial
     yield epsilon
@@ -783,7 +1076,11 @@ def _automatic_initialization_error(
 ) -> InitializationError:
     variables = variables_without_values or model.upper_variables
     names = ", ".join(variable.name() for variable in variables)
-    error = InitializationError(f"Automatic initialization failed. Please initialize variables: {names}.")
+    if names:
+        message = f"Automatic initialization failed. Please initialize variables: {names}."
+    else:
+        message = "Automatic initialization failed."
+    error = InitializationError(message)
     if details:
         error.add_note(f"Initialization details: {details}")
     return error
@@ -793,8 +1090,10 @@ def _result(
     model: BilevelProblem,
     status: str,
     iterations: list[IterationRecord],
-    starts: list[StartRecord],
+    runs: list[RunRecord],
     *,
+    selected_run_index: int,
+    objective: float | None,
     message: str | None,
     final_record: IterationRecord | None = None,
 ) -> BilevelResult:
@@ -804,9 +1103,6 @@ def _result(
         for variable in model.source_variables
         if variable.value is not None
     }
-    objective = model.outer_objective.value
-    if objective is not None and not np.isfinite(objective):
-        objective = None
     return BilevelResult(
         status=status,
         objective=objective,
@@ -815,7 +1111,8 @@ def _result(
         slack=lifted.slack.value,
         dual=lifted.dual.value,
         iterations=tuple(iterations),
-        starts=tuple(starts),
+        runs=tuple(runs),
+        selected_run_index=selected_run_index,
         final_iteration=final_record,
         message=message,
         certified=False,
@@ -844,7 +1141,30 @@ def _restored_record(
         objective=objective,
         residuals=residuals,
         solver_name=str(solver),
-        message="Diagnostics recomputed from the restored accepted point.",
+        message=None,
+    )
+
+
+def _diagnostic_failure_record(
+    model: BilevelProblem,
+    epsilon: float,
+    solver: str,
+    error: Exception,
+) -> IterationRecord:
+    """Fail closed when the restored point cannot be diagnosed independently."""
+
+    try:
+        value = model.outer_objective.value
+        objective = None if value is None or not np.isfinite(value) else float(value)
+    except Exception:
+        objective = None
+    return IterationRecord(
+        epsilon=epsilon,
+        status="residual_check_failed",
+        objective=objective,
+        residuals=_infinite_residuals(),
+        solver_name=str(solver),
+        message=f"Could not recompute restored-point diagnostics: {type(error).__name__}: {error}",
     )
 
 
@@ -910,4 +1230,4 @@ def _infinite_residuals() -> Residuals:
     )
 
 
-__all__ = ["SolveSettings", "compute_residuals", "sample_upper_starts", "solve_bilevel"]
+__all__ = ["SolveSettings", "compute_residuals", "solve_bilevel"]

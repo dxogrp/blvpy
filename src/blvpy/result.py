@@ -213,13 +213,20 @@ class IterationRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class StartRecord:
-    """Outcome of one initialization/restoration attempt."""
+class RunRecord:
+    """Outcome and complete continuation history for one solve run.
+
+    ``initial_values`` contains the upper-variable point after any projection
+    performed during initialization. Its arrays are copied and made read-only
+    so later runs cannot change the recorded starting point.
+    """
 
     index: int
+    initial_values: Mapping[Any, ArrayLike]
     status: str
     objective: float | None = None
-    residuals: Residuals | None = None
+    iterations: tuple[IterationRecord, ...] = ()
+    final_iteration: IterationRecord | None = None
     message: str | None = None
 
     def __post_init__(self) -> None:
@@ -231,8 +238,68 @@ class StartRecord:
         _status(self.status)
         if self.objective is not None:
             object.__setattr__(self, "objective", _real_float(self.objective, "objective"))
-        if self.residuals is not None and not isinstance(self.residuals, Residuals):
-            raise ValueError("residuals must be a Residuals instance or None.")
+        if not isinstance(self.initial_values, Mapping):
+            raise ValueError("initial_values must be a mapping.")
+        initial_values = {
+            key: _snapshot(value, f"initial_values[{key!r}]") for key, value in self.initial_values.items()
+        }
+        object.__setattr__(self, "initial_values", MappingProxyType(initial_values))
+        try:
+            iterations = tuple(self.iterations)
+        except TypeError as error:
+            raise ValueError("iterations must be iterable.") from error
+        if not all(isinstance(record, IterationRecord) for record in iterations):
+            raise ValueError("Every iteration must be an IterationRecord.")
+        object.__setattr__(self, "iterations", iterations)
+        final_iteration = self.final_iteration
+        if final_iteration is not None and not isinstance(final_iteration, IterationRecord):
+            raise ValueError("final_iteration must be an IterationRecord or None.")
+        if final_iteration is None and iterations:
+            final_iteration = iterations[-1]
+        object.__setattr__(self, "final_iteration", final_iteration)
+
+    @property
+    def epsilon_history(self) -> tuple[float, ...]:
+        """Successful tolerances in decreasing accepted order."""
+
+        return _accepted_epsilon_history(self.iterations)
+
+    @property
+    def attempted_epsilon_history(self) -> tuple[float, ...]:
+        """All attempted tolerances, including failures and retries."""
+
+        return tuple(record.epsilon for record in self.iterations)
+
+    @property
+    def solver_statuses(self) -> tuple[str, ...]:
+        """Solver statuses in continuation order."""
+
+        return tuple(record.status for record in self.iterations)
+
+    @property
+    def residuals(self) -> Residuals | None:
+        """Residuals at this run's returned point."""
+
+        return self.final_iteration.residuals if self.final_iteration is not None else None
+
+    @property
+    def complementarity(self) -> float | None:
+        """Complementarity at this run's returned point."""
+
+        residuals = self.residuals
+        return None if residuals is None else residuals.complementarity
+
+    @property
+    def final_epsilon(self) -> float | None:
+        """Continuation tolerance at this run's returned point."""
+
+        return self.final_iteration.epsilon if self.final_iteration is not None else None
+
+    @property
+    def succeeded(self) -> bool:
+        """Whether this run's terminal status denotes success."""
+
+        return self.status.lower() in _SUCCESS_STATUSES
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,7 +319,8 @@ class BilevelResult:
     slack: ArrayLike | None = None
     dual: ArrayLike | None = None
     iterations: tuple[IterationRecord, ...] = ()
-    starts: tuple[StartRecord, ...] = ()
+    runs: tuple[RunRecord, ...] = ()
+    selected_run_index: int | None = None
     final_iteration: IterationRecord | None = None
     message: str | None = None
     certified: bool = False
@@ -272,15 +340,30 @@ class BilevelResult:
 
         try:
             iterations = tuple(self.iterations)
-            starts = tuple(self.starts)
+            runs = tuple(self.runs)
         except TypeError as error:
-            raise ValueError("iterations and starts must be iterable.") from error
+            raise ValueError("iterations and runs must be iterable.") from error
         if not all(isinstance(record, IterationRecord) for record in iterations):
             raise ValueError("Every iteration must be an IterationRecord.")
-        if not all(isinstance(record, StartRecord) for record in starts):
-            raise ValueError("Every start must be a StartRecord.")
+        if not all(isinstance(record, RunRecord) for record in runs):
+            raise ValueError("Every run must be a RunRecord.")
+        run_indices = tuple(record.index for record in runs)
+        if len(set(run_indices)) != len(run_indices):
+            raise ValueError("Run indices must be unique.")
         object.__setattr__(self, "iterations", iterations)
-        object.__setattr__(self, "starts", starts)
+        object.__setattr__(self, "runs", runs)
+        selected_run_index = self.selected_run_index
+        if selected_run_index is not None:
+            if isinstance(selected_run_index, (bool, np.bool_)) or not isinstance(
+                selected_run_index, (int, np.integer)
+            ):
+                raise ValueError("selected_run_index must be a nonnegative integer or None.")
+            selected_run_index = int(selected_run_index)
+            if selected_run_index < 0:
+                raise ValueError("selected_run_index must be a nonnegative integer or None.")
+            if selected_run_index not in run_indices:
+                raise ValueError("selected_run_index must identify one of the recorded runs.")
+        object.__setattr__(self, "selected_run_index", selected_run_index)
         final_iteration = self.final_iteration
         if final_iteration is not None and not isinstance(final_iteration, IterationRecord):
             raise ValueError("final_iteration must be an IterationRecord or None.")
@@ -295,13 +378,7 @@ class BilevelResult:
     def epsilon_history(self) -> tuple[float, ...]:
         """Successful continuation tolerances in decreasing accepted order."""
 
-        accepted: list[float] = []
-        for record in self.iterations:
-            if record.status.lower() not in _SUCCESS_STATUSES:
-                continue
-            if not accepted or record.epsilon < accepted[-1]:
-                accepted.append(record.epsilon)
-        return tuple(accepted)
+        return _accepted_epsilon_history(self.iterations)
 
     @property
     def attempted_epsilon_history(self) -> tuple[float, ...]:
@@ -339,6 +416,30 @@ class BilevelResult:
         """Whether the public status denotes a solver success."""
 
         return self.status.lower() in _SUCCESS_STATUSES
+
+    @property
+    def selected_run(self) -> RunRecord | None:
+        """The run whose state is exposed by the top-level result fields."""
+
+        if self.selected_run_index is None:
+            return None
+        return next(record for record in self.runs if record.index == self.selected_run_index)
+
+    @property
+    def all_objectives(self) -> tuple[float | None, ...]:
+        """Terminal objectives for all attempted runs, in recorded order."""
+
+        return tuple(record.objective for record in self.runs)
+
+
+def _accepted_epsilon_history(iterations: tuple[IterationRecord, ...]) -> tuple[float, ...]:
+    accepted: list[float] = []
+    for record in iterations:
+        if record.status.lower() not in _SUCCESS_STATUSES:
+            continue
+        if not accepted or record.epsilon < accepted[-1]:
+            accepted.append(record.epsilon)
+    return tuple(accepted)
 
 
 def _status(value: object) -> None:

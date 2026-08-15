@@ -8,9 +8,11 @@ import pytest
 
 import blvpy.continuation as continuation
 from blvpy import BilevelProblem, LowerProblem
-from blvpy.continuation import compute_residuals, sample_upper_starts
+from blvpy.continuation import compute_residuals
 from blvpy.errors import InitializationError, SolverUnavailableError
 from blvpy.result import IterationRecord, Residuals
+
+_ZERO_RESIDUALS = Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 
 def _quadratic_bilevel(*, bounded: bool = True):
@@ -27,34 +29,51 @@ def _quadratic_bilevel(*, bounded: bool = True):
     return model, x, y, parameter
 
 
-def test_bounded_upper_sampling_is_reproducible_and_uses_explicit_first() -> None:
+def _mock_compatible_state(
+    model: BilevelProblem,
+    upper: cp.Variable,
+    lower: cp.Variable,
+) -> None:
+    lower.value = float(upper.value)
+    lifted = model.lifted_problem
+    lifted.primal.value = np.zeros(lifted.primal.size)
+    lifted.slack.value = np.zeros(lifted.slack.size)
+    lifted.dual.value = np.zeros(lifted.dual.size)
+
+
+def test_deterministic_initialization_preserves_explicit_value() -> None:
     model, x, _, _ = _quadratic_bilevel()
     x.value = 0.75
 
-    first = sample_upper_starts(model, 5, np.random.default_rng(19))
-    second = sample_upper_starts(model, 5, np.random.default_rng(19))
+    samples = continuation._generate_upper_initializations(
+        model,
+        None,
+        np.random.default_rng(19),
+    )
+    other_seed = continuation._generate_upper_initializations(
+        model,
+        None,
+        np.random.default_rng(91),
+    )
 
-    assert first[0][x] == pytest.approx(0.75)
-    for left, right in zip(first, second):
-        np.testing.assert_array_equal(left[x], right[x])
-        assert -2.0 <= float(left[x]) <= 2.0
-    assert any(float(sample[x]) != pytest.approx(0.75) for sample in first[1:])
+    assert len(samples) == 1
+    assert float(samples[0][x]) == pytest.approx(0.75)
+    np.testing.assert_array_equal(samples[0][x], other_seed[0][x])
 
 
-def test_unbounded_upper_defaults_to_zero_and_retains_explicit_value() -> None:
+def test_deterministic_unbounded_upper_defaults_to_zero() -> None:
     model, x, _, _ = _quadratic_bilevel(bounded=False)
 
-    automatic = sample_upper_starts(model, 3, np.random.default_rng(0))
+    automatic = continuation._generate_upper_initializations(
+        model,
+        None,
+        np.random.default_rng(0),
+    )
     assert len(automatic) == 1
     assert float(automatic[0][x]) == pytest.approx(0.0)
 
-    x.value = -3.25
-    repeated = sample_upper_starts(model, 3, np.random.default_rng(0))
-    assert len(repeated) == 1
-    assert float(repeated[0][x]) == pytest.approx(-3.25)
 
-
-def test_automatic_start_uses_midpoint_zero_and_one_sided_clipping() -> None:
+def test_deterministic_initialization_uses_midpoint_one_sided_interior_and_zero() -> None:
     x = cp.Variable(
         4,
         name="x",
@@ -67,43 +86,176 @@ def test_automatic_start_uses_midpoint_zero_and_one_sided_clipping() -> None:
     lower = LowerProblem(cp.Minimize(cp.square(y) + cp.sum_squares(x)), parameters=[x])
     model = BilevelProblem(cp.Minimize(cp.sum_squares(x) + cp.square(y)), lower)
 
-    starts = sample_upper_starts(model, 8, np.random.default_rng(4))
+    samples = continuation._generate_upper_initializations(
+        model,
+        None,
+        np.random.default_rng(4),
+    )
 
-    np.testing.assert_allclose(starts[0][x], np.array([-2.0, 2.0, -4.0, 0.0]))
-    values = np.vstack([sample[x] for sample in starts[1:]])
-    assert np.all(values[:, 0] >= -3.0)
-    assert np.all(values[:, 0] <= -1.0)
-    np.testing.assert_allclose(values[:, 1:], np.tile(np.array([2.0, -4.0, 0.0]), (len(values), 1)))
+    assert len(samples) == 1
+    np.testing.assert_allclose(samples[0][x], np.array([-2.0, 3.0, -5.0, 0.0]))
 
 
-def test_automatic_start_projects_through_variable_attributes() -> None:
+def test_deterministic_initialization_respects_one_sided_variable_domain() -> None:
     x = cp.Variable(2, name="x", nonneg=True)
     y = cp.Variable(name="y")
     lower = LowerProblem(cp.Minimize(cp.square(y) + cp.sum_squares(x)), parameters=[x])
     model = BilevelProblem(cp.Minimize(cp.sum_squares(x) + cp.square(y)), lower)
 
-    starts = sample_upper_starts(model, 3, np.random.default_rng(1))
+    initializations = continuation._generate_upper_initializations(
+        model,
+        None,
+        np.random.default_rng(1),
+    )
 
-    assert len(starts) == 1
-    np.testing.assert_array_equal(starts[0][x], np.zeros(2))
+    assert len(initializations) == 1
+    np.testing.assert_array_equal(initializations[0][x], np.ones(2))
 
 
-def test_sampling_tracks_bounds_per_variable_when_bound_types_are_mixed() -> None:
-    bounded = cp.Variable(name="bounded", bounds=[-2.0, -1.0])
-    explicit_only = cp.Variable(name="explicit_only")
-    explicit_only.value = 7.5
+def test_best_of_sampling_precedence_and_exact_run_count() -> None:
+    sampled = cp.Variable(name="sampled", bounds=[-2.0, 2.0])
+    sampled.value = 0.75
+    sampled.sample_bounds = (-0.5, 0.5)
+    native = cp.Variable(name="native", bounds=[-2.0, -1.0])
+    fixed = cp.Variable(name="fixed")
+    fixed.value = 7.5
     source = cp.Variable(name="source")
-    lower = LowerProblem(cp.Minimize(cp.square(source - bounded)), parameters=[bounded])
+    lower = LowerProblem(cp.Minimize(cp.square(source - sampled)), parameters=[sampled])
     model = BilevelProblem(
-        cp.Minimize(cp.square(bounded) + cp.square(explicit_only) + cp.square(source)),
+        cp.Minimize(cp.square(sampled) + cp.square(native) + cp.square(fixed) + cp.square(source)),
         lower,
     )
 
-    samples = sample_upper_starts(model, 8, np.random.default_rng(18))
+    samples = continuation._generate_upper_initializations(
+        model,
+        8,
+        np.random.default_rng(18),
+    )
 
-    assert float(samples[0][bounded]) == pytest.approx(-1.5)
-    assert all(-2.0 <= float(sample[bounded]) <= -1.0 for sample in samples)
-    assert [float(sample[explicit_only]) for sample in samples] == pytest.approx([7.5] * 8)
+    assert len(samples) == 8
+    assert all(-0.5 <= float(sample[sampled]) <= 0.5 for sample in samples)
+    assert any(float(sample[sampled]) != pytest.approx(0.75) for sample in samples)
+    assert all(-2.0 <= float(sample[native]) <= -1.0 for sample in samples)
+    assert [float(sample[fixed]) for sample in samples] == pytest.approx([7.5] * 8)
+
+
+def test_best_of_does_not_deduplicate_fixed_explicit_values() -> None:
+    model, x, _, _ = _quadratic_bilevel(bounded=False)
+    x.value = -3.25
+
+    samples = continuation._generate_upper_initializations(
+        model,
+        4,
+        np.random.default_rng(9),
+    )
+
+    assert len(samples) == 4
+    assert [float(sample[x]) for sample in samples] == pytest.approx([-3.25] * 4)
+
+
+def test_explicit_best_of_one_uses_random_initialization() -> None:
+    model, x, _, _ = _quadratic_bilevel()
+    x.value = 0.75
+    x.sample_bounds = (-1.0, 1.0)
+    expected = np.random.default_rng(27).uniform(-1.0, 1.0)
+
+    samples = continuation._generate_upper_initializations(
+        model,
+        1,
+        np.random.default_rng(27),
+    )
+
+    assert len(samples) == 1
+    assert float(samples[0][x]) == pytest.approx(expected)
+    assert float(samples[0][x]) != pytest.approx(0.75)
+
+
+def test_seeded_best_of_is_reproducible_without_using_global_rng() -> None:
+    model, x, _, _ = _quadratic_bilevel()
+    state = np.random.get_state()
+    try:
+        np.random.seed(812)
+        expected_global_draw = np.random.random()
+        np.random.seed(812)
+        first = continuation._generate_upper_initializations(
+            model,
+            5,
+            np.random.default_rng(19),
+        )
+        actual_global_draw = np.random.random()
+        second = continuation._generate_upper_initializations(
+            model,
+            5,
+            np.random.default_rng(19),
+        )
+    finally:
+        np.random.set_state(state)
+
+    assert actual_global_draw == pytest.approx(expected_global_draw)
+    for left, right in zip(first, second, strict=True):
+        np.testing.assert_array_equal(left[x], right[x])
+
+
+def test_best_of_broadcasts_sampling_bounds_to_matrix_shape() -> None:
+    x = cp.Variable((2, 2), name="x")
+    x.sample_bounds = (-2.0, np.array([[0.0, 1.0], [2.0, 3.0]]))
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y) + cp.sum_squares(x)), parameters=[x])
+    model = BilevelProblem(cp.Minimize(cp.sum_squares(x) + cp.square(y)), lower)
+
+    samples = continuation._generate_upper_initializations(
+        model,
+        6,
+        np.random.default_rng(41),
+    )
+
+    assert len(samples) == 6
+    for sample in samples:
+        assert sample[x].shape == (2, 2)
+        assert np.all(sample[x] >= -2.0)
+        assert np.all(sample[x] <= np.array([[0.0, 1.0], [2.0, 3.0]]))
+
+
+@pytest.mark.parametrize(
+    "sample_bounds",
+    [
+        (0.0, np.inf),
+        (1.0, -1.0),
+        (np.zeros(3), np.ones(3)),
+        (0.0 + 1.0j, 1.0),
+    ],
+)
+def test_best_of_rejects_invalid_sample_bounds(sample_bounds) -> None:
+    model, x, _, _ = _quadratic_bilevel(bounded=False)
+    x.sample_bounds = sample_bounds
+
+    with pytest.raises(ValueError, match="sample_bounds.*x"):
+        continuation._generate_upper_initializations(
+            model,
+            2,
+            np.random.default_rng(0),
+        )
+
+
+def test_best_of_names_upper_variables_without_randomization_data() -> None:
+    model, _, _, _ = _quadratic_bilevel(bounded=False)
+
+    with pytest.raises(
+        InitializationError,
+        match=r"requires .*value.*sample_bounds.*finite.*x",
+    ):
+        continuation._generate_upper_initializations(
+            model,
+            2,
+            np.random.default_rng(0),
+        )
+
+
+def test_sampling_bounds_are_not_copied_to_generated_lower_parameters() -> None:
+    model, x, _, parameter = _quadratic_bilevel(bounded=False)
+    x.sample_bounds = (-4.0, 4.0)
+
+    assert getattr(parameter, "sample_bounds", None) is None
 
 
 def test_deterministic_start_projects_onto_dcp_upper_constraints() -> None:
@@ -115,7 +267,11 @@ def test_deterministic_start_projects_onto_dcp_upper_constraints() -> None:
         lower,
         outer_constraints=[x >= 2.0],
     )
-    sample = sample_upper_starts(model, 1, np.random.default_rng(0))[0]
+    sample = continuation._generate_upper_initializations(
+        model,
+        None,
+        np.random.default_rng(0),
+    )[0]
 
     projected = continuation._project_upper_start(model, sample, cp.CLARABEL, {}, False)
 
@@ -134,7 +290,7 @@ def test_failed_automatic_initialization_requests_named_values(monkeypatch) -> N
         InitializationError,
         match=r"^Automatic initialization failed\. Please initialize variables: x\.",
     ):
-        model.solve(starts=1, solver="MOCK_NLP")
+        model.solve(solver="MOCK_NLP")
 
 
 def test_failed_supplied_initialization_names_all_upper_variables(monkeypatch) -> None:
@@ -150,7 +306,7 @@ def test_failed_supplied_initialization_names_all_upper_variables(monkeypatch) -
         InitializationError,
         match=r"^Automatic initialization failed\. Please initialize variables: x\.",
     ):
-        model.solve(starts=1, solver="MOCK_NLP")
+        model.solve(solver="MOCK_NLP")
 
 
 def test_default_solve_reports_actionable_missing_ipopt_error(monkeypatch) -> None:
@@ -175,8 +331,420 @@ def test_solve_argument_validation_precedes_numerical_backends() -> None:
         model.solve(epsilon_initial=1e-3, epsilon_target=1e-2)
     with pytest.raises(ValueError, match="contraction"):
         model.solve(contraction=1.0)
-    with pytest.raises(ValueError, match="starts"):
-        model.solve(starts=0)
+
+
+@pytest.mark.parametrize("best_of", [0, -1, True, 1.5, "2"])
+def test_best_of_requires_a_positive_integer(best_of) -> None:
+    model, _, _, _ = _quadratic_bilevel()
+
+    with pytest.raises(ValueError, match="best_of"):
+        model.solve(best_of=best_of)
+
+
+def test_public_best_of_one_uses_one_random_run(monkeypatch) -> None:
+    model, x, y, _ = _quadratic_bilevel(bounded=False)
+    x.value = 0.75
+    x.sample_bounds = (-1.0, 1.0)
+    expected = np.random.default_rng(27).uniform(-1.0, 1.0)
+
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(continuation, "compute_residuals", lambda *args, **kwargs: _ZERO_RESIDUALS)
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda current, *args, **kwargs: _mock_compatible_state(current, x, y),
+    )
+    monkeypatch.setattr(
+        continuation,
+        "_solve_one",
+        lambda current, epsilon, solver, options, solver_verbose: IterationRecord(
+            epsilon,
+            cp.OPTIMAL,
+            float(current.outer_objective.value),
+            _ZERO_RESIDUALS,
+        ),
+    )
+
+    result = model.solve(
+        epsilon_initial=1e-2,
+        epsilon_target=1e-2,
+        best_of=1,
+        seed=27,
+        solver="MOCK_NLP",
+        restoration=False,
+        verbose=False,
+    )
+
+    assert len(result.runs) == 1
+    assert float(result.runs[0].initial_values[x]) == pytest.approx(expected)
+    assert float(result.runs[0].initial_values[x]) != pytest.approx(0.75)
+
+
+def test_equal_final_objectives_select_lowest_run_index(monkeypatch) -> None:
+    x = cp.Variable(name="x", bounds=[-2.0, 2.0])
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    model = BilevelProblem(cp.Minimize(0.0 * x + 0.0 * y), lower)
+
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: ({x: np.array(-1.0)}, {x: np.array(1.0)}),
+    )
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(continuation, "compute_residuals", lambda *args, **kwargs: _ZERO_RESIDUALS)
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda current, *args, **kwargs: _mock_compatible_state(current, x, y),
+    )
+    monkeypatch.setattr(
+        continuation,
+        "_solve_one",
+        lambda current, epsilon, solver, options, solver_verbose: IterationRecord(
+            epsilon,
+            cp.OPTIMAL,
+            0.0,
+            _ZERO_RESIDUALS,
+        ),
+    )
+
+    result = model.solve(
+        epsilon_initial=1e-2,
+        epsilon_target=1e-2,
+        best_of=2,
+        solver="MOCK_NLP",
+        restoration=False,
+        verbose=False,
+    )
+
+    assert result.all_objectives == pytest.approx((0.0, 0.0))
+    assert result.selected_run_index == 0
+    assert float(x.value) == pytest.approx(-1.0)
+
+
+def test_best_of_completes_every_run_and_selects_by_target_objective(
+    monkeypatch,
+) -> None:
+    x = cp.Variable(name="x", bounds=[-2.0, 2.0])
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    model = BilevelProblem(cp.Minimize(cp.square(x - 2.0) + 0.0 * y), lower)
+    calls: list[tuple[int, float]] = []
+
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: ({x: np.array(-1.0)}, {x: np.array(1.0)}),
+    )
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        continuation,
+        "compute_residuals",
+        lambda *args, **kwargs: _ZERO_RESIDUALS,
+    )
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda current, *args, **kwargs: _mock_compatible_state(current, x, y),
+    )
+
+    def fake_solve(current, epsilon, solver, options, solver_verbose):
+        branch = -1 if float(x.value) < 0.0 else 1
+        calls.append((branch, epsilon))
+        initial_objective = 0.0 if branch < 0 else 10.0
+        objective = initial_objective if np.isclose(epsilon, 1e-1) else float(current.outer_objective.value)
+        return IterationRecord(
+            epsilon,
+            cp.OPTIMAL,
+            objective,
+            _ZERO_RESIDUALS,
+            solver_name=str(solver),
+        )
+
+    monkeypatch.setattr(continuation, "_solve_one", fake_solve)
+
+    result = model.solve(
+        epsilon_initial=1e-1,
+        epsilon_target=1e-2,
+        best_of=2,
+        solver="MOCK_NLP",
+        restoration=False,
+        verbose=False,
+    )
+
+    assert calls == pytest.approx(
+        [(-1, 1e-1), (1, 1e-1), (-1, 1e-2), (1, 1e-2)],
+    )
+    assert len(result.runs) == 2
+    assert all(run.epsilon_history == pytest.approx((1e-1, 1e-2)) for run in result.runs)
+    assert result.runs[0].iterations[0].objective == pytest.approx(0.0)
+    assert result.runs[1].iterations[0].objective == pytest.approx(10.0)
+    assert result.runs[0].objective == pytest.approx(9.0)
+    assert result.runs[1].objective == pytest.approx(1.0)
+    assert result.selected_run_index == 1
+    assert result.selected_run is result.runs[1]
+    assert float(x.value) == pytest.approx(1.0)
+    assert float(result.variable_values[x]) == pytest.approx(1.0)
+    assert result.objective == pytest.approx(1.0)
+    assert result.iterations == result.selected_run.iterations
+
+
+def test_failed_best_of_run_does_not_contaminate_later_run(monkeypatch) -> None:
+    model, x, y, parameter = _quadratic_bilevel()
+    attempted: list[float] = []
+
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: ({x: np.array(-1.0)}, {x: np.array(1.0)}),
+    )
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        continuation,
+        "compute_residuals",
+        lambda *args, **kwargs: _ZERO_RESIDUALS,
+    )
+
+    def initialize(current, *args, **kwargs) -> None:
+        attempted.append(float(x.value))
+        parameter.value = x.value
+        if float(x.value) < 0.0:
+            y.value = -99.0
+            parameter.value = -99.0
+            raise InitializationError("synthetic first-run failure")
+        assert float(parameter.value) == pytest.approx(1.0)
+        _mock_compatible_state(current, x, y)
+
+    monkeypatch.setattr(continuation, "_initialize_lower", initialize)
+    monkeypatch.setattr(
+        continuation,
+        "_solve_one",
+        lambda current, epsilon, solver, options, solver_verbose: IterationRecord(
+            epsilon,
+            cp.OPTIMAL,
+            float(current.outer_objective.value),
+            _ZERO_RESIDUALS,
+        ),
+    )
+
+    result = model.solve(
+        epsilon_initial=1e-2,
+        epsilon_target=1e-2,
+        best_of=2,
+        solver="MOCK_NLP",
+        restoration=False,
+        verbose=False,
+    )
+
+    assert attempted == pytest.approx([-1.0, 1.0])
+    assert [run.status for run in result.runs] == ["initialization_failed", cp.OPTIMAL]
+    assert result.runs[0].iterations == ()
+    assert result.selected_run_index == 1
+    assert float(x.value) == pytest.approx(1.0)
+    assert float(parameter.value) == pytest.approx(1.0)
+
+
+def test_every_random_initialization_is_projected_and_recorded(monkeypatch) -> None:
+    x = cp.Variable(name="x")
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    model = BilevelProblem(
+        cp.Minimize(cp.square(x) + cp.square(y)),
+        lower,
+        outer_constraints=[x >= 0.0],
+    )
+
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: ({x: np.array(-1.0)}, {x: np.array(-2.0)}),
+    )
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        continuation,
+        "compute_residuals",
+        lambda *args, **kwargs: _ZERO_RESIDUALS,
+    )
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda current, *args, **kwargs: _mock_compatible_state(current, x, y),
+    )
+    monkeypatch.setattr(
+        continuation,
+        "_solve_one",
+        lambda current, epsilon, solver, options, solver_verbose: IterationRecord(
+            epsilon,
+            cp.OPTIMAL,
+            float(current.outer_objective.value),
+            _ZERO_RESIDUALS,
+        ),
+    )
+
+    result = model.solve(
+        epsilon_initial=1e-2,
+        epsilon_target=1e-2,
+        best_of=2,
+        solver="MOCK_NLP",
+        restoration=False,
+        verbose=False,
+    )
+
+    assert len(result.runs) == 2
+    assert [float(run.initial_values[x]) for run in result.runs] == pytest.approx(
+        [0.0, 0.0],
+        abs=1e-7,
+    )
+
+
+def test_all_best_of_initialization_failures_are_aggregated(monkeypatch) -> None:
+    model, x, _, _ = _quadratic_bilevel()
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: ({x: np.array(-1.0)}, {x: np.array(1.0)}),
+    )
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            InitializationError("synthetic initialization failure"),
+        ),
+    )
+
+    with pytest.raises(
+        InitializationError,
+        match="All best-of runs failed at the initial epsilon",
+    ) as caught:
+        model.solve(best_of=2, solver="MOCK_NLP", verbose=False)
+
+    notes = "\n".join(getattr(caught.value, "__notes__", ()))
+    assert "run 1" in notes
+    assert "run 2" in notes
+    assert "synthetic initialization failure" in notes
+
+
+def test_partial_best_of_selects_smallest_attained_epsilon(monkeypatch) -> None:
+    model, x, y, _ = _quadratic_bilevel()
+    calls: list[tuple[int, float]] = []
+
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: ({x: np.array(-1.0)}, {x: np.array(1.0)}),
+    )
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        continuation,
+        "compute_residuals",
+        lambda *args, **kwargs: _ZERO_RESIDUALS,
+    )
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda current, *args, **kwargs: _mock_compatible_state(current, x, y),
+    )
+
+    def fake_solve(current, epsilon, solver, options, solver_verbose):
+        branch = -1 if float(x.value) < 0.0 else 1
+        calls.append((branch, epsilon))
+        accepted = np.isclose(epsilon, 1e-1) or (branch < 0 and np.isclose(epsilon, 1e-2))
+        return IterationRecord(
+            epsilon,
+            cp.OPTIMAL if accepted else "solver_error",
+            float(current.outer_objective.value) if accepted else None,
+            _ZERO_RESIDUALS,
+        )
+
+    monkeypatch.setattr(continuation, "_solve_one", fake_solve)
+
+    result = model.solve(
+        epsilon_initial=1e-1,
+        epsilon_target=1e-3,
+        contraction=0.1,
+        best_of=2,
+        solver="MOCK_NLP",
+        restoration=False,
+        max_retries=0,
+        verbose=False,
+    )
+
+    assert result.status == "continuation_failed"
+    assert [branch for branch, _ in calls] == [-1, 1, -1, -1, 1]
+    assert [epsilon for _, epsilon in calls] == pytest.approx(
+        [1e-1, 1e-1, 1e-2, 1e-3, 1e-2],
+    )
+    assert [run.final_epsilon for run in result.runs] == pytest.approx([1e-2, 1e-1])
+    assert result.selected_run_index == 0
+    assert result.final_epsilon == pytest.approx(1e-2)
+    assert float(x.value) == pytest.approx(-1.0)
+
+
+def test_best_of_retry_schedule_is_local_to_each_run(monkeypatch) -> None:
+    model, x, y, _ = _quadratic_bilevel()
+    calls: list[tuple[int, float]] = []
+    failed_negative_target = False
+
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: ({x: np.array(-1.0)}, {x: np.array(1.0)}),
+    )
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        continuation,
+        "compute_residuals",
+        lambda *args, **kwargs: _ZERO_RESIDUALS,
+    )
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda current, *args, **kwargs: _mock_compatible_state(current, x, y),
+    )
+
+    def fake_solve(current, epsilon, solver, options, solver_verbose):
+        nonlocal failed_negative_target
+        branch = -1 if float(x.value) < 0.0 else 1
+        calls.append((branch, epsilon))
+        fail = branch < 0 and np.isclose(epsilon, 1e-2) and not failed_negative_target
+        if fail:
+            failed_negative_target = True
+        return IterationRecord(
+            epsilon,
+            "solver_error" if fail else cp.OPTIMAL,
+            None if fail else float(current.outer_objective.value),
+            _ZERO_RESIDUALS,
+        )
+
+    monkeypatch.setattr(continuation, "_solve_one", fake_solve)
+
+    result = model.solve(
+        epsilon_initial=1e-1,
+        epsilon_target=1e-2,
+        best_of=2,
+        solver="MOCK_NLP",
+        restoration=False,
+        max_retries=2,
+        verbose=False,
+    )
+
+    inserted = np.sqrt(1e-3)
+    assert calls == pytest.approx(
+        [
+            (-1, 1e-1),
+            (1, 1e-1),
+            (-1, 1e-2),
+            (-1, inserted),
+            (-1, 1e-2),
+            (1, 1e-2),
+        ],
+    )
+    assert all(run.succeeded for run in result.runs)
+    assert result.runs[0].attempted_epsilon_history == pytest.approx(
+        (1e-1, 1e-2, inserted, 1e-2),
+    )
+    assert result.runs[1].attempted_epsilon_history == pytest.approx((1e-1, 1e-2))
 
 
 def test_compute_residuals_matches_independent_canonical_calculation() -> None:
@@ -296,7 +864,6 @@ def test_failed_step_inserts_intermediate_epsilon_then_retries(monkeypatch) -> N
     result = model.solve(
         epsilon_initial=1e-1,
         epsilon_target=1e-2,
-        starts=1,
         seed=7,
         solver="MOCK_NLP",
         restoration=False,
@@ -314,7 +881,7 @@ def test_failed_step_inserts_intermediate_epsilon_then_retries(monkeypatch) -> N
     assert result.epsilon_history == pytest.approx((1e-1, np.sqrt(1e-3), 1e-2))
     assert result.attempted_epsilon_history == pytest.approx(tuple(calls))
     assert result.final_epsilon == pytest.approx(1e-2)
-    assert result.starts[0].status == cp.OPTIMAL
+    assert result.runs[0].status == cp.OPTIMAL
 
 
 def test_retry_budget_stops_repeated_bisection_and_returns_consistent_point(
@@ -346,7 +913,6 @@ def test_retry_budget_stops_repeated_bisection_and_returns_consistent_point(
     result = model.solve(
         epsilon_initial=1e-1,
         epsilon_target=1e-2,
-        starts=1,
         solver="MOCK_NLP",
         restoration=False,
         max_retries=2,

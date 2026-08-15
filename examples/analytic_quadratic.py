@@ -11,6 +11,9 @@ from blvpy import BilevelProblem, LowerProblem
 def main() -> None:
     x = cp.Variable(name="x")
     y = cp.Variable(name="y")
+    # A sampling-only range supports random local-search runs without adding a
+    # bound to the mathematical model.
+    x.sample_bounds = (-2.0, 2.0)
 
     # For each x, the unique lower solution is y = x. Substitution into the
     # upper objective gives (x - 1)^2 + (x + 1)^2, minimized by x = 0.
@@ -20,7 +23,7 @@ def main() -> None:
         lower_problem=lower,
     )
 
-    result = problem.solve()
+    result = problem.solve(best_of=5, seed=7)
     print(f"status: {result.status}")
     print(f"x: {x.value:.6f} (expected 0)")
     print(f"y: {y.value:.6f} (expected 0)")

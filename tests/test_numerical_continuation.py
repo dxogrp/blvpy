@@ -1,4 +1,4 @@
-"""Numerical coverage for restoration, multistart, and continuation failures."""
+"""Numerical coverage for restoration, best-of search, and continuation failures."""
 
 from __future__ import annotations
 
@@ -54,10 +54,22 @@ def test_fixed_lower_initialization_reports_real_clarabel_failure(
     model = BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), lower)
 
     with pytest.raises(InitializationError) as caught:
-        model.solve(starts=1)
+        model.solve()
 
     assert str(caught.value) == "Automatic initialization failed. Please initialize variables: x."
     assert f"status '{expected_status}'" in _notes(caught.value)
+
+
+def test_initialization_failure_without_upper_variables_has_clear_message() -> None:
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y)), [y >= 1.0, y <= 0.0])
+    model = BilevelProblem(cp.Minimize(cp.square(y)), lower)
+
+    with pytest.raises(InitializationError) as caught:
+        model.solve(verbose=False)
+
+    assert str(caught.value) == "Automatic initialization failed."
+    assert "status 'infeasible'" in _notes(caught.value)
 
 
 @pytest.mark.ipopt
@@ -91,7 +103,6 @@ def test_real_feasibility_restoration_reaches_active_upper_constraint(monkeypatc
     result = model.solve(
         epsilon_initial=1e-2,
         epsilon_target=1e-4,
-        starts=1,
         seed=23,
         solver_options=_IPOPT_OPTIONS,
     )
@@ -111,6 +122,7 @@ def _double_well_model() -> tuple[BilevelProblem, cp.Variable, cp.Variable]:
     x = cp.Variable(name="x", bounds=[-2.0, 2.0])
     y = cp.Variable(name="y")
     x.value = 1.0
+    x.sample_bounds = (-2.0, 2.0)
     lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
     outer = cp.Minimize(cp.square(cp.square(x) - 1.0) + 0.2 * x + 0.0 * y)
     return BilevelProblem(outer, lower), x, y
@@ -119,7 +131,7 @@ def _double_well_model() -> tuple[BilevelProblem, cp.Variable, cp.Variable]:
 def _solve_double_well(
     monkeypatch,
     *,
-    starts: int,
+    best_of: int | None,
     seed: int,
 ) -> tuple[BilevelResult, float, tuple[float, ...]]:
     model, x, _ = _double_well_model()
@@ -135,7 +147,7 @@ def _solve_double_well(
         result = model.solve(
             epsilon_initial=1e-3,
             epsilon_target=1e-3,
-            starts=starts,
+            best_of=best_of,
             seed=seed,
             solver_options=_IPOPT_OPTIONS,
         )
@@ -143,10 +155,10 @@ def _solve_double_well(
 
 
 @pytest.mark.ipopt
-def test_seeded_real_multistart_escapes_inferior_local_minimum(monkeypatch) -> None:
-    single, single_x, _ = _solve_double_well(monkeypatch, starts=1, seed=19)
-    first, first_x, first_starts = _solve_double_well(monkeypatch, starts=5, seed=19)
-    second, second_x, second_starts = _solve_double_well(monkeypatch, starts=5, seed=19)
+def test_seeded_real_best_of_escapes_inferior_local_minimum(monkeypatch) -> None:
+    single, single_x, _ = _solve_double_well(monkeypatch, best_of=None, seed=19)
+    first, first_x, first_initializations = _solve_double_well(monkeypatch, best_of=5, seed=19)
+    second, second_x, second_initializations = _solve_double_well(monkeypatch, best_of=5, seed=19)
 
     stationary = np.roots([4.0, 0.0, -4.0, 0.2])
     real_stationary = stationary[np.isclose(stationary.imag, 0.0)].real
@@ -161,13 +173,50 @@ def test_seeded_real_multistart_escapes_inferior_local_minimum(monkeypatch) -> N
     assert second_x == pytest.approx(expected_global, abs=2e-3)
     assert single.objective is not None and first.objective is not None
     assert single.objective - first.objective > 0.3
-    assert first_starts == pytest.approx(second_starts)
+    assert first_initializations == pytest.approx(second_initializations)
     assert first_x == pytest.approx(second_x, abs=2e-6)
     assert first.objective == pytest.approx(second.objective, abs=2e-6)
-    assert tuple(record.objective for record in first.starts) == pytest.approx(
-        tuple(record.objective for record in second.starts),
+    assert len(first.runs) == len(second.runs) == 5
+    assert tuple(record.objective for record in first.runs) == pytest.approx(
+        tuple(record.objective for record in second.runs),
         abs=2e-6,
     )
+    assert first.selected_run is not None
+    assert first.selected_run.objective == pytest.approx(first.objective, abs=2e-6)
+
+
+@pytest.mark.ipopt
+def test_best_of_selects_by_target_epsilon_after_branch_ranking_reverses() -> None:
+    x = cp.Variable(name="x", bounds=[-2.0, 2.0])
+    x.sample_bounds = (-1.5, 1.5)
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    model = BilevelProblem(
+        cp.Minimize(cp.square(cp.square(x) - 1.0) + 0.3 * x + 0.2 * cp.square(y - 1.0)),
+        lower,
+    )
+
+    result = model.solve(
+        epsilon_initial=1e-1,
+        epsilon_target=1e-4,
+        contraction=0.1,
+        best_of=2,
+        seed=17,
+        solver_options=_IPOPT_OPTIONS,
+    )
+
+    assert result.succeeded
+    assert len(result.runs) == 2
+    negative = next(run for run in result.runs if float(run.initial_values[x]) < 0.0)
+    positive = next(run for run in result.runs if float(run.initial_values[x]) > 0.0)
+    assert negative.succeeded and positive.succeeded
+    assert negative.final_epsilon == pytest.approx(1e-4)
+    assert positive.final_epsilon == pytest.approx(1e-4)
+    assert negative.iterations[0].objective < positive.iterations[0].objective
+    assert positive.objective < negative.objective
+    assert result.selected_run is positive
+    assert float(x.value) > 0.8
+    assert result.objective == pytest.approx(positive.objective, abs=1e-9)
 
 
 @pytest.mark.ipopt
@@ -191,7 +240,6 @@ def test_retry_uses_real_solves_after_one_injected_failure(monkeypatch) -> None:
         epsilon_initial=1e-1,
         epsilon_target=1e-3,
         contraction=0.1,
-        starts=1,
         seed=7,
         solver_options=_IPOPT_OPTIONS,
     )
@@ -222,7 +270,7 @@ def test_infeasible_upper_constraints_report_restoration_reason() -> None:
     )
 
     with pytest.raises(InitializationError) as caught:
-        model.solve(starts=1, solver_options=_IPOPT_OPTIONS)
+        model.solve(solver_options=_IPOPT_OPTIONS)
 
     assert str(caught.value) == "Automatic initialization failed. Please initialize variables: x."
     notes = _notes(caught.value)

@@ -189,7 +189,7 @@ def test_solve_defaults_match_documented_continuation_settings() -> None:
     assert parameters["epsilon_initial"].default == pytest.approx(1e-1)
     assert parameters["epsilon_target"].default == pytest.approx(1e-6)
     assert parameters["contraction"].default == pytest.approx(0.1)
-    assert parameters["starts"].default == 1
+    assert parameters["best_of"].default is None
     assert parameters["feasibility_tolerance"].default == pytest.approx(1e-7)
     assert parameters["solver"].default == cp.IPOPT
     assert parameters["conic_solver"].default == cp.CLARABEL
@@ -197,6 +197,7 @@ def test_solve_defaults_match_documented_continuation_settings() -> None:
     assert parameters["solver_verbose"].default is False
     assert SolveSettings().verbose is True
     assert SolveSettings().solver_verbose is False
+    assert SolveSettings().best_of is None
 
 
 @pytest.mark.parametrize(

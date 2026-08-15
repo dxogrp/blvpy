@@ -13,7 +13,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .result import BilevelResult, IterationRecord, StartRecord
+    from .result import BilevelResult, IterationRecord, RunRecord
 
 _WIDTH = 79
 _PREFIX = "(BLVPY)"
@@ -76,7 +76,8 @@ class ProgressReporter:
         soc: tuple[int, ...],
         lower_solver: str,
         nonlinear_solver: str,
-        requested_starts: int,
+        best_of: int | None,
+        requested_runs: int,
         epsilon_initial: float,
         epsilon_target: float,
         contraction: float,
@@ -101,8 +102,11 @@ class ProgressReporter:
                 "Solvers",
                 f"lower={_clean_text(lower_solver)}",
                 f"nonlinear={_clean_text(nonlinear_solver)}",
-                f"starts={requested_starts}",
             )
+            if best_of is None:
+                self._detail("Search", "mode=deterministic", f"runs={requested_runs}")
+            else:
+                self._detail("Search", "mode=random", f"best_of={best_of}")
             self._detail(
                 "Epsilon",
                 f"initial={_number(epsilon_initial)}",
@@ -113,7 +117,7 @@ class ProgressReporter:
             return
 
     def initialization(self) -> None:
-        """Open initialization reporting before start preparation begins."""
+        """Open initialization reporting before run preparation begins."""
 
         try:
             if not self.enabled:
@@ -122,29 +126,36 @@ class ProgressReporter:
         except Exception:
             return
 
-    def starts(self, *, requested_starts: int, deduplicated_starts: int) -> None:
-        """Describe the requested and distinct initialization starts."""
+    def run_begin(
+        self,
+        *,
+        run_index: int,
+        total_runs: int,
+        randomized: bool,
+    ) -> None:
+        """Report the beginning of one complete solution run."""
 
         try:
             if not self.enabled:
                 return
-            self._detail("Starts", f"requested={requested_starts}", f"unique={deduplicated_starts}")
+            mode = "random" if randomized else "deterministic"
+            self._line(f"Run {run_index + 1}/{total_runs}", "begin", f"mode={mode}")
         except Exception:
             return
 
     def projection(
         self,
         *,
-        start_index: int,
-        total_starts: int,
+        run_index: int,
+        total_runs: int,
         before_violation: float | None = None,
     ) -> None:
-        """Report an upper-start projection when that path is executed."""
+        """Report an upper-point projection when that path is executed."""
 
         try:
             if not self.enabled:
                 return
-            fields = [f"start={start_index + 1}/{total_starts}"]
+            fields = [f"run={run_index + 1}/{total_runs}"]
             if before_violation is not None:
                 fields.append(f"before_violation={_number(before_violation)}")
             self._line("Projection", *fields)
@@ -154,8 +165,8 @@ class ProgressReporter:
     def restoration(
         self,
         *,
-        start_index: int,
-        total_starts: int,
+        run_index: int,
+        total_runs: int,
         before_violation: float | None = None,
     ) -> None:
         """Report a lifted feasibility-restoration attempt."""
@@ -163,59 +174,57 @@ class ProgressReporter:
         try:
             if not self.enabled:
                 return
-            fields = [f"start={start_index + 1}/{total_starts}"]
+            fields = [f"run={run_index + 1}/{total_runs}"]
             if before_violation is not None:
                 fields.append(f"before_violation={_number(before_violation)}")
             self._line("Restoration", *fields)
         except Exception:
             return
 
-    def start(
+    def run(
         self,
         *,
-        start_index: int,
-        total_starts: int,
-        record: StartRecord,
-        accepted: bool,
-        solve_time: float | None = None,
-        num_iters: int | None = None,
+        run_index: int,
+        total_runs: int,
+        record: RunRecord,
     ) -> None:
-        """Write the terminal outcome of one initialization attempt."""
+        """Write the terminal outcome of one complete solution run."""
 
         try:
             if not self.enabled:
                 return
-            decision = "accepted" if accepted else "rejected"
+            decision = "succeeded" if record.succeeded else "failed"
             self._detail(
-                f"Start {start_index + 1}/{total_starts}",
+                f"Run {run_index + 1}/{total_runs}",
                 decision,
                 f"status={_clean_text(record.status)}",
             )
+            final = record.final_iteration
             self._record_details(
                 objective=record.objective,
                 residuals=record.residuals,
-                solve_time=solve_time,
-                num_iters=num_iters,
+                solve_time=None if final is None else final.solve_time,
+                num_iters=None if final is None else final.num_iters,
             )
-            if not accepted and record.message:
+            if not record.succeeded and record.message:
                 self._indented(f"message={_clean_text(record.message)}")
         except Exception:
             return
 
-    def selected_start(
+    def selected_run(
         self,
         *,
-        start_index: int,
-        total_starts: int,
+        run_index: int,
+        total_runs: int,
         objective: float | None,
     ) -> None:
-        """Report the restored start selected for continuation."""
+        """Report the completed run selected as the returned result."""
 
         try:
             if not self.enabled:
                 return
             self._line(
-                f"Selected start {start_index + 1}/{total_starts}",
+                f"Selected run {run_index + 1}/{total_runs}",
                 *_objective_fields(objective),
             )
         except Exception:
@@ -234,24 +243,23 @@ class ProgressReporter:
     def attempt(
         self,
         *,
+        run_index: int,
+        total_runs: int,
         attempt_index: int,
         kind: str,
         epsilon: float,
         record: IterationRecord,
         accepted: bool,
-        start_index: int | None = None,
     ) -> None:
-        """Write one scheduled, alternative-start, or inserted solve outcome."""
+        """Write one scheduled or inserted continuation solve outcome."""
 
         try:
             if not self.enabled:
                 return
-            kind_text = "alternate" if kind == "alternative-start" else _clean_text(kind)
-            if start_index is not None:
-                kind_text = f"{kind_text}, start {start_index + 1}"
+            kind_text = _clean_text(kind)
             decision = "accepted" if accepted else "rejected"
             self._detail(
-                f"Attempt {attempt_index + 1} [{kind_text}]",
+                f"Run {run_index + 1}/{total_runs}, attempt {attempt_index + 1} [{kind_text}]",
                 decision,
                 f"eps={_number(epsilon)}",
                 f"status={_clean_text(record.status)}",
@@ -267,17 +275,36 @@ class ProgressReporter:
         except Exception:
             return
 
-    def inserting_epsilon(self, *, epsilon: float, target: float) -> None:
+    def inserting_epsilon(
+        self,
+        *,
+        run_index: int,
+        total_runs: int,
+        epsilon: float,
+        target: float,
+    ) -> None:
         """Report insertion of an intermediate continuation tolerance."""
 
         try:
             if not self.enabled:
                 return
-            self._write(f"{_PREFIX} Inserting epsilon={_number(epsilon)} before retrying target={_number(target)}")
+            self._line(
+                "Inserting epsilon",
+                f"run={run_index + 1}/{total_runs}",
+                f"epsilon={_number(epsilon)}",
+                f"target={_number(target)}",
+            )
         except Exception:
             return
 
-    def retry_exhausted(self, *, last_successful_epsilon: float, max_retries: int) -> None:
+    def retry_exhausted(
+        self,
+        *,
+        run_index: int,
+        total_runs: int,
+        last_successful_epsilon: float,
+        max_retries: int,
+    ) -> None:
         """Report exhaustion of the continuation retry budget."""
 
         try:
@@ -285,6 +312,7 @@ class ProgressReporter:
                 return
             self._line(
                 "Retry budget exhausted",
+                f"run={run_index + 1}/{total_runs}",
                 f"retries={max_retries}",
                 f"last_successful_epsilon={_number(last_successful_epsilon)}",
             )
@@ -295,8 +323,8 @@ class ProgressReporter:
         self,
         *,
         result: BilevelResult,
-        successful_starts: int,
-        requested_starts: int,
+        successful_runs: int,
+        requested_runs: int,
         accepted_attempts: int,
         attempted_solves: int,
         elapsed: float | None,
@@ -307,7 +335,7 @@ class ProgressReporter:
             if not self.enabled:
                 return
             self._section("Summary")
-            status_fields = [_clean_text(result.status)]
+            status_fields = [f"status={_clean_text(result.status)}"]
             status_fields.extend(_objective_fields(result.objective))
             if result.final_epsilon is not None:
                 status_fields.append(f"final_epsilon={_number(result.final_epsilon)}")
@@ -320,7 +348,7 @@ class ProgressReporter:
                 "Progress",
                 f"accepted={accepted_attempts}",
                 f"attempted={attempted_solves}",
-                f"successful_starts={successful_starts}/{requested_starts}",
+                f"successful_runs={successful_runs}/{requested_runs}",
             )
             if result.message:
                 self._detail("Message", _clean_text(result.message))
@@ -335,7 +363,7 @@ class ProgressReporter:
             if not self.enabled:
                 return
             self._section("Summary")
-            fields = ["failed"]
+            fields = ["status=failed"]
             if elapsed is not None:
                 fields.append(f"elapsed={_number(elapsed)}s")
             fields.append(f"error={_clean_text(f'{type(error).__name__}: {error}')}")

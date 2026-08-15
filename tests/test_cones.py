@@ -12,7 +12,7 @@ from blvpy.cones import (
     primal_cone_distance,
     soc_distance,
 )
-from blvpy.result import BilevelResult, GapDiagnostics, IterationRecord, Residuals
+from blvpy.result import BilevelResult, GapDiagnostics, IterationRecord, Residuals, RunRecord
 
 
 def test_layout_preserves_canonical_block_order() -> None:
@@ -286,6 +286,22 @@ def test_result_snapshots_arrays_and_exposes_history() -> None:
     residuals = Residuals(1e-8, 2e-8, 0.0, 0.0, 0.0, 0.0, 5e-7, 0.0)
     record = IterationRecord(1e-6, "optimal", 2.0, residuals)
     source = np.array([1.0, 2.0])
+    initial = np.array([-1.0, 1.0])
+    failed_record = IterationRecord(1e-2, "solver_error", None, residuals)
+    failed_run = RunRecord(
+        index=0,
+        initial_values={"x": np.zeros(2)},
+        status="continuation_failed",
+        objective=None,
+        iterations=(failed_record,),
+    )
+    selected_run = RunRecord(
+        index=1,
+        initial_values={"x": initial},
+        status="optimal",
+        objective=2.0,
+        iterations=(record,),
+    )
     result = BilevelResult(
         status="optimal",
         objective=2.0,
@@ -294,13 +310,60 @@ def test_result_snapshots_arrays_and_exposes_history() -> None:
         slack=np.ones(2),
         dual=np.ones(2),
         iterations=(record,),
+        runs=(failed_run, selected_run),
+        selected_run_index=1,
     )
     source[0] = 99.0
+    initial[0] = 99.0
 
     assert result.epsilon_history == (1e-6,)
     assert result.complementarity == 5e-7
     assert result.succeeded
     assert not result.certified
+    assert result.selected_run is selected_run
+    assert result.all_objectives == (None, 2.0)
+    assert selected_run.epsilon_history == (1e-6,)
+    assert selected_run.attempted_epsilon_history == (1e-6,)
+    assert selected_run.solver_statuses == ("optimal",)
+    assert selected_run.final_iteration is record
+    assert selected_run.residuals is residuals
+    assert selected_run.complementarity == 5e-7
+    assert selected_run.final_epsilon == 1e-6
+    assert selected_run.succeeded
+    assert selected_run.initial_values["x"].tolist() == [-1.0, 1.0]
     assert result.variable_values["x"].tolist() == [1.0, 2.0]
     with pytest.raises(ValueError):
         result.canonical_primal[0] = 10.0
+    with pytest.raises(ValueError):
+        selected_run.initial_values["x"][0] = 10.0
+
+
+def test_run_history_tracks_accepted_and_attempted_epsilons() -> None:
+    residuals = Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    iterations = (
+        IterationRecord(1e-1, "optimal", 3.0, residuals),
+        IterationRecord(1e-2, "solver_error", None, residuals),
+        IterationRecord(3e-2, "optimal_inaccurate", 2.5, residuals),
+        IterationRecord(1e-2, "optimal", 2.0, residuals),
+    )
+    run = RunRecord(
+        index=np.int64(2),
+        initial_values={"x": 0.0},
+        status="optimal",
+        objective=2.0,
+        iterations=iterations,
+    )
+
+    assert run.index == 2
+    assert run.epsilon_history == (1e-1, 3e-2, 1e-2)
+    assert run.attempted_epsilon_history == (1e-1, 1e-2, 3e-2, 1e-2)
+    assert run.final_iteration is iterations[-1]
+
+
+def test_result_validates_run_selection() -> None:
+    run = RunRecord(index=3, initial_values={}, status="failed")
+
+    with pytest.raises(ValueError, match="recorded runs"):
+        BilevelResult(status="failed", runs=(run,), selected_run_index=0)
+    with pytest.raises(ValueError, match="unique"):
+        BilevelResult(status="failed", runs=(run, run))

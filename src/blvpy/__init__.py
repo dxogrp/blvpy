@@ -24,7 +24,7 @@ from .errors import (
 )
 from .lower_problem import LowerProblem
 from .problem import BilevelProblem, LiftedProblem
-from .result import BilevelResult, GapDiagnostics, IterationRecord, Residuals, StartRecord
+from .result import BilevelResult, GapDiagnostics, IterationRecord, Residuals, RunRecord
 
 __all__ = [
     "ApproximateCanonicalizationError",
@@ -47,10 +47,10 @@ __all__ = [
     "ParameterSpec",
     "RecoverySpec",
     "Residuals",
+    "RunRecord",
     "SolveError",
     "SolveSettings",
     "SolverUnavailableError",
-    "StartRecord",
     "UnsupportedConeError",
     "UnsupportedModelError",
     "ValidationError",

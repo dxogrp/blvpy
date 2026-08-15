@@ -106,17 +106,21 @@ def test_invalid_solver_verbosity_reports_failure_when_progress_is_enabled(capfd
     assert "must be boolean" in failure
 
 
-def test_progress_reports_rejected_start_and_alternative_start_recovery(
+def test_progress_reports_complete_runs_and_final_selection(
     monkeypatch,
     capfd,
 ) -> None:
     model, x, y = _quadratic_model()
-    statuses = [cp.OPTIMAL, cp.OPTIMAL, "solver_error", "solver_error", cp.OPTIMAL]
-    objectives = [0.0, 1.0, None, None, 0.0]
+    statuses = [cp.OPTIMAL, cp.OPTIMAL, "solver_error", cp.OPTIMAL, cp.OPTIMAL]
     calls = 0
 
     monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
     monkeypatch.setattr(continuation, "compute_residuals", lambda *args, **kwargs: _ZERO_RESIDUALS)
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: ({x: np.array(-1.0)}, {x: np.array(1.0)}, {x: np.array(0.5)}),
+    )
     monkeypatch.setattr(
         continuation,
         "_initialize_lower",
@@ -127,12 +131,11 @@ def test_progress_reports_rejected_start_and_alternative_start_recovery(
         nonlocal calls
         current.lifted_problem.epsilon.value = epsilon
         status = statuses[calls]
-        objective = objectives[calls]
         calls += 1
         return IterationRecord(
             epsilon=epsilon,
             status=status,
-            objective=objective,
+            objective=None if status == "solver_error" else float(current.outer_objective.value),
             residuals=_ZERO_RESIDUALS,
             solver_name=str(solver),
             message="synthetic rejection" if status == "solver_error" else None,
@@ -143,7 +146,7 @@ def test_progress_reports_rejected_start_and_alternative_start_recovery(
     result = model.solve(
         epsilon_initial=1e-1,
         epsilon_target=1e-2,
-        starts=3,
+        best_of=3,
         seed=8,
         solver="MOCK_NLP",
         restoration=False,
@@ -153,15 +156,18 @@ def test_progress_reports_rejected_start_and_alternative_start_recovery(
     transcript = capfd.readouterr().err
     assert result.succeeded
     assert calls == 5
-    assert "rejected | status=solver_error" in _event_block(transcript, "Start 3/3:")
-    first_attempt = _event_block(transcript, "Attempt 1 [scheduled]:")
-    assert "rejected | eps=1.000e-02" in first_attempt
-    assert "status=solver_error" in first_attempt
-    alternative = _event_block(transcript, "Attempt 2 [alternate, start 2]:")
-    assert "accepted | eps=1.000e-02" in alternative
-    assert "status=optimal" in alternative
-    assert transcript.index("Start 3/3") < transcript.index("Selected start")
-    assert transcript.index("Attempt 1") < transcript.index("Attempt 2") < transcript.index("Summary")
+    assert "Search: mode=random | best_of=3" in transcript
+    assert "failed | status=solver_error" in _event_block(transcript, "Run 3/3:")
+    first_attempt = _event_block(transcript, "Run 1/3, attempt 2 [scheduled]:")
+    assert "accepted | eps=1.000e-02" in first_attempt
+    assert "status=optimal" in first_attempt
+    assert "Selected run 1/3" in transcript
+    assert transcript.index("Run 1/3 | begin") < transcript.index("Run 2/3 | begin")
+    assert transcript.index("Run 2/3 | begin") < transcript.index("Run 3/3 | begin")
+    assert transcript.index("Run 3/3:") < transcript.index("Run 1/3:")
+    assert transcript.index("Run 1/3:") < transcript.index("Run 2/3:")
+    assert transcript.index("Run 2/3:") < transcript.index("Selected run")
+    assert transcript.index("Selected run") < transcript.index("Summary")
 
 
 def test_progress_reports_inserted_epsilon_retry_exhaustion_and_failed_result(
@@ -197,7 +203,6 @@ def test_progress_reports_inserted_epsilon_retry_exhaustion_and_failed_result(
     result = model.solve(
         epsilon_initial=1e-1,
         epsilon_target=1e-2,
-        starts=1,
         solver="MOCK_NLP",
         restoration=False,
         max_retries=1,
@@ -206,12 +211,24 @@ def test_progress_reports_inserted_epsilon_retry_exhaustion_and_failed_result(
 
     transcript = capfd.readouterr().err
     assert result.status == "continuation_failed"
-    assert "rejected | eps=1.000e-02" in _event_block(transcript, "Attempt 1 [scheduled]:")
-    assert "Inserting epsilon=3.162e-02 before retrying target=1.000e-02" in transcript
-    assert "rejected | eps=3.162e-02" in _event_block(transcript, "Attempt 2 [inserted]:")
-    assert "Retry budget exhausted | retries=1" in transcript
-    assert "Status: continuation_failed" in transcript
-    assert "Progress: accepted=0 | attempted=2" in transcript
+    assert "rejected | eps=1.000e-02" in _event_block(
+        transcript,
+        "Run 1/1, attempt 2 [scheduled]:",
+    )
+    insertion = _event_block(transcript, "Inserting epsilon")
+    assert "run=1/1" in insertion
+    assert "epsilon=3.162e-02" in insertion
+    assert "target=1.000e-02" in insertion
+    assert "rejected | eps=3.162e-02" in _event_block(
+        transcript,
+        "Run 1/1, attempt 3 [inserted]:",
+    )
+    exhausted = _event_block(transcript, "Retry budget exhausted")
+    assert "run=1/1" in exhausted
+    assert "retries=1" in exhausted
+    assert "Run 1/1: failed | status=continuation_failed" in transcript
+    assert "Status: status=continuation_failed" in transcript
+    assert "successful_runs=0/1" in transcript
 
 
 def test_progress_reports_terminal_initialization_exception(capfd) -> None:
@@ -229,7 +246,7 @@ def test_progress_reports_terminal_initialization_exception(capfd) -> None:
 
     transcript = capfd.readouterr().err
     assert str(caught.value) == "Automatic initialization failed. Please initialize variables: x."
-    assert "rejected | status=failed" in _event_block(transcript, "Start 1/1:")
+    assert "failed | status=initialization_failed" in _event_block(transcript, "Run 1/1:")
     assert "Summary" in transcript
     failure = _event_block(transcript, "Status:")
     assert "failed" in failure
@@ -258,17 +275,18 @@ def test_progress_is_numerically_inert_and_reports_real_restoration(capfd) -> No
     reported_output = capfd.readouterr()
 
     assert _PREFIX not in silent_output.err
-    assert "Restoration | start=1/1" in reported_output.err
+    assert "Restoration | run=1/1" in reported_output.err
     assert "Initialization" in reported_output.err
     assert "Continuation" in reported_output.err
     assert "Summary" in reported_output.err
-    assert reported_output.err.index("Initialization") < reported_output.err.index("Projection")
-    assert reported_output.err.index("Projection") < reported_output.err.index("Starts: requested=1 | unique=1")
+    assert reported_output.err.index("Initialization") < reported_output.err.index("Run 1/1 | begin")
+    assert reported_output.err.index("Run 1/1 | begin") < reported_output.err.index("Projection")
+    assert reported_output.err.index("Projection") < reported_output.err.index("Restoration")
     assert silent.succeeded and reported.succeeded
     assert reported.status == silent.status
     assert reported.epsilon_history == silent.epsilon_history
     assert [record.status for record in reported.iterations] == [record.status for record in silent.iterations]
-    assert [record.status for record in reported.starts] == [record.status for record in silent.starts]
+    assert [record.status for record in reported.runs] == [record.status for record in silent.runs]
     assert reported.objective == pytest.approx(silent.objective, abs=1e-8)
     np.testing.assert_allclose(
         [verbose_x.value, verbose_y.value],
