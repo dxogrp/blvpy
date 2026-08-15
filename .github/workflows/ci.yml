@@ -103,10 +103,6 @@ jobs:
   test-windows:
     name: Test (Windows, Python ${{ matrix.python-version }})
     runs-on: windows-latest
-    env:
-      IPOPT_VERSION: "3.14.19"
-      IPOPT_SHA256: bd7818a19c2a627f1dcd538358833fbcb17c35080e19b4228be3f66cadf8c8fd
-      CYIPOPT_VERSION: "1.7.0"
     strategy:
       fail-fast: false
       matrix:
@@ -119,9 +115,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up Miniforge
+        uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5
         with:
+          activate-environment: blvpy-ci
+          channels: conda-forge
+          conda-remove-defaults: "true"
+          miniforge-version: "26.3.2-3"
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
@@ -132,53 +132,40 @@ jobs:
             uv.lock
             .github/workflows/ci.yml
 
-      - name: Install native IPOPT
+      - name: Install native optimization stack
         shell: pwsh
         run: |
-          $asset = "Ipopt-$env:IPOPT_VERSION-win64-msvs2022-md.zip"
-          $archive = Join-Path $env:RUNNER_TEMP $asset
-          $extractRoot = Join-Path $env:RUNNER_TEMP "ipopt-$env:IPOPT_VERSION"
-          $ipoptRoot = Join-Path $extractRoot "Ipopt-$env:IPOPT_VERSION-win64-msvs2022-md"
-          $url = "https://github.com/coin-or/Ipopt/releases/download/releases/$env:IPOPT_VERSION/$asset"
-          Invoke-WebRequest -Uri $url -OutFile $archive
+          # CVXPY 1.9 pins a SparseDiffPy wheel that expects openblas.dll on Windows.
+          conda install --yes --strict-channel-priority `
+            "cyipopt=1.7.0" `
+            "ipopt=3.14.19" `
+            "libblas=*=*openblas" `
+            "liblapack=*=*openblas"
 
-          $actualSha256 = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
-          if ($actualSha256 -ne $env:IPOPT_SHA256) {
-            throw "IPOPT archive checksum mismatch: expected $env:IPOPT_SHA256, got $actualSha256"
-          }
-
-          Expand-Archive -Path $archive -DestinationPath $extractRoot
-          foreach ($directory in @("bin", "include", "lib")) {
-            if (-not (Test-Path (Join-Path $ipoptRoot $directory))) {
-              throw "IPOPT archive is missing its $directory directory"
-            }
-          }
-
-          "IPOPTWINDIR=$ipoptRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          (Join-Path $ipoptRoot "bin") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Install dependencies
+      - name: Install Python dependencies
         shell: pwsh
         run: |
-          uv venv --python "${{ matrix.python-version }}"
-          uv pip install "numpy>=2" "cython>=0.29.37" "setuptools>=68.1.2"
-          uv sync --group dev --no-build-isolation-package cyipopt
+          $python = Join-Path $env:CONDA_PREFIX "python.exe"
+          $requirements = Join-Path $env:RUNNER_TEMP "blvpy-requirements.txt"
+          uv export --frozen --group dev --no-hashes --output-file $requirements
+          uv pip install --python $python --requirement $requirements
 
       - name: Verify installed environment
         shell: pwsh
         run: |
-          uv run python -c "import cyipopt; assert cyipopt.__version__ == '$env:CYIPOPT_VERSION'"
-          uv pip check
+          $python = Join-Path $env:CONDA_PREFIX "python.exe"
+          & $python -c "import cyipopt; from sparsediffpy import _sparsediffengine; assert cyipopt.__version__ == '1.7.0'"
+          uv pip check --python $python
 
       - name: Run tests
         shell: pwsh
-        run: uv run python -m pytest tests
+        run: python -m pytest tests
 
       - name: Run lint checks
         shell: pwsh
         run: |
-          uv run ruff check .
-          uv run ruff format --check .
+          ruff check .
+          ruff format --check .
 
       - name: Build package
         run: uv build

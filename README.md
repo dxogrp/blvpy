@@ -166,10 +166,11 @@ make build      # build the source and wheel distributions
 ```
 
 CI runs the full test suite, lint checks, and package builds on Linux, macOS,
-and Windows for Python 3.12 through 3.14. Every platform installs BLVpy with
-`uv` and builds `cyipopt` against a native IPOPT installation. Windows uses a
-checksum-verified official COIN-OR IPOPT binary distribution and builds the
-locked `cyipopt` source release with MSVC.
+and Windows for Python 3.12 through 3.14. Linux and macOS use `uv` with their
+native IPOPT installations. Windows uses one Miniforge environment for the
+conda-forge IPOPT, `cyipopt`, and OpenBLAS packages; `uv` installs BLVPy and its
+locked Python development dependencies directly into that environment and
+builds the package artifacts.
 
 ## License
 
