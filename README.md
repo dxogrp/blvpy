@@ -155,10 +155,10 @@ result = bilevel.solve(
 A typical abbreviated continuation excerpt is:
 
 ```text
-(BLVPY) Start 1/1: accepted | optimal
+(BLVPY) Start 1/1: accepted | status=optimal
 (BLVPY)   objective=5.003e-01 | feasibility=2.100e-08 | gap=0.000e+00
 (BLVPY) Selected start 1/1 | objective=5.003e-01
-(BLVPY) Attempt 1 [scheduled]: accepted | eps=1.000e-02 | optimal
+(BLVPY) Attempt 1 [scheduled]: accepted | eps=1.000e-02 | status=optimal
 (BLVPY)   objective=5.001e-01 | feasibility=3.200e-08 | gap=0.000e+00
 (BLVPY) Status: optimal | objective=5.000e-01 | final_epsilon=1.000e-06
 ```

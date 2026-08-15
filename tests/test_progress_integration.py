@@ -153,11 +153,13 @@ def test_progress_reports_rejected_start_and_alternative_start_recovery(
     transcript = capfd.readouterr().err
     assert result.succeeded
     assert calls == 5
-    assert "rejected | solver_error" in _event_block(transcript, "Start 3/3:")
+    assert "rejected | status=solver_error" in _event_block(transcript, "Start 3/3:")
     first_attempt = _event_block(transcript, "Attempt 1 [scheduled]:")
-    assert "rejected | eps=1.000e-02 | solver_error" in first_attempt
+    assert "rejected | eps=1.000e-02" in first_attempt
+    assert "status=solver_error" in first_attempt
     alternative = _event_block(transcript, "Attempt 2 [alternate, start 2]:")
-    assert "accepted | eps=1.000e-02 | optimal" in alternative
+    assert "accepted | eps=1.000e-02" in alternative
+    assert "status=optimal" in alternative
     assert transcript.index("Start 3/3") < transcript.index("Selected start")
     assert transcript.index("Attempt 1") < transcript.index("Attempt 2") < transcript.index("Summary")
 
@@ -227,7 +229,7 @@ def test_progress_reports_terminal_initialization_exception(capfd) -> None:
 
     transcript = capfd.readouterr().err
     assert str(caught.value) == "Automatic initialization failed. Please initialize variables: x."
-    assert "rejected | failed" in _event_block(transcript, "Start 1/1:")
+    assert "rejected | status=failed" in _event_block(transcript, "Start 1/1:")
     assert "Summary" in transcript
     failure = _event_block(transcript, "Status:")
     assert "failed" in failure

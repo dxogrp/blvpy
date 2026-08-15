@@ -155,7 +155,7 @@ def test_initialization_and_attempt_lines_are_one_based_and_complete(capfd) -> N
     assert "Projection | start=1/2 | before_violation=inf" in transcript
     assert "Restoration | start=2/2 | before_violation=2.500e-01" in transcript
     accepted_start = _event_block(transcript, "Start 1/2:")
-    assert "accepted | optimal" in accepted_start
+    assert "accepted | status=optimal" in accepted_start
     assert "objective=1.250e+00" in accepted_start
     assert "feasibility=2.500e-08" in accepted_start
     assert "gap=2.500e-08" in accepted_start
@@ -163,16 +163,17 @@ def test_initialization_and_attempt_lines_are_one_based_and_complete(capfd) -> N
     assert "time=2.500e-01s" in accepted_start
     assert "iters=4" in accepted_start
     rejected_start = _event_block(transcript, "Start 2/2:")
-    assert "rejected | failed" in rejected_start
+    assert "rejected | status=failed" in rejected_start
     assert "line one line two" in rejected_start
     assert "x" * 170 not in transcript
     assert "Selected start 1/2 | objective=1.250e+00" in transcript
     attempt = _event_block(transcript, "Attempt 1 [scheduled]:")
-    assert attempt.startswith(f"{_PREFIX} Attempt 1 [scheduled]: accepted | eps=1.000e-02 | optimal")
+    assert attempt.startswith(f"{_PREFIX} Attempt 1 [scheduled]: accepted | eps=1.000e-02 | status=optimal")
     assert "time=1.250e-01s" in attempt
     assert "iters=7" in attempt
     alternative = _event_block(transcript, "Attempt 2 [alternate, start 2]:")
-    assert "rejected | eps=1.000e-03 | solver_error" in alternative
+    assert "rejected | eps=1.000e-03" in alternative
+    assert "status=solver_error" in alternative
     assert "message=first line second line" in alternative
     assert "Inserting epsilon=3.162e-03 before retrying target=1.000e-03" in transcript
     assert "Retry budget exhausted | retries=8 | last_successful_epsilon=1.000e-02" in transcript

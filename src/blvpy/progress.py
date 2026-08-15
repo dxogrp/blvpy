@@ -189,7 +189,7 @@ class ProgressReporter:
             self._detail(
                 f"Start {start_index + 1}/{total_starts}",
                 decision,
-                _clean_text(record.status),
+                f"status={_clean_text(record.status)}",
             )
             self._record_details(
                 objective=record.objective,
@@ -254,7 +254,7 @@ class ProgressReporter:
                 f"Attempt {attempt_index + 1} [{kind_text}]",
                 decision,
                 f"eps={_number(epsilon)}",
-                _clean_text(record.status),
+                f"status={_clean_text(record.status)}",
             )
             self._record_details(
                 objective=record.objective,
