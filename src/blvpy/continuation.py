@@ -47,7 +47,7 @@ class SolveSettings:
     conic_solver_options: Mapping[str, Any] | None = None
     restoration: bool = True
     max_retries: int = 8
-    verbose: bool = False
+    verbose: bool = True
     solver_verbose: bool = False
 
 
