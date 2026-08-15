@@ -183,6 +183,8 @@ def test_constructor_signature_has_no_parameter_map() -> None:
 
 
 def test_solve_defaults_match_documented_continuation_settings() -> None:
+    from blvpy.continuation import SolveSettings
+
     parameters = inspect.signature(BilevelProblem.solve).parameters
     assert parameters["epsilon_initial"].default == pytest.approx(1e-1)
     assert parameters["epsilon_target"].default == pytest.approx(1e-6)
@@ -191,8 +193,10 @@ def test_solve_defaults_match_documented_continuation_settings() -> None:
     assert parameters["feasibility_tolerance"].default == pytest.approx(1e-7)
     assert parameters["solver"].default == cp.IPOPT
     assert parameters["conic_solver"].default == cp.CLARABEL
-    assert parameters["verbose"].default is False
+    assert parameters["verbose"].default is True
     assert parameters["solver_verbose"].default is False
+    assert SolveSettings().verbose is True
+    assert SolveSettings().solver_verbose is False
 
 
 @pytest.mark.parametrize(

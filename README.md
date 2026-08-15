@@ -131,12 +131,14 @@ local and residual-based, not a rigorous finite-precision certificate.
 ## Progress and solver output
 
 BLVPY separates its concise progress transcript from CVXPY and native solver
-output. The two controls on `solve()` are independent:
+output. Progress is enabled by default (`verbose=True`), while raw backend
+output remains disabled by default (`solver_verbose=False`). The two controls
+on `solve()` are independent:
 
 | `verbose` | `solver_verbose` | Output |
 |---|---|---|
 | `False` | `False` | Quiet, with backend output suppressed on a best-effort basis |
-| `True` | `False` | BLVPY progress only |
+| `True` | `False` | BLVPY progress only (default) |
 | `False` | `True` | CVXPY and native solver output only |
 | `True` | `True` | BLVPY progress and backend output |
 
@@ -150,12 +152,14 @@ result = bilevel.solve(
 )
 ```
 
-A typical continuation excerpt is:
+A typical abbreviated continuation excerpt is:
 
 ```text
-(BLVPY) Start 1/1 | accepted | status=optimal | objective=5.003e-01 | max_feasibility=2.100e-08
+(BLVPY) Start 1/1: accepted | optimal
+(BLVPY)   objective=5.003e-01 | feasibility=2.100e-08 | gap=0.000e+00
 (BLVPY) Selected start 1/1 | objective=5.003e-01
-(BLVPY) Attempt 1 | scheduled | epsilon=1.000e-02 | accepted | status=optimal | objective=5.001e-01
+(BLVPY) Attempt 1 [scheduled]: accepted | eps=1.000e-02 | optimal
+(BLVPY)   objective=5.001e-01 | feasibility=3.200e-08 | gap=0.000e+00
 (BLVPY) Status: optimal | objective=5.000e-01 | final_epsilon=1.000e-06
 ```
 
@@ -166,6 +170,8 @@ each scheduled or retry epsilon, solver status, objective, available residuals,
 solver time and iteration counts, and the final continuation outcome. It does
 not print variable values or complete solver-option dictionaries. The returned
 result and its iteration records remain the machine-readable source of truth.
+Start and continuation records use a short outcome row followed by indented
+diagnostic rows, and every BLVPY-owned line is limited to 79 columns.
 
 With IPOPT, `solver_verbose=False` adds quiet defaults (`print_level=0` and
 `sb="yes"`) only when those keys are absent from `solver_options`. Explicit

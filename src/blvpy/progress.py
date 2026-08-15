@@ -6,6 +6,7 @@ import logging
 import math
 import re
 import sys
+import textwrap
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from time import perf_counter
@@ -184,16 +185,20 @@ class ProgressReporter:
         try:
             if not self.enabled:
                 return
-            fields = ["accepted" if accepted else "rejected", f"status={_clean_text(record.status)}"]
-            fields.extend(_objective_fields(record.objective))
-            fields.extend(_residual_fields(record.residuals))
-            if solve_time is not None:
-                fields.append(f"solve_time={_number(solve_time)}s")
-            if num_iters is not None:
-                fields.append(f"iterations={num_iters}")
+            decision = "accepted" if accepted else "rejected"
+            self._detail(
+                f"Start {start_index + 1}/{total_starts}",
+                decision,
+                _clean_text(record.status),
+            )
+            self._record_details(
+                objective=record.objective,
+                residuals=record.residuals,
+                solve_time=solve_time,
+                num_iters=num_iters,
+            )
             if not accepted and record.message:
-                fields.append(f"message={_clean_text(record.message)}")
-            self._line(f"Start {start_index + 1}/{total_starts}", *fields)
+                self._indented(f"message={_clean_text(record.message)}")
         except Exception:
             return
 
@@ -241,19 +246,24 @@ class ProgressReporter:
         try:
             if not self.enabled:
                 return
-            fields = [_clean_text(kind), f"epsilon={_number(epsilon)}"]
+            kind_text = "alternate" if kind == "alternative-start" else _clean_text(kind)
             if start_index is not None:
-                fields.append(f"start={start_index + 1}")
-            fields.extend(["accepted" if accepted else "rejected", f"status={_clean_text(record.status)}"])
-            fields.extend(_objective_fields(record.objective))
-            fields.extend(_residual_fields(record.residuals))
-            if record.solve_time is not None:
-                fields.append(f"solve_time={_number(record.solve_time)}s")
-            if record.num_iters is not None:
-                fields.append(f"iterations={record.num_iters}")
+                kind_text = f"{kind_text}, start {start_index + 1}"
+            decision = "accepted" if accepted else "rejected"
+            self._detail(
+                f"Attempt {attempt_index + 1} [{kind_text}]",
+                decision,
+                f"eps={_number(epsilon)}",
+                _clean_text(record.status),
+            )
+            self._record_details(
+                objective=record.objective,
+                residuals=record.residuals,
+                solve_time=record.solve_time,
+                num_iters=record.num_iters,
+            )
             if not accepted and record.message:
-                fields.append(f"message={_clean_text(record.message)}")
-            self._line(f"Attempt {attempt_index + 1}", *fields)
+                self._indented(f"message={_clean_text(record.message)}")
         except Exception:
             return
 
@@ -354,15 +364,75 @@ class ProgressReporter:
         self._banner_emitted = True
 
     def _line(self, label: str, *fields: str) -> None:
-        suffix = " | ".join(field for field in fields if field)
-        self._write(f"{_PREFIX} {label}" + (f" | {suffix}" if suffix else ""))
+        self._write_fields(f"{_PREFIX} {label}", *fields, first_separator=" | ")
 
     def _detail(self, label: str, *fields: str) -> None:
-        suffix = " | ".join(field for field in fields if field)
-        self._write(f"{_PREFIX} {label}:" + (f" {suffix}" if suffix else ""))
+        self._write_fields(f"{_PREFIX} {label}:", *fields)
+
+    def _indented(self, *fields: str) -> None:
+        if fields:
+            self._write_fields(f"{_PREFIX}  ", *fields)
+
+    def _write_fields(
+        self,
+        leader: str,
+        *fields: str,
+        first_separator: str = " ",
+    ) -> None:
+        remaining = [field for field in fields if field]
+        if not remaining:
+            self._write(leader)
+            return
+        current = leader
+        for value in remaining:
+            separator = first_separator if current == leader else " | "
+            candidate = f"{current}{separator}{value}"
+            if len(candidate) <= _WIDTH or current == leader:
+                current = candidate
+                continue
+            self._write(current)
+            current = f"{_PREFIX}   {value}"
+        self._write(current)
+
+    def _record_details(
+        self,
+        *,
+        objective: float | None,
+        residuals: Any | None,
+        solve_time: float | None,
+        num_iters: int | None,
+    ) -> None:
+        numerical = _objective_fields(objective)
+        diagnostics: list[str] = []
+        if residuals is not None:
+            numerical.extend(
+                [
+                    f"feasibility={_number(residuals.max_feasibility)}",
+                    f"gap={_number(residuals.gap_violation)}",
+                ]
+            )
+            diagnostics.append(f"complementarity={_number(residuals.complementarity)}")
+        if solve_time is not None:
+            diagnostics.append(f"time={_number(solve_time)}s")
+        if num_iters is not None:
+            diagnostics.append(f"iters={num_iters}")
+        self._indented(*numerical)
+        self._indented(*diagnostics)
 
     def _write(self, message: str) -> None:
-        _LOGGER.info(message)
+        if len(message) <= _WIDTH:
+            _LOGGER.info(message)
+            return
+        subsequent_indent = f"{_PREFIX}   " if message.startswith(_PREFIX) else ""
+        lines = textwrap.wrap(
+            message,
+            width=_WIDTH,
+            subsequent_indent=subsequent_indent,
+            break_long_words=True,
+            break_on_hyphens=False,
+        )
+        for line in lines or [""]:
+            _LOGGER.info(line)
 
 
 def _objective_fields(objective: float | None) -> list[str]:

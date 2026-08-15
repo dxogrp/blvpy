@@ -14,6 +14,16 @@ from blvpy.result import BilevelResult, IterationRecord, Residuals
 
 _ZERO_RESIDUALS = Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 _IPOPT_OPTIONS = {"hessian_approximation": "limited-memory", "tol": 1e-9}
+_PREFIX = "(BLVPY)"
+
+
+def _event_block(transcript: str, marker: str) -> str:
+    lines = transcript.splitlines()
+    start = next(index for index, line in enumerate(lines) if marker in line)
+    stop = start + 1
+    while stop < len(lines) and lines[stop].startswith(f"{_PREFIX}   "):
+        stop += 1
+    return " ".join(lines[start:stop])
 
 
 def _quadratic_model(*, constrained: bool = False):
@@ -90,8 +100,10 @@ def test_invalid_solver_verbosity_reports_failure_when_progress_is_enabled(capfd
 
     transcript = capfd.readouterr().err
     assert "Summary" in transcript
-    assert "Status: failed" in transcript
-    assert "error=ValueError: solver_verbose must be boolean" in transcript
+    failure = _event_block(transcript, "Status:")
+    assert "failed" in failure
+    assert "error=ValueError: solver_verbose" in failure
+    assert "must be boolean" in failure
 
 
 def test_progress_reports_rejected_start_and_alternative_start_recovery(
@@ -141,9 +153,11 @@ def test_progress_reports_rejected_start_and_alternative_start_recovery(
     transcript = capfd.readouterr().err
     assert result.succeeded
     assert calls == 5
-    assert "Start 3/3 | rejected | status=solver_error" in transcript
-    assert "Attempt 1 | scheduled | epsilon=1.000e-02 | rejected" in transcript
-    assert "Attempt 2 | alternative-start | epsilon=1.000e-02 | start=2 | accepted" in transcript
+    assert "rejected | solver_error" in _event_block(transcript, "Start 3/3:")
+    first_attempt = _event_block(transcript, "Attempt 1 [scheduled]:")
+    assert "rejected | eps=1.000e-02 | solver_error" in first_attempt
+    alternative = _event_block(transcript, "Attempt 2 [alternate, start 2]:")
+    assert "accepted | eps=1.000e-02 | optimal" in alternative
     assert transcript.index("Start 3/3") < transcript.index("Selected start")
     assert transcript.index("Attempt 1") < transcript.index("Attempt 2") < transcript.index("Summary")
 
@@ -190,9 +204,9 @@ def test_progress_reports_inserted_epsilon_retry_exhaustion_and_failed_result(
 
     transcript = capfd.readouterr().err
     assert result.status == "continuation_failed"
-    assert "Attempt 1 | scheduled | epsilon=1.000e-02 | rejected" in transcript
+    assert "rejected | eps=1.000e-02" in _event_block(transcript, "Attempt 1 [scheduled]:")
     assert "Inserting epsilon=3.162e-02 before retrying target=1.000e-02" in transcript
-    assert "Attempt 2 | inserted | epsilon=3.162e-02 | rejected" in transcript
+    assert "rejected | eps=3.162e-02" in _event_block(transcript, "Attempt 2 [inserted]:")
     assert "Retry budget exhausted | retries=1" in transcript
     assert "Status: continuation_failed" in transcript
     assert "Progress: accepted=0 | attempted=2" in transcript
@@ -213,10 +227,12 @@ def test_progress_reports_terminal_initialization_exception(capfd) -> None:
 
     transcript = capfd.readouterr().err
     assert str(caught.value) == "Automatic initialization failed. Please initialize variables: x."
-    assert "Start 1/1 | rejected | status=failed" in transcript
+    assert "rejected | failed" in _event_block(transcript, "Start 1/1:")
     assert "Summary" in transcript
-    assert "Status: failed" in transcript
-    assert "error=InitializationError: Automatic initialization failed." in transcript
+    failure = _event_block(transcript, "Status:")
+    assert "failed" in failure
+    assert "error=InitializationError:" in failure
+    assert "Automatic initialization failed." in failure
 
 
 @pytest.mark.ipopt
@@ -226,6 +242,7 @@ def test_progress_is_numerically_inert_and_reports_real_restoration(capfd) -> No
         epsilon_initial=1e-2,
         epsilon_target=1e-4,
         solver_options=_IPOPT_OPTIONS,
+        verbose=False,
     )
     silent_output = capfd.readouterr()
 
@@ -238,7 +255,7 @@ def test_progress_is_numerically_inert_and_reports_real_restoration(capfd) -> No
     )
     reported_output = capfd.readouterr()
 
-    assert "(BLVPY)" not in silent_output.err
+    assert _PREFIX not in silent_output.err
     assert "Restoration | start=1/1" in reported_output.err
     assert "Initialization" in reported_output.err
     assert "Continuation" in reported_output.err

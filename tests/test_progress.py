@@ -8,6 +8,8 @@ import blvpy.progress as progress
 from blvpy.progress import ProgressReporter
 from blvpy.result import BilevelResult, IterationRecord, Residuals, StartRecord
 
+_PREFIX = "(BLVPY)"
+
 
 def _residuals(*, infeasible: bool = False) -> Residuals:
     violation = 2.5e-4 if infeasible else 2.5e-8
@@ -41,6 +43,17 @@ def _problem(reporter: ProgressReporter) -> None:
     )
 
 
+def _event_block(transcript: str, marker: str) -> str:
+    """Return one event row together with its wrapped/detail continuation rows."""
+
+    lines = transcript.splitlines()
+    start = next(index for index, line in enumerate(lines) if marker in line)
+    stop = start + 1
+    while stop < len(lines) and lines[stop].startswith(f"{_PREFIX}   "):
+        stop += 1
+    return " ".join(lines[start:stop])
+
+
 def test_disabled_reporter_is_silent(capfd) -> None:
     reporter = ProgressReporter(enabled=False)
 
@@ -66,12 +79,17 @@ def test_problem_transcript_uses_stderr_and_stable_plain_sections(capfd) -> None
     assert lines[1].strip() == "BLVPY"
     assert lines[2].strip().startswith("v")
     assert len(lines[0]) == len(lines[1]) == len(lines[2]) == len(lines[3]) == 79
-    assert "Problem" in lines[5]
-    assert "Dimensions: upper=2 | lower=3" in captured.err
+    assert any(line.strip() == "Problem" for line in lines)
+    dimensions = _event_block(captured.err, "Dimensions:")
+    assert "upper=2" in dimensions
+    assert "lower=3" in dimensions
+    assert "canonical_variables=4" in dimensions
+    assert "canonical_constraints=8" in dimensions
     assert "Cones: zero=1 | nonnegative=2 | soc=[2, 3]" in captured.err
     assert "Epsilon: initial=1.000e-01 | target=1.000e-06 | contraction=1.000e-01" in captured.err
     assert "\x1b" not in captured.err
     assert "\r" not in captured.err
+    assert all(len(line) <= 79 for line in lines)
 
 
 def test_initialization_and_attempt_lines_are_one_based_and_complete(capfd) -> None:
@@ -136,21 +154,29 @@ def test_initialization_and_attempt_lines_are_one_based_and_complete(capfd) -> N
     assert "Starts: requested=3 | unique=2" in transcript
     assert "Projection | start=1/2 | before_violation=inf" in transcript
     assert "Restoration | start=2/2 | before_violation=2.500e-01" in transcript
-    assert (
-        "Start 1/2 | accepted | status=optimal | objective=1.250e+00"
-        " | max_feasibility=2.500e-08 | gap_violation=2.500e-08"
-        " | complementarity=7.500e-07 | solve_time=2.500e-01s | iterations=4"
-    ) in transcript
-    assert "Start 2/2 | rejected | status=failed" in transcript
-    assert "line one line two" in transcript
+    accepted_start = _event_block(transcript, "Start 1/2:")
+    assert "accepted | optimal" in accepted_start
+    assert "objective=1.250e+00" in accepted_start
+    assert "feasibility=2.500e-08" in accepted_start
+    assert "gap=2.500e-08" in accepted_start
+    assert "complementarity=7.500e-07" in accepted_start
+    assert "time=2.500e-01s" in accepted_start
+    assert "iters=4" in accepted_start
+    rejected_start = _event_block(transcript, "Start 2/2:")
+    assert "rejected | failed" in rejected_start
+    assert "line one line two" in rejected_start
     assert "x" * 170 not in transcript
     assert "Selected start 1/2 | objective=1.250e+00" in transcript
-    assert "Attempt 1 | scheduled | epsilon=1.000e-02 | accepted" in transcript
-    assert "solve_time=1.250e-01s | iterations=7" in transcript
-    assert "Attempt 2 | alternative-start | epsilon=1.000e-03 | start=2 | rejected" in transcript
-    assert "message=first line second line" in transcript
+    attempt = _event_block(transcript, "Attempt 1 [scheduled]:")
+    assert attempt.startswith(f"{_PREFIX} Attempt 1 [scheduled]: accepted | eps=1.000e-02 | optimal")
+    assert "time=1.250e-01s" in attempt
+    assert "iters=7" in attempt
+    alternative = _event_block(transcript, "Attempt 2 [alternate, start 2]:")
+    assert "rejected | eps=1.000e-03 | solver_error" in alternative
+    assert "message=first line second line" in alternative
     assert "Inserting epsilon=3.162e-03 before retrying target=1.000e-03" in transcript
     assert "Retry budget exhausted | retries=8 | last_successful_epsilon=1.000e-02" in transcript
+    assert all(len(line) <= 79 for line in transcript.splitlines())
 
 
 def test_summary_and_failure_include_terminal_information(capfd) -> None:
@@ -178,9 +204,15 @@ def test_summary_and_failure_include_terminal_information(capfd) -> None:
     transcript = capfd.readouterr().err
     assert transcript.count("=" * 79) == 2
     assert "Summary" in transcript
-    assert "Status: optimal | objective=1.250e-01 | final_epsilon=1.000e-06 | elapsed=1.500e+00s" in transcript
-    assert "Residuals: max_feasibility=2.500e-08" in transcript
-    assert "gap_violation=2.500e-08 | complementarity=7.500e-07" in transcript
+    status = _event_block(transcript, "Status:")
+    assert "optimal" in status
+    assert "objective=1.250e-01" in status
+    assert "final_epsilon=1.000e-06" in status
+    assert "elapsed=1.500e+00s" in status
+    residuals_block = _event_block(transcript, "Residuals:")
+    assert "max_feasibility=2.500e-08" in residuals_block
+    assert "gap_violation=2.500e-08" in residuals_block
+    assert "complementarity=7.500e-07" in residuals_block
     assert "Progress: accepted=6 | attempted=8 | successful_starts=2/3" in transcript
     assert "Message: local result" in transcript
     assert "Local numerical solution; not a rigorous bilevel certificate." in transcript
@@ -190,7 +222,10 @@ def test_summary_and_failure_include_terminal_information(capfd) -> None:
     failure = capfd.readouterr().err
     assert failure.splitlines()[0] == "=" * 79
     assert failure.count("=" * 79) == 2
-    assert "Status: failed | elapsed=2.500e-01s | error=ValueError: multi line" in failure
+    failed_status = _event_block(failure, "Status:")
+    assert "failed" in failed_status
+    assert "elapsed=2.500e-01s" in failed_status
+    assert "error=ValueError: multi line" in failed_status
 
 
 def test_unavailable_record_fields_are_omitted_and_nonfinite_values_are_explicit(capfd) -> None:
@@ -206,10 +241,11 @@ def test_unavailable_record_fields_are_omitted_and_nonfinite_values_are_explicit
     reporter.projection(start_index=0, total_starts=1, before_violation=float("-inf"))
 
     transcript = capfd.readouterr().err
-    start_line = next(line for line in transcript.splitlines() if "Start 1/1" in line)
-    assert "objective=" not in start_line
-    assert "solve_time=" not in start_line
-    assert "message=no point" in start_line
+    start_block = _event_block(transcript, "Start 1/1:")
+    assert "objective=" not in start_block
+    assert "time=" not in start_block
+    assert "iters=" not in start_block
+    assert "message=no point" in start_block
     assert "before_violation=-inf" in transcript
 
 
