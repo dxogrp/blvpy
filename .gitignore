@@ -16,6 +16,10 @@ build/
 .coverage
 htmlcov/
 
+# Generated Marimo outputs and session state
+examples/figures/
+examples/__marimo__/
+
 # Editors and operating systems
 .DS_Store
 .idea/

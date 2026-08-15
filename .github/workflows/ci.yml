@@ -38,10 +38,14 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --frozen --group dev
 
       - name: Run tests
         run: uv run python -m pytest tests
+
+      - name: Check Marimo examples
+        if: matrix.python-version == '3.13'
+        run: make check-examples
 
       - name: Run lint checks
         run: |
@@ -84,7 +88,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --frozen --group dev
 
       - name: Verify native IPOPT binding
         run: uv run python -c "import cyipopt; print(cyipopt.__version__)"

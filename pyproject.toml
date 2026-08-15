@@ -37,6 +37,10 @@ dev = [
     "pytest>=8.4",
     "ruff>=0.12",
 ]
+examples = [
+    "marimo>=0.23",
+    "matplotlib>=3.9",
+]
 
 [tool.ruff]
 line-length = 120

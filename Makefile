@@ -7,7 +7,22 @@ RESET := \033[0m
 .PHONY: sync
 sync: ## install the development environment
 	@printf "$(BLUE)Syncing development dependencies...$(RESET)\n"
-	@uv sync --group dev
+	@uv sync --frozen --group dev
+
+.PHONY: sync-examples
+sync-examples: ## install development and example dependencies
+	@printf "$(BLUE)Syncing example dependencies...$(RESET)\n"
+	@uv sync --frozen --group dev --group examples
+
+.PHONY: marimo
+marimo: sync-examples ## open the Marimo example gallery
+	@printf "$(BLUE)Opening Marimo examples...$(RESET)\n"
+	@uv run --frozen --group examples marimo edit examples
+
+.PHONY: check-examples
+check-examples: sync-examples ## statically check every Marimo example
+	@printf "$(BLUE)Checking Marimo examples...$(RESET)\n"
+	@uv run --frozen --group examples marimo check --strict examples/*.py
 
 .PHONY: test
 test: sync ## run the full test suite
