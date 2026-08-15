@@ -35,7 +35,7 @@ def _mock_compatible_state(
     lower: cp.Variable,
 ) -> None:
     lower.value = float(upper.value)
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     lifted.primal.value = np.zeros(lifted.primal.size)
     lifted.slack.value = np.zeros(lifted.slack.size)
     lifted.dual.value = np.zeros(lifted.dual.size)
@@ -749,7 +749,7 @@ def test_best_of_retry_schedule_is_local_to_each_run(monkeypatch) -> None:
 
 def test_compute_residuals_matches_independent_canonical_calculation() -> None:
     model, x, y, parameter = _quadratic_bilevel()
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     canonical = model.canonicalize()
     x.value = 0.4
     parameter.value = x.value
@@ -807,7 +807,7 @@ def test_fixed_upper_initialization_recovers_direct_lower_solution() -> None:
 
 def test_compute_residuals_reports_each_independent_failure() -> None:
     model, x, y, parameter = _quadratic_bilevel()
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     canonical = model.canonicalize()
     x.value = 2.0
     parameter.value = x.value
@@ -836,7 +836,7 @@ def test_failed_step_inserts_intermediate_epsilon_then_retries(monkeypatch) -> N
     monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
 
     def fake_initialize(current, *args, **kwargs) -> None:
-        lifted = current.lifted_problem
+        lifted = current._lifted_problem
         y.value = float(x.value)
         lifted.primal.value = np.zeros(lifted.primal.size)
         lifted.slack.value = np.zeros(lifted.slack.size)
@@ -848,7 +848,7 @@ def test_failed_step_inserts_intermediate_epsilon_then_retries(monkeypatch) -> N
         if epsilon == pytest.approx(1e-2) and not failed_target_once:
             failed_target_once = True
             return IterationRecord(epsilon, "solver_error", None, zero, solver_name=str(solver))
-        current.lifted_problem.epsilon.value = epsilon
+        current._lifted_problem.epsilon.value = epsilon
         return IterationRecord(
             epsilon,
             cp.OPTIMAL,
@@ -895,7 +895,7 @@ def test_retry_budget_stops_repeated_bisection_and_returns_consistent_point(
     monkeypatch.setattr(continuation, "compute_residuals", lambda *args, **kwargs: zero)
 
     def fake_initialize(current, *args, **kwargs) -> None:
-        lifted = current.lifted_problem
+        lifted = current._lifted_problem
         y.value = float(x.value)
         lifted.primal.value = np.zeros(lifted.primal.size)
         lifted.slack.value = np.zeros(lifted.slack.size)
@@ -904,7 +904,7 @@ def test_retry_budget_stops_repeated_bisection_and_returns_consistent_point(
     def fake_solve(current, epsilon, solver, options, verbose):
         calls.append(epsilon)
         status = cp.OPTIMAL if epsilon > 2e-2 else "solver_error"
-        current.lifted_problem.epsilon.value = epsilon
+        current._lifted_problem.epsilon.value = epsilon
         return IterationRecord(epsilon, status, 0.0 if status == cp.OPTIMAL else None, zero)
 
     monkeypatch.setattr(continuation, "_initialize_lower", fake_initialize)

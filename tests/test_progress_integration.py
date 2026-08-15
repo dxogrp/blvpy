@@ -8,7 +8,7 @@ import pytest
 
 import blvpy.continuation as continuation
 from blvpy import BilevelProblem, LowerProblem
-from blvpy.continuation import SolveSettings
+from blvpy.continuation import _SolveSettings
 from blvpy.errors import InitializationError
 from blvpy.result import BilevelResult, IterationRecord, Residuals
 
@@ -40,7 +40,7 @@ def _quadratic_model(*, constrained: bool = False):
 
 
 def _mock_initialization(model: BilevelProblem, x: cp.Variable, y: cp.Variable) -> None:
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     y.value = float(x.value)
     lifted.primal.value = np.zeros(lifted.primal.size)
     lifted.slack.value = np.zeros(lifted.slack.size)
@@ -70,7 +70,7 @@ def test_verbosity_matrix_routes_progress_and_backend_flags(
 
     result = continuation.solve_bilevel(
         model,
-        SolveSettings(verbose=verbose, solver_verbose=solver_verbose),
+        _SolveSettings(verbose=verbose, solver_verbose=solver_verbose),
     )
 
     captured = capfd.readouterr()
@@ -86,7 +86,7 @@ def test_verbosity_flags_must_be_boolean(name: str, value) -> None:
     kwargs = {name: value}
 
     with pytest.raises(ValueError, match=rf"{name} must be boolean"):
-        continuation.solve_bilevel(model, SolveSettings(**kwargs))
+        continuation.solve_bilevel(model, _SolveSettings(**kwargs))
 
 
 def test_invalid_solver_verbosity_reports_failure_when_progress_is_enabled(capfd) -> None:
@@ -95,7 +95,7 @@ def test_invalid_solver_verbosity_reports_failure_when_progress_is_enabled(capfd
     with pytest.raises(ValueError, match="solver_verbose must be boolean"):
         continuation.solve_bilevel(
             model,
-            SolveSettings(verbose=True, solver_verbose="yes"),
+            _SolveSettings(verbose=True, solver_verbose="yes"),
         )
 
     transcript = capfd.readouterr().err
@@ -129,7 +129,7 @@ def test_progress_reports_complete_runs_and_final_selection(
 
     def fake_solve(current, epsilon, solver, options, solver_verbose):
         nonlocal calls
-        current.lifted_problem.epsilon.value = epsilon
+        current._lifted_problem.epsilon.value = epsilon
         status = statuses[calls]
         calls += 1
         return IterationRecord(
@@ -187,7 +187,7 @@ def test_progress_reports_inserted_epsilon_retry_exhaustion_and_failed_result(
 
     def fake_solve(current, epsilon, solver, options, solver_verbose):
         nonlocal calls
-        current.lifted_problem.epsilon.value = epsilon
+        current._lifted_problem.epsilon.value = epsilon
         calls += 1
         status = cp.OPTIMAL if calls == 1 else "solver_error"
         return IterationRecord(

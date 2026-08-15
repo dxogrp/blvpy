@@ -145,8 +145,8 @@ upper, recovery, primal, dual, cone, and gap residuals.
 tolerances for the selected run. `result.attempted_epsilon_history` also
 includes its failed solves and retry points. `result.runs` preserves every
 complete or failed run, while `result.selected_run` identifies the returned
-one. `result.certified` remains false because numerical NLP output is local and
-residual-based, not a rigorous finite-precision certificate.
+one. Numerical NLP output remains local and residual-based; it is not a
+rigorous finite-precision certificate.
 
 Each `RunRecord.index` is zero-based, and `initial_values` snapshots the actual
 post-projection upper point. `all_objectives` reports terminal objectives in run

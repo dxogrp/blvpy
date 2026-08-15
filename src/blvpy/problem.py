@@ -29,8 +29,8 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
-class LiftedProblem:
-    """Reusable epsilon-parameterized DNLP reformulation."""
+class _LiftedProblem:
+    """Internal reusable epsilon-parameterized DNLP reformulation."""
 
     problem: cp.Problem
     epsilon: cp.Parameter
@@ -80,7 +80,7 @@ class BilevelProblem:
         self._parameter_links = lower_problem._parameter_links
         self.outer_constraints = constraints
         self._canonical: CanonicalLowerProblem | None = None
-        self._lifted: LiftedProblem | None = None
+        self._lifted: _LiftedProblem | None = None
 
     @property
     def upper_variables(self) -> tuple[cp.Variable, ...]:
@@ -101,7 +101,7 @@ class BilevelProblem:
         return _unique_variables((*self.upper_variables, *self._cvxpy_lower_problem.variables()))
 
     @property
-    def lifted_problem(self) -> LiftedProblem:
+    def _lifted_problem(self) -> _LiftedProblem:
         """Return the assembled reusable lifted problem after validation."""
 
         if self._lifted is None:
@@ -166,9 +166,9 @@ class BilevelProblem:
         target-epsilon result.
         """
 
-        from .continuation import SolveSettings, solve_bilevel
+        from .continuation import _SolveSettings, solve_bilevel
 
-        settings = SolveSettings(
+        settings = _SolveSettings(
             epsilon_initial=epsilon_initial,
             epsilon_target=epsilon_target,
             contraction=contraction,
@@ -223,7 +223,7 @@ class BilevelProblem:
             if not variable.is_real():
                 raise UnsupportedModelError(f"Variable {variable.name()!r} is complex; real variables are required.")
 
-    def _assemble_lifted(self, canonical: CanonicalLowerProblem) -> LiftedProblem:
+    def _assemble_lifted(self, canonical: CanonicalLowerProblem) -> _LiftedProblem:
         parameter_expressions = {parameter.id: variable for parameter, variable in self._parameter_links.items()}
         data = canonical.build_data_expressions(parameter_expressions)
         primal = cp.Variable(canonical.canonical_size, name="blvpy_primal")
@@ -268,7 +268,7 @@ class BilevelProblem:
         except Exception as error:
             raise UnsupportedModelError(f"DNLP could not compile the lifted problem: {error}") from error
 
-        return LiftedProblem(
+        return _LiftedProblem(
             problem=problem,
             epsilon=epsilon,
             primal=primal,
@@ -342,4 +342,4 @@ def _linked_parameter_domain_constraints(
     return tuple(constraints)
 
 
-__all__ = ["BilevelProblem", "LiftedProblem"]
+__all__ = ["BilevelProblem"]

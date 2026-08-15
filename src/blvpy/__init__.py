@@ -9,7 +9,6 @@ from .canonicalization import (
     RecoverySpec,
 )
 from .cones import ConeBlock, ConeLayout
-from .continuation import SolveSettings
 from .errors import (
     ApproximateCanonicalizationError,
     BilevelError,
@@ -23,7 +22,7 @@ from .errors import (
     ValidationError,
 )
 from .lower_problem import LowerProblem
-from .problem import BilevelProblem, LiftedProblem
+from .problem import BilevelProblem
 from .result import BilevelResult, GapDiagnostics, IterationRecord, Residuals, RunRecord
 
 __all__ = [
@@ -41,7 +40,6 @@ __all__ = [
     "GapDiagnostics",
     "InitializationError",
     "IterationRecord",
-    "LiftedProblem",
     "LowerProblem",
     "ParameterMappingError",
     "ParameterSpec",
@@ -49,7 +47,6 @@ __all__ = [
     "Residuals",
     "RunRecord",
     "SolveError",
-    "SolveSettings",
     "SolverUnavailableError",
     "UnsupportedConeError",
     "UnsupportedModelError",

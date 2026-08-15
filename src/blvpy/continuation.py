@@ -18,7 +18,7 @@ from .progress import ProgressReporter
 from .result import BilevelResult, IterationRecord, Residuals, RunRecord
 
 if TYPE_CHECKING:
-    from .problem import BilevelProblem, LiftedProblem
+    from .problem import BilevelProblem, _LiftedProblem
 
 _ACCEPTABLE_NLP_STATUSES = {cp.OPTIMAL, cp.OPTIMAL_INACCURATE}
 
@@ -32,7 +32,7 @@ class _RunOutcome:
 
 
 @dataclass(frozen=True, slots=True)
-class SolveSettings:
+class _SolveSettings:
     """Numerical settings for deterministic or best-of gap continuation."""
 
     epsilon_initial: float = 1e-1
@@ -51,7 +51,7 @@ class SolveSettings:
     solver_verbose: bool = False
 
 
-def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResult:
+def solve_bilevel(model: BilevelProblem, settings: _SolveSettings) -> BilevelResult:
     """Internal implementation of :meth:`BilevelProblem.solve`."""
 
     progress_verbose = _boolean(settings.verbose, "verbose")
@@ -81,7 +81,7 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
 
 def _solve_bilevel(
     model: BilevelProblem,
-    settings: SolveSettings,
+    settings: _SolveSettings,
     reporter: ProgressReporter,
     solver_verbose: bool,
 ) -> BilevelResult:
@@ -117,7 +117,7 @@ def _solve_bilevel(
     requested_runs = 1 if best_of is None else best_of
 
     model.validate()
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     canonical = model.canonicalize()
     layout = canonical.cone_layout
     reporter.problem(
@@ -342,7 +342,7 @@ def _initialize_run(
         conic_solver_options,
         solver_verbose,
     )
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     lifted.epsilon.value = epsilon_initial
     initial_residuals = compute_residuals(model, epsilon_initial)
     if restoration and not initial_residuals.is_feasible(feasibility_tolerance):
@@ -421,7 +421,7 @@ def _solve_run(
     if not initial.accepted_initial or initial.state is None:
         return initial
 
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     _restore_state(lifted.problem, initial.state)
     _sync_linked_parameters(model)
     iterations = list(initial.record.iterations)
@@ -587,7 +587,7 @@ def _partial_run_outcome(
     tolerance: float,
     message: str,
 ) -> _RunOutcome:
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     _restore_state(lifted.problem, state)
     _sync_linked_parameters(model)
     lifted.epsilon.value = epsilon
@@ -763,7 +763,7 @@ def _project_upper_start(
     """Best-effort projection of the deterministic start onto upper constraints."""
 
     projected = {variable: _numeric_value(value, variable.shape) for variable, value in sample.items()}
-    constraints = model.lifted_problem.upper_constraints
+    constraints = model._lifted_problem.upper_constraints
     if not constraints:
         return projected
     _assign_values(projected)
@@ -795,7 +795,7 @@ def _project_upper_start(
 def compute_residuals(model: BilevelProblem, epsilon: float | None = None) -> Residuals:
     """Independently compute all reported lifted residuals."""
 
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     if epsilon is None:
         epsilon = float(lifted.epsilon.value)
     values = {parameter: variable.value for parameter, variable in model._parameter_links.items()}
@@ -863,7 +863,7 @@ def _initialize_lower(
     if primal.value is None or slack.value is None or equality.dual_value is None:
         raise InitializationError("The conic solver omitted a primal or dual certificate.")
 
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     lifted.primal.save_value(np.asarray(primal.value, dtype=float))
     lifted.slack.save_value(np.asarray(slack.value, dtype=float))
     lifted.dual.save_value(np.asarray(equality.dual_value, dtype=float))
@@ -880,7 +880,7 @@ def _restore_feasibility(
     solver_verbose: bool,
     tolerance: float = 1e-7,
 ) -> None:
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     radius = cp.Variable(nonneg=True, name="blvpy_restoration_radius")
     radius.value = max(1.0, _constraint_violation(lifted.problem.constraints))
     constraints: list[cp.Constraint] = []
@@ -910,7 +910,7 @@ def _relaxed_cone_constraints(
     model: BilevelProblem,
     radius: cp.Expression,
 ) -> tuple[cp.Constraint, ...]:
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     layout = model.canonicalize().cone_layout
     slack, dual = lifted.slack, lifted.dual
     constraints: list[cp.Constraint] = []
@@ -946,7 +946,7 @@ def _solve_one(
     options: Mapping[str, Any],
     solver_verbose: bool,
 ) -> IterationRecord:
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     lifted.epsilon.value = epsilon
     message: str | None = None
     try:
@@ -981,7 +981,7 @@ def _solve_one(
     )
 
 
-def _compile_probe(lifted: LiftedProblem, *, use_hessian: bool) -> None:
+def _compile_probe(lifted: _LiftedProblem, *, use_hessian: bool) -> None:
     """Build derivative oracles after all lifted variables have initial values."""
 
     try:
@@ -1097,7 +1097,7 @@ def _result(
     message: str | None,
     final_record: IterationRecord | None = None,
 ) -> BilevelResult:
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     variable_values = {
         variable: np.asarray(variable.value, dtype=float)
         for variable in model.source_variables
@@ -1115,7 +1115,6 @@ def _result(
         selected_run_index=selected_run_index,
         final_iteration=final_record,
         message=message,
-        certified=False,
     )
 
 
@@ -1230,4 +1229,4 @@ def _infinite_residuals() -> Residuals:
     )
 
 
-__all__ = ["SolveSettings", "compute_residuals", "solve_bilevel"]
+__all__ = ["compute_residuals"]

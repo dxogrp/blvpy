@@ -319,7 +319,6 @@ def test_result_snapshots_arrays_and_exposes_history() -> None:
     assert result.epsilon_history == (1e-6,)
     assert result.complementarity == 5e-7
     assert result.succeeded
-    assert not result.certified
     assert result.selected_run is selected_run
     assert result.all_objectives == (None, 2.0)
     assert selected_run.epsilon_history == (1e-6,)

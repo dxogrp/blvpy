@@ -238,9 +238,6 @@ class CanonicalLowerProblem:
     _source_problem: cp.Problem
     _canonical_problem: cp.Problem
     _parameter_links: Mapping[cp.Parameter, cp.Expression]
-    param_prog: Any
-    reduction_chain: tuple[Any, ...]
-    inverse_data: tuple[Any, ...]
     canonical_variable_offsets: Mapping[int, int]
     cone_layout: ConeLayout
     canonical_size: int
@@ -522,9 +519,6 @@ def _canonicalize_lower(
         _source_problem=lower_problem,
         _canonical_problem=canonical_problem,
         _parameter_links=internal_mapping,
-        param_prog=param_prog,
-        reduction_chain=tuple(chain.reductions),
-        inverse_data=tuple(inverse_data),
         canonical_variable_offsets=param_prog.var_id_to_col,
         cone_layout=cone_layout,
         canonical_size=canonical_size,

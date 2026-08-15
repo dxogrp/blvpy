@@ -27,7 +27,7 @@ def _linear_bilevel() -> tuple[BilevelProblem, cp.Variable, cp.Variable]:
 def test_compute_residuals_reports_dual_cone_and_exact_upper_violation() -> None:
     model, x, y = _linear_bilevel()
     canonical = model.canonicalize()
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     assert canonical.cone_layout.nonnegative == 1
     assert canonical.constraint_size == 1
 
@@ -56,7 +56,7 @@ def test_compute_residuals_reports_dual_cone_and_exact_upper_violation() -> None
 )
 def test_compute_residuals_rejects_missing_canonical_values(missing: str, message: str) -> None:
     model, x, _ = _linear_bilevel()
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     x.value = 0.0
     values = {
         "primal": np.zeros(lifted.primal.size),
@@ -81,7 +81,7 @@ def test_compute_residuals_rejects_missing_linked_value() -> None:
 
 def test_missing_lower_source_value_produces_infinite_recovery_residual() -> None:
     model, x, y = _linear_bilevel()
-    lifted = model.lifted_problem
+    lifted = model._lifted_problem
     x.value = 0.0
     y.value = None
     lifted.primal.value = np.zeros(lifted.primal.size)
@@ -94,7 +94,7 @@ def test_missing_lower_source_value_produces_infinite_recovery_residual() -> Non
     assert not residuals.is_feasible(1e-7)
 
 
-def test_is_feasible_uses_separate_gap_tolerance_and_ignores_source_gap() -> None:
+def test_is_feasible_uses_separate_gap_tolerance() -> None:
     tolerance = 1e-5
     residuals = Residuals(
         primal_equality=tolerance,
@@ -105,7 +105,6 @@ def test_is_feasible_uses_separate_gap_tolerance_and_ignores_source_gap() -> Non
         dual_cone=0.0,
         complementarity=3e-5,
         gap_violation=2e-5,
-        source_gap=1e6,
     )
 
     assert residuals.max_feasibility == tolerance
@@ -114,10 +113,7 @@ def test_is_feasible_uses_separate_gap_tolerance_and_ignores_source_gap() -> Non
     assert residuals.is_feasible(tolerance, gap_tolerance=2e-5)
     assert not residuals.is_feasible(tolerance, gap_tolerance=2e-5 - 1e-12)
 
-    with_different_source_gap = Residuals(
-        **{**residuals.as_dict(), "source_gap": -1e6},
-    )
-    assert with_different_source_gap.is_feasible(tolerance, gap_tolerance=2e-5)
+    assert residuals.as_dict()["gap_violation"] == 2e-5
 
 
 def test_nonfinite_residuals_are_never_feasible() -> None:
@@ -130,13 +126,11 @@ def test_nonfinite_residuals_are_never_feasible() -> None:
         dual_cone=0.0,
         complementarity=float("inf"),
         gap_violation=float("inf"),
-        source_gap=float("inf"),
     )
 
     assert np.isinf(residuals.max_feasibility)
     assert np.isinf(residuals.max_violation)
     assert not residuals.is_feasible(1e10, gap_tolerance=1e10)
-    assert np.isinf(residuals.as_dict()["source_gap"])
     with pytest.raises(ValueError, match="finite"):
         residuals.is_feasible(float("inf"))
 

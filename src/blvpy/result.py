@@ -20,7 +20,6 @@ class Residuals:
     Equality and cone fields are norms or distances and therefore
     nonnegative. ``complementarity`` is the raw canonical pairing and is kept
     separate from ``gap_violation = max(complementarity - epsilon, 0)``.
-    ``source_gap`` may hold an independently checked lower-objective gap.
     """
 
     primal_equality: float
@@ -31,7 +30,6 @@ class Residuals:
     dual_cone: float
     complementarity: float
     gap_violation: float
-    source_gap: float | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -49,8 +47,6 @@ class Residuals:
             "complementarity",
             _real_float(self.complementarity, "complementarity"),
         )
-        if self.source_gap is not None:
-            object.__setattr__(self, "source_gap", _real_float(self.source_gap, "source_gap"))
 
     @property
     def max_feasibility(self) -> float:
@@ -81,7 +77,7 @@ class Residuals:
             gap_tolerance = _finite_nonnegative_float(gap_tolerance, "gap_tolerance")
         return self.max_feasibility <= tolerance and self.gap_violation <= gap_tolerance
 
-    def as_dict(self) -> dict[str, float | None]:
+    def as_dict(self) -> dict[str, float]:
         """Return a serialization-friendly dictionary."""
 
         return {
@@ -93,7 +89,6 @@ class Residuals:
             "dual_cone": self.dual_cone,
             "complementarity": self.complementarity,
             "gap_violation": self.gap_violation,
-            "source_gap": self.source_gap,
         }
 
 
@@ -306,10 +301,9 @@ class RunRecord:
 class BilevelResult:
     """Public result of a BLVPY solve.
 
-    All numeric values are copied into read-only arrays. ``certified`` is
-    deliberately false by default: a local solver status and small numerical
-    residuals alone do not constitute the paper's exact finite-iterate
-    certificate.
+    All numeric values are copied into read-only arrays. The result describes
+    a local numerical solution; solver status and small residuals alone do not
+    constitute a rigorous bilevel certificate.
     """
 
     status: str
@@ -323,7 +317,6 @@ class BilevelResult:
     selected_run_index: int | None = None
     final_iteration: IterationRecord | None = None
     message: str | None = None
-    certified: bool = False
 
     def __post_init__(self) -> None:
         _status(self.status)
@@ -370,9 +363,6 @@ class BilevelResult:
         if final_iteration is None and iterations:
             final_iteration = iterations[-1]
         object.__setattr__(self, "final_iteration", final_iteration)
-        if not isinstance(self.certified, (bool, np.bool_)):
-            raise ValueError("certified must be boolean.")
-        object.__setattr__(self, "certified", bool(self.certified))
 
     @property
     def epsilon_history(self) -> tuple[float, ...]:

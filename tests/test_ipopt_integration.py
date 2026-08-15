@@ -89,7 +89,7 @@ def _product_cone_distance(
 
 def _upper_constraint_violation(model: BilevelProblem) -> float:
     violation = 0.0
-    for constraint in model.lifted_problem.upper_constraints:
+    for constraint in model._lifted_problem.upper_constraints:
         value = np.asarray(constraint.violation(), dtype=float).reshape(-1)
         violation = max(violation, float(np.linalg.norm(value)))
     return violation
@@ -238,7 +238,6 @@ def _check_against_numerical_oracles(
     assert result.succeeded
     assert result.objective is not None
     assert result.residuals is not None
-    assert result.residuals.source_gap is None
     assert result.final_epsilon is not None
 
     source_values = _snapshot_source_values(model, result)
