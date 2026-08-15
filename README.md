@@ -154,6 +154,28 @@ order. If no run reaches the target, BLVPY returns `continuation_failed` at the
 partial run that attained the smallest epsilon, with objective and run index as
 tie-breakers.
 
+## Gap diagnostics
+
+Use the returned solution to request a complete primal-dual gap diagnosis:
+
+```python
+diagnostics = bilevel.gap_diagnostics(result)
+
+print(diagnostics.source_gap)
+print(diagnostics.identity_error)
+```
+
+This call performs one additional silent Clarabel solve of the lower problem
+at the returned upper point. `source_gap` is the signed difference between the
+returned lower objective and that reference optimum, in the original lower
+objective's units. Small negative values can occur within solver tolerance.
+The remaining fields decompose the canonical primal-dual gap and check its
+inexact identity.
+
+Diagnosis is opt-in and does not change the result or model state. It provides
+a numerical consistency check, not a certificate of global bilevel
+optimality.
+
 ## Progress and solver output
 
 BLVPY separates its concise progress transcript from CVXPY and native solver

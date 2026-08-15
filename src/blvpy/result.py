@@ -99,6 +99,8 @@ class GapDiagnostics:
     With ``r_p = A u + s - b`` and ``r_d = A.T lambda + c``, the identity is
     ``primal_objective - dual_objective = complementarity
     + dual_residual_term - primal_residual_term``.
+    ``source_gap`` is the signed difference between the returned source-level
+    lower objective and an independently solved fixed-upper reference value.
     """
 
     primal_objective: float
@@ -119,40 +121,6 @@ class GapDiagnostics:
             object.__setattr__(self, name, _real_float(getattr(self, name), name))
         if self.source_gap is not None:
             object.__setattr__(self, "source_gap", _real_float(self.source_gap, "source_gap"))
-
-    @classmethod
-    def from_canonical(
-        cls,
-        *,
-        c: ArrayLike,
-        b: ArrayLike,
-        primal: ArrayLike,
-        dual: ArrayLike,
-        primal_residual: ArrayLike,
-        dual_residual: ArrayLike,
-        complementarity: float,
-        source_gap: float | None = None,
-    ) -> GapDiagnostics:
-        """Compute every identity term from canonical vectors."""
-
-        c_vector = _vector(c, "c")
-        b_vector = _vector(b, "b")
-        primal_vector = _vector(primal, "primal")
-        dual_vector = _vector(dual, "dual")
-        primal_residual_vector = _vector(primal_residual, "primal_residual")
-        dual_residual_vector = _vector(dual_residual, "dual_residual")
-        _same_size(c_vector, primal_vector, "c", "primal")
-        _same_size(b_vector, dual_vector, "b", "dual")
-        _same_size(primal_residual_vector, dual_vector, "primal_residual", "dual")
-        _same_size(dual_residual_vector, primal_vector, "dual_residual", "primal")
-        return cls(
-            primal_objective=float(c_vector @ primal_vector),
-            dual_objective=float(-(b_vector @ dual_vector)),
-            complementarity=complementarity,
-            dual_residual_term=float(primal_vector @ dual_residual_vector),
-            primal_residual_term=float(dual_vector @ primal_residual_vector),
-            source_gap=source_gap,
-        )
 
     @property
     def normalized_gap(self) -> float:
@@ -471,12 +439,3 @@ def _snapshot(value: ArrayLike, name: str) -> NDArray[np.float64]:
         raise ValueError(f"{name} must contain numeric values.") from error
     snapshot.setflags(write=False)
     return snapshot
-
-
-def _vector(value: ArrayLike, name: str) -> NDArray[np.float64]:
-    return _snapshot(value, name).reshape(-1, order="F")
-
-
-def _same_size(left: NDArray[np.float64], right: NDArray[np.float64], left_name: str, right_name: str) -> None:
-    if left.size != right.size:
-        raise ValueError(f"{left_name} has {left.size} entries but {right_name} has {right.size}.")

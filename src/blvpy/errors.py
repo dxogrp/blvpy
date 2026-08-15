@@ -40,4 +40,4 @@ class SolverUnavailableError(BilevelError, RuntimeError):
 
 
 class SolveError(BilevelError, RuntimeError):
-    """The lifted nonlinear solve failed."""
+    """A numerical solve failed."""

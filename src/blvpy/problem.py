@@ -25,7 +25,7 @@ from .errors import UnsupportedModelError, ValidationError
 from .lower_problem import LowerProblem
 
 if TYPE_CHECKING:
-    from .result import BilevelResult
+    from .result import BilevelResult, GapDiagnostics
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +185,18 @@ class BilevelProblem:
             solver_verbose=solver_verbose,
         )
         return solve_bilevel(self, settings)
+
+    def gap_diagnostics(self, result: BilevelResult) -> GapDiagnostics:
+        """Diagnose the returned lower point with one reference lower solve.
+
+        The diagnostic is computed from immutable result snapshots. It
+        includes both the canonical inexact-gap identity and the signed
+        source-level lower suboptimality at the returned upper point.
+        """
+
+        from .diagnostics import _gap_diagnostics
+
+        return _gap_diagnostics(self, result)
 
     def _validate_outer(self) -> None:
         if not isinstance(self.outer_objective, cp.Minimize):

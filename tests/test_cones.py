@@ -12,7 +12,7 @@ from blvpy.cones import (
     primal_cone_distance,
     soc_distance,
 )
-from blvpy.result import BilevelResult, GapDiagnostics, IterationRecord, Residuals, RunRecord
+from blvpy.result import BilevelResult, IterationRecord, Residuals, RunRecord
 
 
 def test_layout_preserves_canonical_block_order() -> None:
@@ -257,29 +257,6 @@ def test_complementarity_uses_unmodified_canonical_order() -> None:
     dual = np.array([7.0, 5.0, 4.0, -1.0, 2.0])
 
     assert layout.complementarity(primal, dual) == pytest.approx(primal @ dual)
-
-
-def test_gap_diagnostics_verify_inexact_identity() -> None:
-    a = np.array([[1.5, -0.5], [0.25, 2.0], [-1.0, 1.0]])
-    b = np.array([1.0, -2.0, 0.5])
-    c = np.array([0.75, -1.25])
-    primal = np.array([0.4, -0.7])
-    slack = np.array([0.2, 0.3, -0.1])
-    dual = np.array([0.8, -0.2, 1.1])
-    primal_residual = a @ primal + slack - b
-    dual_residual = a.T @ dual + c
-
-    diagnostics = GapDiagnostics.from_canonical(
-        c=c,
-        b=b,
-        primal=primal,
-        dual=dual,
-        primal_residual=primal_residual,
-        dual_residual=dual_residual,
-        complementarity=slack @ dual,
-    )
-
-    assert diagnostics.identity_error == pytest.approx(0.0, abs=1e-14)
 
 
 def test_result_snapshots_arrays_and_exposes_history() -> None:

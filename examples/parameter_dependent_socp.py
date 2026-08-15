@@ -27,11 +27,13 @@ def main() -> None:
     )
 
     result = problem.solve()
+    diagnostics = problem.gap_diagnostics(result)
     print(f"status: {result.status}")
     print(f"x: {x.value:.6f}")
     print(f"y: {y.value}")
     print(f"t: {t.value:.6f}")
     print(f"complementarity: {result.complementarity:.3e}")
+    print(f"source gap: {diagnostics.source_gap:.3e}")
 
 
 if __name__ == "__main__":

@@ -137,14 +137,12 @@ def _independent_residuals(
         complementarity=complementarity,
         gap_violation=max(complementarity - result.final_epsilon, 0.0),
     )
-    diagnostics = GapDiagnostics.from_canonical(
-        c=data.c,
-        b=data.b,
-        primal=primal,
-        dual=dual,
-        primal_residual=primal_residual,
-        dual_residual=dual_residual,
+    diagnostics = GapDiagnostics(
+        primal_objective=float(data.c @ primal),
+        dual_objective=float(-(data.b @ dual)),
         complementarity=complementarity,
+        dual_residual_term=float(primal @ dual_residual),
+        primal_residual_term=float(dual @ primal_residual),
     )
     return residuals, diagnostics
 
@@ -229,11 +227,32 @@ def _assert_residuals_match(actual: Residuals, expected: Residuals) -> None:
     )
 
 
+def _assert_gap_diagnostics_match(actual: GapDiagnostics, expected: GapDiagnostics) -> None:
+    names = (
+        "primal_objective",
+        "dual_objective",
+        "complementarity",
+        "dual_residual_term",
+        "primal_residual_term",
+        "normalized_gap",
+        "inexact_identity_rhs",
+        "identity_error",
+    )
+    np.testing.assert_allclose(
+        [getattr(actual, name) for name in names],
+        [getattr(expected, name) for name in names],
+        rtol=1e-8,
+        atol=1e-9,
+    )
+    assert actual.source_gap == pytest.approx(expected.source_gap, abs=1e-8)
+
+
 def _check_against_numerical_oracles(
     model: BilevelProblem,
     result: BilevelResult,
     *,
     check_reference_recovery: bool = True,
+    check_gap_convenience: bool = False,
 ) -> _NumericalOracle:
     assert result.succeeded
     assert result.objective is not None
@@ -283,6 +302,8 @@ def _check_against_numerical_oracles(
     )
     assert gap_diagnostics.source_gap == pytest.approx(source_gap)
     assert gap_diagnostics.identity_error == pytest.approx(0.0, abs=1e-9)
+    if check_gap_convenience:
+        _assert_gap_diagnostics_match(model.gap_diagnostics(result), gap_diagnostics)
     return _NumericalOracle(
         source_gap=source_gap,
         direct_lower_value=direct_lower_value,
@@ -339,7 +360,11 @@ def test_analytic_quadratic_reaches_target_and_is_epsilon_lower_optimal() -> Non
     high = model.canonicalize().apply_numeric({parameter: 0.75})
     assert high.d - low.d == pytest.approx(2.0)
 
-    oracle = _check_against_numerical_oracles(model, result)
+    oracle = _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+    )
     assert oracle.source_gap == pytest.approx(result.final_epsilon, abs=3e-6)
 
 
@@ -356,7 +381,12 @@ def test_optimistic_lp_selects_upper_preferred_lower_optimizer() -> None:
 
     np.testing.assert_allclose([x.value, y.value], [0.0, 1.0], atol=_ANALYTIC_ATOL)
     assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
-    oracle = _check_against_numerical_oracles(model, result, check_reference_recovery=False)
+    oracle = _check_against_numerical_oracles(
+        model,
+        result,
+        check_reference_recovery=False,
+        check_gap_convenience=True,
+    )
     assert oracle.source_gap == pytest.approx(0.0, abs=1e-8)
 
 
@@ -395,7 +425,11 @@ def test_parameter_dependent_socp_with_active_upper_constraint() -> None:
     assert float(np.asarray(outer_constraint.violation())) <= 1e-7
     assert abs(float(x.value) - 1.0) <= _ANALYTIC_ATOL
     assert abs(float(t.value) - np.linalg.norm(y.value)) <= _ANALYTIC_ATOL
-    _check_against_numerical_oracles(model, result)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+    )
 
 
 def test_vector_matrix_links_multiple_soc_blocks_and_fixed_parameter() -> None:
