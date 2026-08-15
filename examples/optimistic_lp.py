@@ -1,34 +1,122 @@
-"""Optimistic selection from a lower LP with many optimal solutions.
+import marimo
 
-Requires BLVPY's native IPOPT dependency.
-"""
-
-import cvxpy as cp
-
-from blvpy import BilevelProblem, LowerProblem
+__generated_with = "0.23.16"
+app = marimo.App(width="medium")
 
 
-def main() -> None:
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    # Optimistic selection from a lower linear program
+
+    This example shows what *optimistic* bilevel semantics means when the
+    lower-level problem has many optimal points.
+    """)
+    return
+
+
+@app.cell
+def _():
+    import cvxpy as cp
+    import marimo as mo
+    import numpy as np
+
+    from blvpy import BilevelProblem, LowerProblem
+
+    return BilevelProblem, LowerProblem, cp, mo, np
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Problem formulation
+
+    Consider
+
+    \[
+    \begin{array}{ll}
+    \mathop{\rm minimize}_{x,y} & x^2 + (y-1)^2 \\
+    \mathop{\rm subject\ to} & 0 \leq x \leq 1, \\
+      & y \in \mathop{\rm argmin}_{z}\ 0 \\
+      & \qquad\mathop{\rm subject\ to}\quad x \leq z \leq 1.
+    \end{array}
+    \]
+
+    Every $z\in[x,1]$ is lower-optimal. Under optimistic semantics the upper
+    level may select, among those tied lower optima, the value it prefers.
+    It therefore chooses $y=1$, while $x^2$ selects $x=0$. The exact upper
+    objective is zero.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Specify and solve the model
+
+    The same CVXPY variable `y` appears in the lower constraints and upper
+    objective. BLVPY preserves that shared variable when it constructs the
+    single-level reformulation.
+    """)
+    return
+
+
+@app.cell
+def _(BilevelProblem, LowerProblem, cp):
     x = cp.Variable(name="x")
     y = cp.Variable(name="y")
 
-    # Every y in [x, 1] is lower-optimal. Optimistic semantics lets the upper
-    # problem choose y = 1, while its x^2 term selects x = 0.
-    lower = LowerProblem(cp.Minimize(0.0), [y >= x, y <= 1.0], parameters=[x])
+    lower = LowerProblem(
+        cp.Minimize(0.0 * y),
+        [y >= x, y <= 1.0],
+        parameters=[x],
+    )
     problem = BilevelProblem(
-        outer_objective=cp.Minimize(cp.square(x) + cp.square(y - 1.0)),
-        lower_problem=lower,
+        cp.Minimize(cp.square(x) + cp.square(y - 1.0)),
+        lower,
         outer_constraints=[x >= 0.0, x <= 1.0],
     )
+    return problem, x, y
 
-    result = problem.solve()
+
+@app.cell
+def _(np, problem, x, y):
+    epsilon_target = 1e-9
+    result = problem.solve(epsilon_target=epsilon_target)
     diagnostics = problem.gap_diagnostics(result)
-    print(f"status: {result.status}")
-    print(f"x: {x.value:.6f} (expected 0)")
-    print(f"y: {y.value:.6f} (expected 1 under optimistic semantics)")
-    print(f"complementarity: {result.complementarity:.3e}")
-    print(f"source gap: {diagnostics.source_gap:.3e}")
+
+    assert result.succeeded
+    assert result.final_epsilon == epsilon_target
+    assert result.residuals.max_violation <= 1e-5
+    assert all(np.isfinite(np.asarray(value)).all() for value in result.variable_values.values())
+    assert all(np.isfinite(np.asarray(value)).all() for value in (result.canonical_primal, result.slack, result.dual))
+    assert -1e-6 <= diagnostics.source_gap <= epsilon_target + 1e-5
+    assert abs(float(np.asarray(x.value))) <= 3e-3
+    assert abs(float(np.asarray(y.value)) - 1.0) <= 3e-3
+    assert abs(result.objective) <= 5e-3
+    return diagnostics, result
+
+
+@app.cell(hide_code=True)
+def _(diagnostics, mo, result, x, y):
+    mo.md(rf"""
+    ## Result and interpretation
+
+    - Status: `{result.status}`
+    - Upper variable: $x={float(x.value):.6f}$
+    - Optimistically selected lower solution: $y={float(y.value):.6f}$
+    - Upper objective: ${result.objective:.6f}$
+    - Maximum lifted violation: ${result.residuals.max_violation:.3e}$
+    - Complementarity: ${result.complementarity:.3e}$
+    - Independently evaluated lower source gap: ${diagnostics.source_gap:.3e}$
+
+    The lower source gap is essentially zero for every feasible $y$ in
+    this example. The value $y\approx1$ is selected because it is the
+    lower optimizer preferred by the upper objective.
+    """)
+    return
 
 
 if __name__ == "__main__":
-    main()
+    app.run()
