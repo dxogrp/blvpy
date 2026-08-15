@@ -124,7 +124,6 @@ def test_deterministic_start_projects_onto_dcp_upper_constraints() -> None:
 
 def test_failed_automatic_initialization_requests_named_values(monkeypatch) -> None:
     model, _, _, _ = _quadratic_bilevel(bounded=False)
-    monkeypatch.setattr(continuation, "_require_solver", lambda *args, **kwargs: None)
 
     def fail_initialization(*args, **kwargs) -> None:
         raise InitializationError("synthetic initialization failure")
@@ -141,7 +140,6 @@ def test_failed_automatic_initialization_requests_named_values(monkeypatch) -> N
 def test_failed_supplied_initialization_names_all_upper_variables(monkeypatch) -> None:
     model, x, _, _ = _quadratic_bilevel(bounded=False)
     x.value = 1.25
-    monkeypatch.setattr(continuation, "_require_solver", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         continuation,
         "_initialize_lower",
@@ -157,8 +155,14 @@ def test_failed_supplied_initialization_names_all_upper_variables(monkeypatch) -
 
 def test_default_solve_reports_actionable_missing_ipopt_error(monkeypatch) -> None:
     model, _, _, _ = _quadratic_bilevel()
-    installed = [solver for solver in cp.installed_solvers() if str(solver).upper() != "IPOPT"]
-    monkeypatch.setattr(cp, "installed_solvers", lambda: installed)
+
+    def unavailable_ipopt(*args, **kwargs):
+        raise SolverUnavailableError(
+            "IPOPT is not available. Install its native library, then reinstall "
+            "BLVpy so its required cyipopt binding can be built."
+        )
+
+    monkeypatch.setattr(continuation, "solve_dnlp", unavailable_ipopt)
 
     with pytest.raises(SolverUnavailableError, match=r"IPOPT.*required cyipopt"):
         model.solve()
@@ -261,7 +265,6 @@ def test_failed_step_inserts_intermediate_epsilon_then_retries(monkeypatch) -> N
     failed_target_once = False
     zero = Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
-    monkeypatch.setattr(continuation, "_require_solver", lambda *args, **kwargs: None)
     monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
 
     def fake_initialize(current, *args, **kwargs) -> None:
@@ -321,7 +324,6 @@ def test_retry_budget_stops_repeated_bisection_and_returns_consistent_point(
     zero = Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     calls: list[float] = []
 
-    monkeypatch.setattr(continuation, "_require_solver", lambda *args, **kwargs: None)
     monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
     monkeypatch.setattr(continuation, "compute_residuals", lambda *args, **kwargs: zero)
 

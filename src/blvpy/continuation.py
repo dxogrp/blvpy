@@ -11,6 +11,7 @@ import cvxpy as cp
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from .backends import solve_conic, solve_dnlp
 from .errors import InitializationError, SolveError, SolverUnavailableError
 from .result import BilevelResult, IterationRecord, Residuals, StartRecord
 
@@ -83,8 +84,6 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
 
     model.validate()
     lifted = model.lifted_problem
-    _require_solver(solver, nonlinear=True)
-    _require_solver(conic_solver, nonlinear=False)
     rng = seed if isinstance(seed, np.random.Generator) else np.random.default_rng(seed)
     variables_without_values = tuple(variable for variable in model.upper_variables if variable.value is None)
     try:
@@ -145,6 +144,8 @@ def solve_bilevel(model: BilevelProblem, settings: SolveSettings) -> BilevelResu
             candidate = _Candidate(index, objective, state, record.residuals)
             candidates.append(candidate)
             start_records.append(StartRecord(index, record.status, record.objective, record.residuals))
+        except SolverUnavailableError:
+            raise
         except Exception as error:
             start_records.append(StartRecord(index, "failed", message=f"{type(error).__name__}: {error}"))
 
@@ -334,13 +335,8 @@ def _project_upper_start(
     if not projection.is_dcp():
         return projected
     try:
-        projection.solve(
-            solver=solver,
-            warm_start=True,
-            verbose=verbose,
-            **dict(options),
-        )
-    except Exception:
+        solve_conic(projection, solver, options, verbose)
+    except cp.SolverError:
         _assign_values(projected)
         return projected
     if projection.status not in cp.settings.SOLUTION_PRESENT:
@@ -416,8 +412,8 @@ def _initialize_lower(
         [equality, *canonical.cone_layout.primal_constraints(slack)],
     )
     try:
-        lower.solve(solver=conic_solver, warm_start=True, verbose=verbose, **options)
-    except Exception as error:
+        solve_conic(lower, conic_solver, options, verbose)
+    except cp.SolverError as error:
         raise InitializationError(f"The fixed-data lower cone solve failed: {error}") from error
     if lower.status not in cp.settings.SOLUTION_PRESENT:
         raise InitializationError(f"The fixed-data lower cone problem returned status {lower.status!r}.")
@@ -456,7 +452,7 @@ def _restore_feasibility(
     restoration_problem = cp.Problem(cp.Minimize(radius), constraints)
     if not restoration_problem.is_dnlp():
         raise SolveError("The feasibility-restoration problem is not DNLP compliant.")
-    _solve_problem(restoration_problem, solver, options, verbose)
+    solve_dnlp(restoration_problem, solver, options, verbose)
     if restoration_problem.status not in cp.settings.SOLUTION_PRESENT:
         raise InitializationError(f"Feasibility restoration returned status {restoration_problem.status!r}.")
     restored = compute_residuals(model, epsilon)
@@ -511,8 +507,10 @@ def _solve_one(
     lifted.epsilon.value = epsilon
     message: str | None = None
     try:
-        _solve_problem(lifted.problem, solver, options, verbose)
+        solve_dnlp(lifted.problem, solver, options, verbose)
         status = lifted.problem.status or "solver_error"
+    except SolverUnavailableError:
+        raise
     except Exception as error:
         status = "solver_error"
         message = f"{type(error).__name__}: {error}"
@@ -537,21 +535,6 @@ def _solve_one(
         solve_time=solve_time,
         num_iters=num_iters,
         message=message,
-    )
-
-
-def _solve_problem(
-    problem: cp.Problem,
-    solver: str,
-    options: Mapping[str, Any],
-    verbose: bool,
-) -> None:
-    problem.solve(
-        solver=solver,
-        nlp=True,
-        warm_start=True,
-        verbose=verbose,
-        **dict(options),
     )
 
 
@@ -580,18 +563,6 @@ def _compile_probe(lifted: LiftedProblem, *, use_hessian: bool) -> None:
 
 def _uses_exact_hessian(options: Mapping[str, Any]) -> bool:
     return options.get("hessian_approximation", "exact") == "exact"
-
-
-def _require_solver(solver: str, *, nonlinear: bool) -> None:
-    name = str(solver).upper()
-    if name in {str(installed).upper() for installed in cp.installed_solvers()}:
-        return
-    if nonlinear and name == "IPOPT":
-        raise SolverUnavailableError(
-            "IPOPT is not available. Install its native library, then reinstall "
-            "BLVpy so its required cyipopt binding can be built."
-        )
-    raise SolverUnavailableError(f"Requested solver {solver!r} is not installed in CVXPY.")
 
 
 def _variable_bounds(
