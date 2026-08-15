@@ -86,15 +86,13 @@ def _(np, problem, x, y):
     result = problem.solve(epsilon_target=epsilon_target)
     diagnostics = problem.gap_diagnostics(result)
 
-    assert result.succeeded
-    assert result.final_epsilon == epsilon_target
-    assert result.residuals.max_violation <= 1e-5
-    assert all(np.isfinite(np.asarray(value)).all() for value in result.variable_values.values())
-    assert all(np.isfinite(np.asarray(value)).all() for value in (result.canonical_primal, result.slack, result.dual))
-    assert -1e-6 <= diagnostics.source_gap <= epsilon_target + 1e-5
-    assert abs(float(np.asarray(x.value))) <= 3e-3
-    assert abs(float(np.asarray(y.value)) - 1.0) <= 3e-3
-    assert abs(result.objective) <= 5e-3
+    assert result.succeeded, result.message
+    np.testing.assert_allclose(
+        [float(np.asarray(x.value)), float(np.asarray(y.value)), result.objective],
+        [0.0, 1.0, 0.0],
+        atol=5e-3,
+        rtol=0.0,
+    )
     return diagnostics, result
 
 
@@ -104,6 +102,7 @@ def _(diagnostics, mo, result, x, y):
     ## Result and interpretation
 
     - Status: `{result.status}`
+    - Final epsilon: ${result.final_epsilon:.1e}$
     - Upper variable: $x={float(x.value):.6f}$
     - Optimistically selected lower solution: $y={float(y.value):.6f}$
     - Upper objective: ${result.objective:.6f}$

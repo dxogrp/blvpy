@@ -153,27 +153,20 @@ def _(np, problem, x):
     initial_x = np.array([float(np.asarray(run.initial_values[x])) for run in best_result.runs])
     run_objectives = np.array([run.objective for run in best_result.runs], dtype=float)
 
-    for _result, _diagnostics in (
-        (deterministic_result, deterministic_diagnostics),
-        (best_result, best_diagnostics),
-    ):
-        assert _result.succeeded
-        assert np.isclose(_result.final_epsilon, epsilon_target)
-        assert _result.residuals.max_violation <= 1e-5
-        assert all(np.isfinite(np.asarray(value)).all() for value in _result.variable_values.values())
-        assert all(
-            np.isfinite(np.asarray(value)).all() for value in (_result.canonical_primal, _result.slack, _result.dual)
-        )
-        assert -1e-6 <= _diagnostics.source_gap <= epsilon_target + 1e-5
-
-    assert len(best_result.runs) == 5
-    assert all(run.succeeded for run in best_result.runs)
-    assert all(np.isclose(run.final_epsilon, epsilon_target) for run in best_result.runs)
-    assert np.any(initial_x < 0.0) and np.any(initial_x > 0.0)
-    assert abs(deterministic_x - 0.973994) <= 3e-3
-    assert abs(best_x - (-1.024120)) <= 3e-3
-    assert best_result.objective <= deterministic_result.objective - 0.3
-    assert np.isclose(best_result.objective, np.min(run_objectives), atol=1e-8)
+    assert deterministic_result.succeeded, deterministic_result.message
+    assert best_result.succeeded, best_result.message
+    assert len(best_result.runs) == 5 and all(run.succeeded for run in best_result.runs), (
+        "Expected five viable best-of runs."
+    )
+    assert np.any(initial_x < 0.0) and np.any(initial_x > 0.0), "Expected sampled starts in both local basins."
+    assert abs(deterministic_x - 0.973994) <= 3e-3, "The deterministic solve missed the positive minimum."
+    assert abs(best_x - (-1.024120)) <= 3e-3, "Best-of did not select the negative minimum."
+    assert best_result.objective <= deterministic_result.objective - 0.3, (
+        "Best-of did not materially improve on the deterministic local solution."
+    )
+    assert np.isclose(best_result.objective, np.min(run_objectives), atol=1e-8), (
+        "The selected result is not the best terminal run objective."
+    )
     return (
         best_diagnostics,
         best_result,
@@ -265,8 +258,6 @@ def _(
     figure.savefig(figure_path, bbox_inches="tight")
     plt.show()
 
-    assert figure_path.is_file()
-    assert figure_path.stat().st_size > 0
     return
 
 

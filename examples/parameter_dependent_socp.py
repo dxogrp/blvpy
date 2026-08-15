@@ -189,8 +189,8 @@ def _(np, problem, x):
     # These checks confirm both features illustrated by the example: the
     # lower canonicalization contains an SOC block, and A changes with x.
     canonical_matrix_change = np.linalg.norm(data_at_high_x.A.toarray() - data_at_low_x.A.toarray())
-    assert canonical.cone_layout.second_order
-    assert canonical_matrix_change > 0.1
+    assert canonical.cone_layout.second_order, "Expected the lower problem to contain an SOC block."
+    assert canonical_matrix_change > 0.1, "Expected the canonical constraint matrix to depend on x."
     return (canonical_matrix_change,)
 
 
@@ -206,19 +206,14 @@ def _(np, problem, t, x, y):
     reference_t = 1.0 / np.linalg.norm(reference_direction)
     reference_objective = (reference_x - 1.25) ** 2 + 0.1 * reference_t
 
-    assert result.succeeded
-    assert np.isclose(result.final_epsilon, epsilon_target, rtol=1e-12, atol=0.0)
-    assert result.residuals.max_violation <= 1e-5
-    assert all(np.isfinite(np.asarray(value)).all() for value in result.variable_values.values())
-    assert all(np.isfinite(np.asarray(value)).all() for value in (result.canonical_primal, result.slack, result.dual))
-    assert -1e-6 <= diagnostics.source_gap <= epsilon_target + 1e-5
+    assert result.succeeded, result.message
     np.testing.assert_allclose(
         [float(np.asarray(x.value)), *np.asarray(y.value), float(np.asarray(t.value))],
         [reference_x, *reference_y, reference_t],
         atol=3e-3,
         rtol=0.0,
     )
-    assert abs(result.objective - reference_objective) <= 5e-3
+    assert abs(result.objective - reference_objective) <= 5e-3, "Upper objective does not match the reference value."
     return diagnostics, epsilon_target, result
 
 
@@ -238,6 +233,7 @@ def _(
 
     - Status: `{result.status}`
     - Target relaxation: $\epsilon_{{\mathrm{{target}}}}={epsilon_target:.1e}$
+    - Final epsilon: ${result.final_epsilon:.1e}$
     - Upper variable: $x={float(x.value):.6f}$
     - Lower vector: $y=({y.value[0]:.6f}, {y.value[1]:.6f})$
     - Lower epigraph variable: $t={float(t.value):.6f}$

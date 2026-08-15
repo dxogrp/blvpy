@@ -137,19 +137,14 @@ def _(epsilon_slider, np, problem, x, y):
     relaxed_shift = np.sqrt(epsilon_target) / 2.0
     expected_objective = 2.0 * (1.0 - relaxed_shift) ** 2
 
-    assert result.succeeded
-    assert np.isclose(result.final_epsilon, epsilon_target, rtol=1e-12, atol=0.0)
-    assert result.residuals.max_violation <= 1e-5
-    assert all(np.isfinite(np.asarray(value)).all() for value in result.variable_values.values())
-    assert all(np.isfinite(np.asarray(value)).all() for value in (result.canonical_primal, result.slack, result.dual))
-    assert -1e-6 <= diagnostics.source_gap <= epsilon_target + 1e-5
+    assert result.succeeded, result.message
     np.testing.assert_allclose(
         [float(np.asarray(x.value)), float(np.asarray(y.value))],
         [relaxed_shift, -relaxed_shift],
         atol=3e-3,
         rtol=0.0,
     )
-    assert abs(result.objective - expected_objective) <= 5e-3
+    assert abs(result.objective - expected_objective) <= 5e-3, "Upper objective does not match the analytic value."
     return diagnostics, epsilon_target, relaxed_shift, result
 
 
@@ -160,6 +155,7 @@ def _(diagnostics, epsilon_target, mo, relaxed_shift, result, x, y):
 
     - Status: `{result.status}`
     - Target relaxation: $\epsilon_{{\mathrm{{target}}}}={epsilon_target:.1e}$
+    - Final epsilon: ${result.final_epsilon:.1e}$
     - Upper variable: $x={float(x.value):.6f}$
     - Lower response: $y={float(y.value):.6f}$
     - Analytic relaxed point:

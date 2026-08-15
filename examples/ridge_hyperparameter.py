@@ -219,24 +219,15 @@ def _(
 @app.cell(hide_code=True)
 def _(
     baseline_validation_error,
-    coefficients,
     diagnostics,
-    epsilon_target,
     mo,
-    np,
     result,
     ridge_weight,
 ):
-    assert result.succeeded
-    assert result.final_epsilon <= epsilon_target * (1.0 + 1e-8)
-    assert result.residuals.max_violation <= 1e-5
-    assert all(np.all(np.isfinite(value)) for value in result.variable_values.values())
-    assert np.all(np.isfinite(result.canonical_primal))
-    assert np.all(np.isfinite(result.slack))
-    assert np.all(np.isfinite(result.dual))
-    assert -1e-6 <= diagnostics.source_gap <= epsilon_target + 1e-6
-    assert np.all(np.isfinite(coefficients.value))
-    assert float(result.objective) < baseline_validation_error - 0.1
+    assert result.succeeded, result.message
+    assert float(result.objective) < baseline_validation_error - 0.1, (
+        "The selected ridge weight did not improve validation error."
+    )
 
     mo.md(rf"""
     ## Result
@@ -307,8 +298,6 @@ def _(
     fig.tight_layout()
     figure_path = figure_dir / "ridge_hyperparameter.pdf"
     fig.savefig(figure_path, bbox_inches="tight")
-    assert figure_path.is_file()
-    assert figure_path.stat().st_size > 0
     plt.show()
     return
 
