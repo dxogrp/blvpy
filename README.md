@@ -10,6 +10,7 @@ $$
         & y \in S(x),
     \end{array}
 $$
+
 where $x \in \mathbf{R}^n$ and $y \in \mathbf{R}^k$ are the upper problem variables.
 For a fixed $x \in \mathbf{R}^n$, the constraint set $S(x)$ is defined as the solution set of the following lower problem:
 
