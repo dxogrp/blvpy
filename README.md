@@ -11,7 +11,7 @@ $$
     \end{array}
 $$
 
-where $x \in \mathbf{R}^n$ and $y \in \mathbf{R}^k$ are the upper problem variables.
+where $x \in \mathbf{R}^n$ contains the upper variables and $y \in \mathbf{R}^k$ contains lower variables constrained to belong to the set $S(x)$.
 For a fixed $x \in \mathbf{R}^n$, the constraint set $S(x)$ is defined as the solution set of the following lower problem:
 
 $$
