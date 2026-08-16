@@ -59,26 +59,26 @@ class BilevelProblem:
 
     def __init__(
         self,
-        outer_objective: cp.Objective,
+        upper_objective: cp.Objective,
         lower_problem: LowerProblem,
-        outer_constraints: Sequence[cp.Constraint] = (),
+        upper_constraints: Sequence[cp.Constraint] = (),
     ) -> None:
-        if not isinstance(outer_objective, cp.Objective):
-            raise TypeError("outer_objective must be a CVXPY Objective.")
+        if not isinstance(upper_objective, cp.Objective):
+            raise TypeError("upper_objective must be a CVXPY Objective.")
         if not isinstance(lower_problem, LowerProblem):
             raise TypeError("lower_problem must be a BLVPY LowerProblem.")
         try:
-            constraints = tuple(outer_constraints)
+            constraints = tuple(upper_constraints)
         except TypeError as error:
-            raise TypeError("outer_constraints must be a sequence of CVXPY constraints.") from error
+            raise TypeError("upper_constraints must be a sequence of CVXPY constraints.") from error
         if not all(isinstance(constraint, cp.Constraint) for constraint in constraints):
-            raise TypeError("Every outer constraint must be a CVXPY Constraint.")
+            raise TypeError("Every upper constraint must be a CVXPY Constraint.")
 
-        self.outer_objective = outer_objective
+        self.upper_objective = upper_objective
         self.lower_problem = lower_problem
         self._cvxpy_lower_problem = lower_problem._cvxpy_problem
         self._parameter_links = lower_problem._parameter_links
-        self.outer_constraints = constraints
+        self.upper_constraints = constraints
         self._canonical: CanonicalLowerProblem | None = None
         self._lifted: _LiftedProblem | None = None
 
@@ -89,8 +89,8 @@ class BilevelProblem:
         lower_ids = {variable.id for variable in self._cvxpy_lower_problem.variables()}
         candidates: list[cp.Variable] = []
         candidates.extend(self._parameter_links.values())
-        candidates.extend(self.outer_objective.expr.variables())
-        for constraint in self.outer_constraints:
+        candidates.extend(self.upper_objective.expr.variables())
+        for constraint in self.upper_constraints:
             candidates.extend(constraint.variables())
         return _unique_variables(variable for variable in candidates if variable.id not in lower_ids)
 
@@ -121,7 +121,7 @@ class BilevelProblem:
     def validate(self) -> None:
         """Validate the lower canonicalization and complete lifted DNLP model."""
 
-        self._validate_outer()
+        self._validate_upper()
         _validate_lower(self._cvxpy_lower_problem, self._parameter_links)
         canonical = self.canonicalize()
         if self._lifted is None:
@@ -214,10 +214,10 @@ class BilevelProblem:
             solver_verbose=solver_verbose,
         )
 
-    def _validate_outer(self) -> None:
-        if not isinstance(self.outer_objective, cp.Minimize):
+    def _validate_upper(self) -> None:
+        if not isinstance(self.upper_objective, cp.Minimize):
             raise UnsupportedModelError("The upper problem must be a minimization problem.")
-        if not self.outer_objective.expr.is_scalar() or not self.outer_objective.expr.is_real():
+        if not self.upper_objective.expr.is_scalar() or not self.upper_objective.expr.is_real():
             raise ValidationError("The upper objective must be a real-valued scalar expression.")
 
         lower_ids = {variable.id for variable in self._cvxpy_lower_problem.variables()}
@@ -239,7 +239,7 @@ class BilevelProblem:
             if not variable.is_real():
                 raise UnsupportedModelError(f"Linked upper variable {variable.name()!r} must be real-valued.")
 
-        for parameter in _all_parameters(self.outer_objective, self.outer_constraints):
+        for parameter in _all_parameters(self.upper_objective, self.upper_constraints):
             if parameter.id not in lower_parameter_ids and parameter.value is None:
                 raise ValidationError(f"Unmapped upper parameter {parameter.name()!r} must have a value.")
         for variable in self.source_variables:
@@ -272,7 +272,7 @@ class BilevelProblem:
         )
         gap_constraint = slack @ dual <= epsilon
         domain_constraints = _linked_parameter_domain_constraints(self._parameter_links)
-        upper_constraints = (*self.outer_constraints, *domain_constraints)
+        upper_constraints = (*self.upper_constraints, *domain_constraints)
         constraints = (
             *upper_constraints,
             *recovery_constraints,
@@ -281,7 +281,7 @@ class BilevelProblem:
             *cone_constraints,
             gap_constraint,
         )
-        problem = cp.Problem(self.outer_objective, constraints)
+        problem = cp.Problem(self.upper_objective, constraints)
         if not problem.is_dnlp():
             atoms = sorted({atom.__name__ for atom in problem.atoms()})
             detail = ", ".join(atoms) if atoms else "unknown expression"

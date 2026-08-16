@@ -164,7 +164,7 @@ def _(BilevelProblem, LowerProblem, cp):
     problem = BilevelProblem(
         cp.Minimize(cp.square(x - 1.25) + 0.1 * t),
         lower,
-        outer_constraints=[x >= 0.5, x <= 2.0],
+        upper_constraints=[x >= 0.5, x <= 2.0],
     )
     return problem, t, x, y
 

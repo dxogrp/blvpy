@@ -1130,7 +1130,7 @@ def _restored_record(
 
     residuals = compute_residuals(model, epsilon)
     status = "optimal" if residuals.is_feasible(tolerance) else "residual_check_failed"
-    value = model.outer_objective.value
+    value = model.upper_objective.value
     objective = None if value is None or not np.isfinite(value) else float(value)
     return IterationRecord(
         epsilon=epsilon,
@@ -1151,7 +1151,7 @@ def _diagnostic_failure_record(
     """Fail closed when the restored point cannot be diagnosed independently."""
 
     try:
-        value = model.outer_objective.value
+        value = model.upper_objective.value
         objective = None if value is None or not np.isfinite(value) else float(value)
     except Exception:
         objective = None

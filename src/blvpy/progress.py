@@ -403,19 +403,19 @@ class ProgressReporter:
 
     def _write_fields(
         self,
-        leader: str,
+        prefix: str,
         *fields: str,
         first_separator: str = " ",
     ) -> None:
         remaining = [field for field in fields if field]
         if not remaining:
-            self._write(leader)
+            self._write(prefix)
             return
-        current = leader
+        current = prefix
         for value in remaining:
-            separator = first_separator if current == leader else " | "
+            separator = first_separator if current == prefix else " | "
             candidate = f"{current}{separator}{value}"
-            if len(candidate) <= _WIDTH or current == leader:
+            if len(candidate) <= _WIDTH or current == prefix:
                 current = candidate
                 continue
             self._write(current)

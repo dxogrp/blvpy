@@ -34,7 +34,7 @@ def _quadratic_model(*, constrained: bool = False):
     model = BilevelProblem(
         cp.Minimize(cp.square(x) + cp.square(y)),
         lower,
-        outer_constraints=constraints,
+        upper_constraints=constraints,
     )
     return model, x, y
 
@@ -135,7 +135,7 @@ def test_progress_reports_complete_runs_and_final_selection(
         return IterationRecord(
             epsilon=epsilon,
             status=status,
-            objective=None if status == "solver_error" else float(current.outer_objective.value),
+            objective=None if status == "solver_error" else float(current.upper_objective.value),
             residuals=_ZERO_RESIDUALS,
             solver_name=str(solver),
             message="synthetic rejection" if status == "solver_error" else None,

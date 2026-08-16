@@ -19,7 +19,7 @@ def _linear_bilevel() -> tuple[BilevelProblem, cp.Variable, cp.Variable]:
     model = BilevelProblem(
         cp.Minimize(cp.square(x) + cp.square(y)),
         lower,
-        outer_constraints=[x <= 1.0, x >= -4.0],
+        upper_constraints=[x <= 1.0, x >= -4.0],
     )
     return model, x, y
 

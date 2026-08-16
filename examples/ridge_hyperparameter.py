@@ -10,10 +10,9 @@ def _(mo):
     # Choosing a Ridge Penalty from Validation Data
 
     Regularization is often selected by trying a grid of values. Here we pose
-    the same task as a bilevel problem: a model developer (the **leader**)
-    chooses the ridge penalty, and a training procedure (the **follower**)
-    fits regression coefficients for that penalty. The developer anticipates
-    the trained model and minimizes its validation error.
+    the same task as a bilevel problem: the **upper problem** chooses the ridge
+    penalty from validation performance, while the **lower problem** fits the
+    regression coefficients for that penalty using the training data.
     """)
     return
 
@@ -40,7 +39,7 @@ def _(mo):
     Let $(X_{\mathrm{tr}},q_{\mathrm{tr}})$ and
     $(X_{\mathrm{val}},q_{\mathrm{val}})$ denote the training and validation
     samples. For a regularization weight
-    $\alpha\in[10^{-4},10]$, the follower computes
+    $\alpha\in[10^{-4},10]$, the lower problem computes
 
     \[
     \beta(\alpha)\in\mathop{\mathrm{argmin}}_{\beta}
@@ -49,7 +48,7 @@ def _(mo):
       +\alpha\lVert\beta\rVert_2^2.
     \]
 
-    The leader then solves
+    The upper problem then solves
 
     \[
     \begin{array}{ll}
@@ -112,8 +111,8 @@ def _(mo):
     ## Specify and solve the bilevel model
 
     Listing `ridge_weight` in `LowerProblem(parameters=[...])` makes it fixed
-    data for training while leaving it as the leader's decision. Note that its
-    native CVXPY bounds are part of the mathematical model.
+    data for training while leaving it as a decision of the upper problem. Note
+    that its native CVXPY bounds are part of the mathematical model.
     """)
     return
 

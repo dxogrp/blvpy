@@ -24,8 +24,8 @@ def _quadratic_response_model() -> tuple[BilevelProblem, cp.Variable, cp.Variabl
     x = cp.Variable(name="x", bounds=[-3.0, 3.0])
     y = cp.Variable(name="y")
     lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
-    outer_objective = cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0))
-    model = BilevelProblem(outer_objective, lower)
+    upper_objective = cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0))
+    model = BilevelProblem(upper_objective, lower)
     return model, x, y
 
 
@@ -80,7 +80,7 @@ def test_real_feasibility_restoration_reaches_active_upper_constraint(monkeypatc
     model = BilevelProblem(
         cp.Minimize(cp.square(x) + cp.square(y)),
         lower,
-        outer_constraints=[x + y >= 1.5],
+        upper_constraints=[x + y >= 1.5],
     )
     original = continuation._restore_feasibility
     observed: list[tuple[float, float]] = []
@@ -124,8 +124,8 @@ def _double_well_model() -> tuple[BilevelProblem, cp.Variable, cp.Variable]:
     x.value = 1.0
     x.sample_bounds = (-2.0, 2.0)
     lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
-    outer = cp.Minimize(cp.square(cp.square(x) - 1.0) + 0.2 * x + 0.0 * y)
-    return BilevelProblem(outer, lower), x, y
+    upper = cp.Minimize(cp.square(cp.square(x) - 1.0) + 0.2 * x + 0.0 * y)
+    return BilevelProblem(upper, lower), x, y
 
 
 def _solve_double_well(
@@ -266,7 +266,7 @@ def test_infeasible_upper_constraints_report_restoration_reason() -> None:
     model = BilevelProblem(
         cp.Minimize(cp.square(x) + cp.square(y)),
         lower,
-        outer_constraints=[x >= 1.0, x <= 0.0],
+        upper_constraints=[x >= 1.0, x <= 0.0],
     )
 
     with pytest.raises(InitializationError) as caught:

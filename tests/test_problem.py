@@ -24,7 +24,7 @@ def _quadratic_bilevel(*, bounds: tuple[float, float] = (-2.0, 2.0)):
     problem = BilevelProblem(
         cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0)),
         lower,
-        outer_constraints=[x + y <= 3.0],
+        upper_constraints=[x + y <= 3.0],
     )
     parameter = next(iter(problem._parameter_links))
     return problem, x, y, parameter
@@ -47,7 +47,7 @@ def test_lifted_problem_contains_full_optimistic_reformulation() -> None:
     canonical = problem.canonicalize()
     lifted = problem._lifted_problem
 
-    assert lifted.problem.objective is problem.outer_objective
+    assert lifted.problem.objective is problem.upper_objective
     assert lifted.problem.is_dnlp()
     assert lifted.primal.shape == (canonical.canonical_size,)
     assert lifted.slack.shape == (canonical.constraint_size,)
@@ -107,7 +107,7 @@ def test_demand_response_lifted_data_is_compact_and_tracks_price() -> None:
     problem = BilevelProblem(
         cp.Minimize(peak_load + 0.025 * cp.sum_squares(price) + 0.12 * cp.sum_squares(price[1:] - price[:-1])),
         lower,
-        outer_constraints=[load <= peak_load],
+        upper_constraints=[load <= peak_load],
     )
 
     with warnings.catch_warnings(record=True) as caught:
@@ -203,12 +203,12 @@ def test_rejects_upper_atom_that_is_not_dnlp() -> None:
         problem.validate()
 
 
-def test_constructor_rejects_non_cvxpy_outer_constraints() -> None:
+def test_constructor_rejects_non_cvxpy_upper_constraints() -> None:
     _, _, y, _ = _quadratic_bilevel()
     lower = LowerProblem(cp.Minimize(cp.square(y)))
 
     with pytest.raises(TypeError, match="CVXPY Constraint"):
-        BilevelProblem(cp.Minimize(cp.square(y)), lower, outer_constraints=[True])  # type: ignore[list-item]
+        BilevelProblem(cp.Minimize(cp.square(y)), lower, upper_constraints=[True])  # type: ignore[list-item]
 
 
 def test_constructor_accepts_lower_problem_and_rejects_raw_cvxpy_problem() -> None:
@@ -229,9 +229,9 @@ def test_constructor_accepts_lower_problem_and_rejects_raw_cvxpy_problem() -> No
 def test_constructor_signature_has_no_parameter_map() -> None:
     parameters = inspect.signature(BilevelProblem).parameters
     assert tuple(parameters) == (
-        "outer_objective",
+        "upper_objective",
         "lower_problem",
-        "outer_constraints",
+        "upper_constraints",
     )
     assert "parameter_map" not in parameters
 

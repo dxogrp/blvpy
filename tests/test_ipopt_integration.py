@@ -261,8 +261,8 @@ def _check_against_numerical_oracles(
 
     source_values = _snapshot_source_values(model, result)
     _assign_source_values(source_values)
-    evaluated_outer_objective = float(model.outer_objective.value)
-    assert result.objective == pytest.approx(evaluated_outer_objective, abs=1e-9)
+    evaluated_upper_objective = float(model.upper_objective.value)
+    assert result.objective == pytest.approx(evaluated_upper_objective, abs=1e-9)
     returned_lower_value = float(model.lower_problem.objective.expr.value)
 
     parameter_values = {parameter: source_values[variable] for parameter, variable in model._parameter_links.items()}
@@ -399,11 +399,11 @@ def test_parameter_dependent_socp_with_active_upper_constraint() -> None:
         [cp.SOC(t, y), y[0] == 1.0, x * y[0] + y[1] == 1.0],
         parameters=[x],
     )
-    outer_constraint = x <= 1.0
+    upper_constraint = x <= 1.0
     model = BilevelProblem(
         cp.Minimize(cp.square(x - 2.0) + cp.sum_squares(y - np.array([1.0, 0.0])) + cp.square(t - 1.0)),
         lower,
-        outer_constraints=[outer_constraint],
+        upper_constraints=[upper_constraint],
     )
 
     canonical = model.canonicalize()
@@ -422,7 +422,7 @@ def test_parameter_dependent_socp_with_active_upper_constraint() -> None:
     np.testing.assert_allclose(y.value, [1.0, 0.0], atol=_ANALYTIC_ATOL)
     assert float(t.value) == pytest.approx(1.0, abs=_ANALYTIC_ATOL)
     assert result.objective == pytest.approx(1.0, abs=_OBJECTIVE_ATOL)
-    assert float(np.asarray(outer_constraint.violation())) <= 1e-7
+    assert float(np.asarray(upper_constraint.violation())) <= 1e-7
     assert abs(float(x.value) - 1.0) <= _ANALYTIC_ATOL
     assert abs(float(t.value) - np.linalg.norm(y.value)) <= _ANALYTIC_ATOL
     _check_against_numerical_oracles(

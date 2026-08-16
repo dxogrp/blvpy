@@ -129,7 +129,7 @@ def _(BilevelProblem, LowerProblem, availability, cp, demand):
     problem = BilevelProblem(
         cp.Minimize(0.08 * cp.square(capacity) + 0.6 * cp.sum(thermal)),
         dispatch,
-        outer_constraints=[capacity >= 0.0, capacity <= 12.0],
+        upper_constraints=[capacity >= 0.0, capacity <= 12.0],
     )
     return capacity, problem, renewable, thermal
 

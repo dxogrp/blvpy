@@ -11,9 +11,9 @@ def _(mo):
 
     A utility would like to reduce the daily demand peak, but customers retain
     control of when they consume flexible energy. This creates a bilevel
-    problem: the utility (the **leader**) publishes a 24-hour price vector,
-    and a representative customer (the **follower**) reschedules consumption
-    in response while balancing cost against discomfort.
+    problem: the **upper problem** chooses a 24-hour price vector for the
+    utility, while the **lower problem** models how a representative customer
+    reschedules consumption while balancing cost against discomfort.
     """)
     return
 
@@ -53,9 +53,10 @@ def _(mo):
 
     The energy equality models shifting rather than curtailment. The quadratic
     term represents inconvenience from departing from the preferred schedule
-    and makes the follower response unique.
+    and makes the lower response unique.
 
-    The utility introduces a peak epigraph $z$ and anticipates the response:
+    The upper problem introduces a peak epigraph $z$ and anticipates the lower
+    response:
 
     \[
     \begin{array}{ll}
@@ -138,7 +139,7 @@ def _(
     price.value = np.full(24, 0.4)
     peak_load.value = 2.0
 
-    customer_problem = LowerProblem(
+    lower_problem = LowerProblem(
         cp.Minimize(price @ load + discomfort_weight * cp.sum_squares(load - preferred_load)),
         [
             cp.sum(load) == daily_energy,
@@ -147,11 +148,11 @@ def _(
         ],
         parameters=[price],
     )
-    utility_objective = peak_load + 0.025 * cp.sum_squares(price) + 0.12 * cp.sum_squares(price[1:] - price[:-1])
+    upper_objective = peak_load + 0.025 * cp.sum_squares(price) + 0.12 * cp.sum_squares(price[1:] - price[:-1])
     problem = BilevelProblem(
-        cp.Minimize(utility_objective),
-        customer_problem,
-        outer_constraints=[
+        cp.Minimize(upper_objective),
+        lower_problem,
+        upper_constraints=[
             price >= 0.0,
             price <= 0.8,
             peak_load >= 0.0,

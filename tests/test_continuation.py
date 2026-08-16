@@ -23,7 +23,7 @@ def _quadratic_bilevel(*, bounded: bool = True):
     model = BilevelProblem(
         cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0)),
         lower,
-        outer_constraints=[x + y <= 3.0],
+        upper_constraints=[x + y <= 3.0],
     )
     parameter = next(iter(model._parameter_links))
     return model, x, y, parameter
@@ -265,7 +265,7 @@ def test_deterministic_start_projects_onto_dcp_upper_constraints() -> None:
     model = BilevelProblem(
         cp.Minimize(cp.square(x) + cp.square(y)),
         lower,
-        outer_constraints=[x >= 2.0],
+        upper_constraints=[x >= 2.0],
     )
     sample = continuation._generate_upper_initializations(
         model,
@@ -417,7 +417,7 @@ def test_selected_nlp_solver_reaches_restoration_continuation_and_records(
         return IterationRecord(
             epsilon,
             cp.OPTIMAL,
-            float(current.outer_objective.value),
+            float(current.upper_objective.value),
             _ZERO_RESIDUALS,
             solver_name=str(selected_solver),
         )
@@ -468,7 +468,7 @@ def test_public_best_of_one_uses_one_random_run(monkeypatch) -> None:
         lambda current, epsilon, solver, options, solver_verbose: IterationRecord(
             epsilon,
             cp.OPTIMAL,
-            float(current.outer_objective.value),
+            float(current.upper_objective.value),
             _ZERO_RESIDUALS,
         ),
     )
@@ -561,7 +561,7 @@ def test_best_of_completes_every_run_and_selects_by_target_objective(
         branch = -1 if float(x.value) < 0.0 else 1
         calls.append((branch, epsilon))
         initial_objective = 0.0 if branch < 0 else 10.0
-        objective = initial_objective if np.isclose(epsilon, 1e-1) else float(current.outer_objective.value)
+        objective = initial_objective if np.isclose(epsilon, 1e-1) else float(current.upper_objective.value)
         return IterationRecord(
             epsilon,
             cp.OPTIMAL,
@@ -631,7 +631,7 @@ def test_failed_best_of_run_does_not_contaminate_later_run(monkeypatch) -> None:
         lambda current, epsilon, solver, options, solver_verbose: IterationRecord(
             epsilon,
             cp.OPTIMAL,
-            float(current.outer_objective.value),
+            float(current.upper_objective.value),
             _ZERO_RESIDUALS,
         ),
     )
@@ -660,7 +660,7 @@ def test_every_random_initialization_is_projected_and_recorded(monkeypatch) -> N
     model = BilevelProblem(
         cp.Minimize(cp.square(x) + cp.square(y)),
         lower,
-        outer_constraints=[x >= 0.0],
+        upper_constraints=[x >= 0.0],
     )
 
     monkeypatch.setattr(
@@ -685,7 +685,7 @@ def test_every_random_initialization_is_projected_and_recorded(monkeypatch) -> N
         lambda current, epsilon, solver, options, solver_verbose: IterationRecord(
             epsilon,
             cp.OPTIMAL,
-            float(current.outer_objective.value),
+            float(current.upper_objective.value),
             _ZERO_RESIDUALS,
         ),
     )
@@ -761,7 +761,7 @@ def test_partial_best_of_selects_smallest_attained_epsilon(monkeypatch) -> None:
         return IterationRecord(
             epsilon,
             cp.OPTIMAL if accepted else "solver_error",
-            float(current.outer_objective.value) if accepted else None,
+            float(current.upper_objective.value) if accepted else None,
             _ZERO_RESIDUALS,
         )
 
@@ -821,7 +821,7 @@ def test_best_of_retry_schedule_is_local_to_each_run(monkeypatch) -> None:
         return IterationRecord(
             epsilon,
             "solver_error" if fail else cp.OPTIMAL,
-            None if fail else float(current.outer_objective.value),
+            None if fail else float(current.upper_objective.value),
             _ZERO_RESIDUALS,
         )
 
@@ -960,7 +960,7 @@ def test_failed_step_inserts_intermediate_epsilon_then_retries(monkeypatch) -> N
         return IterationRecord(
             epsilon,
             cp.OPTIMAL,
-            float(current.outer_objective.value),
+            float(current.upper_objective.value),
             zero,
             solver_name=str(solver),
         )
