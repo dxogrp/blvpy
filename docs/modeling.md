@@ -26,6 +26,23 @@ Every variable in `LowerProblem.parameters` is an upper variable that BLVPY hold
 BLVPY clones the lower expression tree and replaces each listed variable with a generated CVXPY parameter of matching shape and domain.
 Unlisted variables remain the original lower variables.
 
+## Structural requirements
+
+The complete model must satisfy **all** of the following:
+
+- The upper problem is a real-valued continuous minimization problem.
+- The assembled upper objective and upper constraints are compatible with CVXPY's DNLP rules.
+- The lower problem is a real-valued continuous convex minimization problem.
+- The lower problem contains at least one canonical optimization variable; constant-only lower problems are not supported.
+- The lower problem is DCP and DPP with respect to every linked upper variable.
+- Every unlinked CVXPY parameter already has a finite value.
+- CVXPY produces only zero, nonnegative, and second-order cone blocks when canonicalization is requested with a linear conic objective.
+
+This includes linear programs, quadratic programs that CVXPY converts exactly to the accepted conic form, and second-order cone programs.
+
+Call {meth}`blvpy.BilevelProblem.validate` to obtain a specific exception for an unsupported model.
+See {doc}`troubleshooting` for the exception categories.
+
 ## Parameters and fixed data
 
 The word `parameters` in {class}`~blvpy.LowerProblem` refers to upper CVXPY *variables*.
