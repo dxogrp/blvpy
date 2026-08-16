@@ -106,6 +106,15 @@ make marimo
 
 to install Marimo and open the notebooks in your browser.
 
+## Documentation
+
+The complete user guide and API reference are available at [this page](https://dxogrp.github.io/blvpy/).
+To build and preview the Sphinx documentation locally, run:
+
+```shell
+make docs
+```
+
 ## License
 
 BLVPY is licensed under the [Apache License 2.0](LICENSE).

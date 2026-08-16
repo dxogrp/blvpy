@@ -24,6 +24,7 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/dxogrp/blvpy"
+Documentation = "https://dxogrp.github.io/blvpy/"
 
 [build-system]
 requires = ["hatchling"]
@@ -40,6 +41,12 @@ dev = [
 examples = [
     "marimo>=0.23",
     "matplotlib>=3.9",
+]
+docs = [
+    "alabaster>=1,<2",
+    "myst-parser>=5.1,<6",
+    "packaging>=25",
+    "sphinx>=9.1,<10",
 ]
 
 [tool.ruff]

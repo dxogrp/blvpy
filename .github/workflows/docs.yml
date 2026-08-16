@@ -1,0 +1,193 @@
+name: Documentation
+
+on:
+  release:
+    types:
+      - published
+
+concurrency:
+  group: documentation-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ github.event.release.tag_name }} documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
+
+    steps:
+      - name: Check out release
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Verify release versions
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import ast
+          import os
+          import tomllib
+          from pathlib import Path
+
+          project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          source = ast.parse(Path("src/blvpy/__init__.py").read_text())
+          source_version = None
+          for node in source.body:
+              if not isinstance(node, ast.Assign):
+                  continue
+              if any(isinstance(target, ast.Name) and target.id == "__version__" for target in node.targets):
+                  source_version = ast.literal_eval(node.value)
+                  break
+          release_tag = os.environ["RELEASE_TAG"]
+          if source_version != project_version or release_tag != f"v{project_version}":
+              raise SystemExit(
+                  f"Version mismatch: tag={release_tag!r}, project={project_version!r}, "
+                  f"source={source_version!r}."
+              )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"package_version={project_version}\n")
+          PY
+
+      - name: Install native IPOPT and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes coinor-libipopt-dev pkg-config libblas-dev liblapack-dev gfortran
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+
+      - name: Install documentation dependencies
+        run: uv sync --frozen --group dev --group docs
+
+      - name: Verify documentation contract
+        run: uv run --frozen --group dev --group docs python -m pytest tests/test_documentation.py
+
+      - name: Build documentation
+        run: uv run --frozen --group dev --group docs sphinx-build -W --keep-going -n -b html docs docs/_build/html
+
+      - name: Recover previously published versions
+        env:
+          HISTORY_DIR: ${{ runner.temp }}/blvpy-pages-history
+          SITE_DIR: ${{ runner.temp }}/blvpy-pages-site
+        run: |
+          mkdir -p "$SITE_DIR"
+          set +e
+          git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch --no-tags origin refs/heads/gh-pages:refs/remotes/origin/gh-pages
+            git worktree add --detach "$HISTORY_DIR" refs/remotes/origin/gh-pages
+            rsync --archive --exclude=.git "$HISTORY_DIR/" "$SITE_DIR/"
+          elif [ "$status" -ne 2 ]; then
+            echo "Could not inspect the remote gh-pages branch." >&2
+            exit "$status"
+          fi
+
+      - name: Stage immutable release documentation
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+          SITE_DIR: ${{ runner.temp }}/blvpy-pages-site
+        run: |
+          uv run --frozen --group dev --group docs python scripts/stage_docs.py \
+            --build-dir docs/_build/html \
+            --site-dir "$SITE_DIR" \
+            --version "$PACKAGE_VERSION" \
+            --base-url https://dxogrp.github.io/blvpy/
+
+      - name: Upload version-history artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blvpy-documentation-site
+          path: ${{ runner.temp }}/blvpy-pages-site
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ runner.temp }}/blvpy-pages-site
+
+  publish:
+    name: Publish documentation
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      pages: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check out release for authenticated publishing
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Download version-history artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: blvpy-documentation-site
+          path: ${{ runner.temp }}/blvpy-pages-site
+
+      - name: Prepare GitHub Pages worktree
+        env:
+          PAGES_DIR: ${{ runner.temp }}/blvpy-pages
+          SITE_DIR: ${{ runner.temp }}/blvpy-pages-site
+        run: |
+          set +e
+          git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch --no-tags origin refs/heads/gh-pages:refs/remotes/origin/gh-pages
+            git worktree add --detach "$PAGES_DIR" refs/remotes/origin/gh-pages
+          elif [ "$status" -eq 2 ]; then
+            git worktree add --detach "$PAGES_DIR"
+            git -C "$PAGES_DIR" checkout --orphan gh-pages
+            git -C "$PAGES_DIR" rm -rf .
+          else
+            echo "Could not inspect the remote gh-pages branch." >&2
+            exit "$status"
+          fi
+          rsync --archive --delete --exclude=.git "$SITE_DIR/" "$PAGES_DIR/"
+
+      - name: Preserve version history on gh-pages
+        env:
+          PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
+          PAGES_DIR: ${{ runner.temp }}/blvpy-pages
+        run: |
+          git -C "$PAGES_DIR" config user.name "github-actions[bot]"
+          git -C "$PAGES_DIR" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$PAGES_DIR" add --all
+          if git -C "$PAGES_DIR" diff --cached --quiet; then
+            echo "Documentation history is already current."
+          else
+            git -C "$PAGES_DIR" commit -m "docs: publish $PACKAGE_VERSION"
+            git -C "$PAGES_DIR" push origin HEAD:gh-pages
+          fi
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
