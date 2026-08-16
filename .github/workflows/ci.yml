@@ -45,7 +45,7 @@ jobs:
 
       - name: Check Marimo examples
         if: matrix.python-version == '3.13'
-        run: make check-examples
+        run: uv run --frozen --group examples marimo check --strict examples
 
       - name: Run lint checks
         run: |
@@ -95,6 +95,10 @@ jobs:
 
       - name: Run tests
         run: uv run python -m pytest tests
+
+      - name: Check Marimo examples
+        if: matrix.python-version == '3.13'
+        run: uv run --frozen --group examples marimo check --strict examples
 
       - name: Run lint checks
         run: |
@@ -161,9 +165,25 @@ jobs:
           & $python -c "import cyipopt; from sparsediffpy import _sparsediffengine; assert cyipopt.__version__ == '1.7.0'"
           uv pip check --python $python
 
+      - name: Install Marimo example dependencies
+        if: matrix.python-version == '3.13'
+        shell: pwsh
+        run: |
+          $python = Join-Path $env:CONDA_PREFIX "python.exe"
+          $requirements = Join-Path $env:RUNNER_TEMP "blvpy-example-requirements.txt"
+          uv export --frozen --group dev --group examples --no-hashes --output-file $requirements
+          uv pip install --python $python --requirement $requirements
+
       - name: Run tests
         shell: pwsh
         run: python -m pytest tests
+
+      - name: Check Marimo examples
+        if: matrix.python-version == '3.13'
+        shell: pwsh
+        run: |
+          $python = Join-Path $env:CONDA_PREFIX "python.exe"
+          & $python -m marimo check --strict examples
 
       - name: Run lint checks
         shell: pwsh
