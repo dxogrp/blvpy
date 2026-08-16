@@ -84,6 +84,7 @@ $$
 $$
 
 with variables $u, s$.
+(Here the objective offset $d(x^{(0)})$ is irrelevant to the lower solution and is thus omitted.)
 The conic solution supplies the initial canonical primal $u^{(0)}$, slack
 $s^{(0)}$, and equality dual $\lambda^{(0)}$; BLVPY recovers the corresponding
 source lower variables from its affine recovery map.
