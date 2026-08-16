@@ -55,6 +55,25 @@ CVXPY also exposes DNLP paths for KNITRO, UNO, and COPT; these solvers may be se
 The required default (and recommended) nonlinear solver is IPOPT, which is free and open-source.
 [Clarabel](https://clarabel.org/stable/) is the default backend conic solver.
 
+### Development setup
+
+BLVPY manages its development environment with [uv](https://docs.astral.sh/uv/).
+Before setting up the repository, you should install uv and IPOPT.
+
+1. Clone the repository:
+
+   ```shell
+   git clone https://github.com/dxogrp/blvpy.git
+   cd blvpy
+   ```
+
+2. Create the virtual environment and install the locked development
+   dependencies:
+
+   ```shell
+   make sync
+   ```
+
 ## Quick start
 
 ```python
