@@ -76,6 +76,18 @@ Before setting up the repository, you should install uv and IPOPT.
 
 ## Quick start
 
+The following example models the bilevel problem
+
+$$
+\begin{array}{ll}
+\text{minimize} & (x-1)^2+(y+1)^2 \\
+\text{subject to} & x\geq -1, \\
+  & y\in\mathop{\mathrm{argmin}}_z (z-x)^2
+\end{array}
+$$
+
+with variables $x, y \in \mathbf{R}$.
+
 ```python
 import cvxpy as cp
 import blvpy as bp
