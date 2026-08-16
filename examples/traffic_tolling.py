@@ -307,8 +307,7 @@ def _(
 
     The toll is a coordination signal, not proof that every traveler is better
     off individually. Distributional effects and toll revenues are outside this
-    educational model. The BLVPY result is also a local numerical solution, not
-    a global optimality certificate.
+    educational model.
     """)
     return optimized_flow, optimized_time, system_time, untolled_time
 

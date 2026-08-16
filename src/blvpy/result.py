@@ -182,9 +182,7 @@ class GapDiagnostics:
     ``dual_residual_term - primal_residual_term``.
 
     Small nonzero identity errors and slightly negative source gaps can arise
-    from floating-point solver tolerances. These diagnostics measure lower
-    optimality at one returned upper point; they do not certify global
-    bilevel optimality.
+    from floating-point solver tolerances.
     """
 
     primal_objective: float
@@ -452,9 +450,7 @@ class BilevelResult:
     -----
     Numeric values are copied into read-only NumPy arrays, and mappings are
     read-only views. A ``"continuation_failed"`` result exposes the best
-    available partial run but is not successful. Every returned solution is
-    local; status and small residuals do not constitute a rigorous bilevel
-    certificate.
+    available partial run but is not successful.
     """
 
     status: str

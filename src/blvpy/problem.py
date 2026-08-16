@@ -337,8 +337,7 @@ class BilevelProblem:
         otherwise it uses native-bound interior points or zero. Explicit
         ``best_of`` uses ``variable.sample_bounds`` first, then an existing
         value, then finite native bounds. Every viable run has an independent
-        continuation and retry budget. The returned point is local and is not
-        a global bilevel certificate.
+        continuation and retry budget.
         """
 
         from .continuation import _SolveSettings, solve_bilevel
@@ -406,8 +405,7 @@ class BilevelProblem:
         -----
         The diagnostic solve uses fixed-parameter values captured at initial
         canonicalization. All affected CVXPY variable and parameter values are
-        restored before this method returns or raises. Diagnostics quantify a
-        returned point; they do not certify global bilevel optimality.
+        restored before this method returns or raises.
         """
 
         from .diagnostics import _gap_diagnostics

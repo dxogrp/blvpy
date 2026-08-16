@@ -297,8 +297,7 @@ def _(
 
     The deterministic start reaches the worse positive local minimum. The
     sampled runs explore both basins, allowing `best_of` to return the better
-    negative solution. This is useful evidence about these runs, but it is not
-    a proof of global bilevel optimality.
+    negative solution.
     """)
     return
 
