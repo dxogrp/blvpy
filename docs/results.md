@@ -197,8 +197,8 @@ resolving the problem:
 ```python
 residuals = result.residuals
 print(residuals.max_feasibility)  # F
-print(residuals.gap_violation)    # G
-print(residuals.max_violation)    # max(F, G)
+print(residuals.gap_violation)  # G
+print(residuals.max_violation)  # max(F, G)
 
 acceptable = residuals.is_feasible(
     tolerance=1e-7,
