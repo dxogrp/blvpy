@@ -1,4 +1,4 @@
-# Modeling upper and lower problems
+# Problem modeling
 
 ## Optimistic semantics
 
