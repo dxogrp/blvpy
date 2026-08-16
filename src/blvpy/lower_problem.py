@@ -13,12 +13,42 @@ from .errors import ParameterMappingError
 
 
 class LowerProblem:
-    """A CVXPY lower problem parameterized by selected upper variables.
+    """A convex lower problem parameterized by selected upper variables.
 
-    The public objective and constraints retain the expressions supplied by the
-    user. Internally, every variable listed in ``parameters`` is replaced by a
-    CVXPY parameter with the same shape and leaf-domain attributes. Variables
-    not listed in ``parameters`` remain the original CVXPY objects.
+    ``LowerProblem`` has the same basic construction pattern as
+    :class:`cvxpy.Problem`, with the additional ``parameters`` argument. Each
+    variable listed there is an upper variable: BLVPY replaces it internally
+    by a CVXPY parameter while retaining every unlisted variable as a lower
+    decision variable. The supplied expression trees are not mutated.
+
+    Parameters
+    ----------
+    objective : cvxpy.Objective
+        Objective of the lower problem. A supported bilevel model must use
+        :class:`cvxpy.Minimize` and satisfy DCP and DPP when validated.
+    constraints : sequence of cvxpy.Constraint or None, optional
+        Lower constraints. ``None`` and the default empty sequence both mean
+        that the lower problem has no explicit constraints.
+    parameters : sequence of cvxpy.Variable or None, optional
+        Upper variables that are held fixed when solving the lower problem.
+        Every listed variable must occur in ``objective`` or ``constraints``.
+        ``None`` and the default empty sequence mean that no upper variables
+        occur in the lower model.
+
+    Raises
+    ------
+    TypeError
+        If the objective, constraints, or parameters have invalid types.
+    ParameterMappingError
+        If a parameter variable is duplicated or does not occur in the lower
+        expressions.
+
+    Notes
+    -----
+    Domain attributes and native bounds on a listed variable are copied to its
+    generated parameter. Lower decision variables remain the same CVXPY
+    objects used by the upper expressions, which implements optimistic
+    selection among multiple lower optima.
     """
 
     def __init__(
@@ -54,19 +84,19 @@ class LowerProblem:
 
     @property
     def objective(self) -> cp.Objective:
-        """The original lower-level objective."""
+        """cvxpy.Objective: The original lower objective."""
 
         return self._objective
 
     @property
     def constraints(self) -> tuple[cp.Constraint, ...]:
-        """The original lower-level constraints in construction order."""
+        """tuple of cvxpy.Constraint: Original lower constraints in construction order."""
 
         return self._constraints
 
     @property
     def parameters(self) -> tuple[cp.Variable, ...]:
-        """Upper variables treated as parameters by the lower problem."""
+        """tuple of cvxpy.Variable: Upper variables treated as lower parameters."""
 
         return self._parameters
 

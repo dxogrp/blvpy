@@ -15,11 +15,41 @@ _SUCCESS_STATUSES = {"optimal", "optimal_inaccurate", "success", "succeeded"}
 
 @dataclass(frozen=True, slots=True)
 class Residuals:
-    """Residual summary for one lifted bilevel iterate.
+    """Independent residual summary for one lifted bilevel iterate.
 
-    Equality and cone fields are norms or distances and therefore
-    nonnegative. ``complementarity`` is the raw canonical pairing and is kept
-    separate from ``gap_violation = max(complementarity - epsilon, 0)``.
+    Parameters
+    ----------
+    primal_equality : float
+        Euclidean norm of ``A @ u + s - b``.
+    dual_equality : float
+        Euclidean norm of ``A.T @ lambda + c``.
+    recovery : float
+        Largest Euclidean mismatch between a source lower variable and its
+        value recovered from the canonical primal vector.
+    upper_constraints : float
+        Largest CVXPY violation norm among the upper and generated
+        linked-variable domain constraints.
+    primal_cone : float
+        Euclidean distance from ``s`` to the primal product cone.
+    dual_cone : float
+        Euclidean distance from ``lambda`` to the dual product cone.
+    complementarity : float
+        Raw canonical pairing ``s.T @ lambda``. It may be slightly negative at
+        a numerically infeasible point.
+    gap_violation : float
+        Violation ``max(complementarity - epsilon, 0)`` of the relaxed gap
+        constraint.
+
+    Raises
+    ------
+    ValueError
+        If a field is not real-valued, or if a residual other than
+        ``complementarity`` is negative or NaN.
+
+    Notes
+    -----
+    All fields except ``complementarity`` are nonnegative. Infinite residuals
+    are retained to represent missing or nonfinite numerical solver output.
     """
 
     primal_equality: float
@@ -50,7 +80,7 @@ class Residuals:
 
     @property
     def max_feasibility(self) -> float:
-        """Largest lifted-feasibility residual, excluding the gap constraint."""
+        """float: Largest lifted-feasibility residual, excluding the gap constraint."""
 
         return max(
             self.primal_equality,
@@ -63,12 +93,31 @@ class Residuals:
 
     @property
     def max_violation(self) -> float:
-        """Largest feasibility or relaxed-gap violation."""
+        """float: Largest feasibility or relaxed-gap violation."""
 
         return max(self.max_feasibility, self.gap_violation)
 
     def is_feasible(self, tolerance: float, *, gap_tolerance: float | None = None) -> bool:
-        """Whether all reported violations lie within supplied tolerances."""
+        """Test the lifted feasibility and relaxed-gap residuals.
+
+        Parameters
+        ----------
+        tolerance : float
+            Finite nonnegative bound for ``max_feasibility``.
+        gap_tolerance : float or None, optional
+            Finite nonnegative bound for ``gap_violation``. ``None`` uses
+            ``tolerance``.
+
+        Returns
+        -------
+        bool
+            Whether both residual bounds are satisfied.
+
+        Raises
+        ------
+        ValueError
+            If either tolerance is negative, nonfinite, or not real-valued.
+        """
 
         tolerance = _finite_nonnegative_float(tolerance, "tolerance")
         if gap_tolerance is None:
@@ -78,7 +127,14 @@ class Residuals:
         return self.max_feasibility <= tolerance and self.gap_violation <= gap_tolerance
 
     def as_dict(self) -> dict[str, float]:
-        """Return a serialization-friendly dictionary."""
+        """Return all primitive residual fields as a new dictionary.
+
+        Returns
+        -------
+        dict[str, float]
+            Field names mapped to their stored numerical values. Derived
+            properties such as ``max_violation`` are not included.
+        """
 
         return {
             "primal_equality": self.primal_equality,
@@ -94,13 +150,41 @@ class Residuals:
 
 @dataclass(frozen=True, slots=True)
 class GapDiagnostics:
-    """Terms in the paper's inexact conic gap identity.
+    """Terms in the inexact canonical primal-dual gap identity.
 
-    With ``r_p = A u + s - b`` and ``r_d = A.T lambda + c``, the identity is
-    ``primal_objective - dual_objective = complementarity
-    + dual_residual_term - primal_residual_term``.
-    ``source_gap`` is the signed difference between the returned source-level
-    lower objective and an independently solved fixed-upper reference value.
+    Parameters
+    ----------
+    primal_objective : float
+        Canonical linear objective ``c.T @ u``, without the common offset.
+    dual_objective : float
+        Canonical dual objective ``-b.T @ lambda``, without the common offset.
+    complementarity : float
+        Canonical cone pairing ``s.T @ lambda``.
+    dual_residual_term : float
+        Correction ``u.T @ r_d``, where ``r_d = A.T @ lambda + c``.
+    primal_residual_term : float
+        Correction ``lambda.T @ r_p``, where ``r_p = A @ u + s - b``.
+    source_gap : float or None, optional
+        Signed returned lower objective minus the optimum of a fresh
+        fixed-upper reference solve.
+        :meth:`blvpy.BilevelProblem.gap_diagnostics` populates this field.
+
+    Raises
+    ------
+    ValueError
+        If any supplied diagnostic term is not real-valued.
+
+    Notes
+    -----
+    The identity is
+
+    ``primal_objective - dual_objective = complementarity +``
+    ``dual_residual_term - primal_residual_term``.
+
+    Small nonzero identity errors and slightly negative source gaps can arise
+    from floating-point solver tolerances. These diagnostics measure lower
+    optimality at one returned upper point; they do not certify global
+    bilevel optimality.
     """
 
     primal_objective: float
@@ -124,26 +208,57 @@ class GapDiagnostics:
 
     @property
     def normalized_gap(self) -> float:
-        """Canonical primal objective minus canonical dual objective."""
+        """float: Canonical primal objective minus canonical dual objective."""
 
         return self.primal_objective - self.dual_objective
 
     @property
     def inexact_identity_rhs(self) -> float:
-        """Right-hand side of the inexact gap identity."""
+        """float: Complementarity plus the two signed residual corrections."""
 
         return self.complementarity + self.dual_residual_term - self.primal_residual_term
 
     @property
     def identity_error(self) -> float:
-        """Numerical mismatch between the two sides of the gap identity."""
+        """float: Left-hand side minus right-hand side of the inexact identity."""
 
         return self.normalized_gap - self.inexact_identity_rhs
 
 
 @dataclass(frozen=True, slots=True)
 class IterationRecord:
-    """One epsilon-continuation solve."""
+    """Numerical record for one epsilon-continuation attempt.
+
+    Parameters
+    ----------
+    epsilon : float
+        Finite nonnegative relaxation requested for this attempt.
+    status : str
+        Nonempty CVXPY solver status or BLVPY diagnostic status.
+    objective : float or None
+        Upper objective reported for the attempt, or ``None`` when unavailable.
+    residuals : Residuals
+        Independently computed lifted residuals.
+    solver_name : str or None, optional
+        Name of the selected nonlinear backend.
+    solve_time : float or None, optional
+        Finite nonnegative solver-reported time in seconds, when available.
+    num_iters : int or None, optional
+        Nonnegative solver-reported iteration count, when available.
+    message : str or None, optional
+        Additional failure or diagnostic detail.
+
+    Raises
+    ------
+    ValueError
+        If epsilon, status, objective, residuals, solver time, or iteration
+        count has an invalid value or type.
+
+    Notes
+    -----
+    A solver success status does not by itself make an attempt acceptable;
+    BLVPY also applies its independent residual checks.
+    """
 
     epsilon: float
     status: str
@@ -177,11 +292,41 @@ class IterationRecord:
 
 @dataclass(frozen=True, slots=True)
 class RunRecord:
-    """Outcome and complete continuation history for one solve run.
+    """Outcome and complete history of one independently initialized run.
 
-    ``initial_values`` contains the upper-variable point after any projection
-    performed during initialization. Its arrays are copied and made read-only
-    so later runs cannot change the recorded starting point.
+    Parameters
+    ----------
+    index : int
+        Zero-based nonnegative run index.
+    initial_values : mapping
+        Upper-variable initialization recorded for the run. These are the
+        post-projection values when projection succeeds and the original
+        candidate if initialization fails earlier. Keys are normally CVXPY
+        variables; values are copied into read-only NumPy arrays.
+    status : str
+        Nonempty terminal solver or BLVPY status.
+    objective : float or None, optional
+        Terminal upper objective, or ``None`` when unavailable.
+    iterations : tuple of IterationRecord, optional
+        All epsilon-continuation attempts in execution order, including
+        rejected and inserted-epsilon attempts.
+    final_iteration : IterationRecord or None, optional
+        Record representing the state returned for this run. If omitted while
+        ``iterations`` is nonempty, the last attempted record is used.
+    message : str or None, optional
+        Terminal failure or diagnostic detail.
+
+    Raises
+    ------
+    ValueError
+        If the index, status, objective, initial-value mapping, iteration
+        records, or final iteration is invalid.
+
+    Notes
+    -----
+    Each explicit ``best_of`` candidate receives its own continuation and
+    retry budget. A run can retain a useful partial point even when it does not
+    reach the requested target epsilon.
     """
 
     index: int
@@ -223,55 +368,93 @@ class RunRecord:
 
     @property
     def epsilon_history(self) -> tuple[float, ...]:
-        """Successful tolerances in decreasing accepted order."""
+        """tuple of float: Successful tolerances in decreasing accepted order."""
 
         return _accepted_epsilon_history(self.iterations)
 
     @property
     def attempted_epsilon_history(self) -> tuple[float, ...]:
-        """All attempted tolerances, including failures and retries."""
+        """tuple of float: All attempted tolerances, including failures and retries."""
 
         return tuple(record.epsilon for record in self.iterations)
 
     @property
     def solver_statuses(self) -> tuple[str, ...]:
-        """Solver statuses in continuation order."""
+        """tuple of str: Status of every attempt in continuation order."""
 
         return tuple(record.status for record in self.iterations)
 
     @property
     def residuals(self) -> Residuals | None:
-        """Residuals at this run's returned point."""
+        """Residuals or None: Residuals at this run's returned point."""
 
         return self.final_iteration.residuals if self.final_iteration is not None else None
 
     @property
     def complementarity(self) -> float | None:
-        """Complementarity at this run's returned point."""
+        """float or None: Canonical complementarity at the returned point."""
 
         residuals = self.residuals
         return None if residuals is None else residuals.complementarity
 
     @property
     def final_epsilon(self) -> float | None:
-        """Continuation tolerance at this run's returned point."""
+        """float or None: Continuation tolerance at the returned point."""
 
         return self.final_iteration.epsilon if self.final_iteration is not None else None
 
     @property
     def succeeded(self) -> bool:
-        """Whether this run's terminal status denotes success."""
+        """bool: Whether the terminal status is one of BLVPY's success statuses."""
 
         return self.status.lower() in _SUCCESS_STATUSES
 
 
 @dataclass(frozen=True, slots=True)
 class BilevelResult:
-    """Public result of a BLVPY solve.
+    """Immutable result returned by :meth:`blvpy.BilevelProblem.solve`.
 
-    All numeric values are copied into read-only arrays. The result describes
-    a local numerical solution; solver status and small residuals alone do not
-    constitute a rigorous bilevel certificate.
+    Parameters
+    ----------
+    status : str
+        Nonempty terminal status. Use :attr:`succeeded` instead of depending
+        on backend-specific success spellings.
+    objective : float or None, optional
+        Upper objective at the returned point, or ``None`` when unavailable.
+    variable_values : mapping, optional
+        Snapshots keyed by the original upper and lower CVXPY variable objects.
+    canonical_primal : array-like or None, optional
+        Returned canonical lower primal vector ``u``.
+    slack : array-like or None, optional
+        Returned canonical primal cone vector ``s``.
+    dual : array-like or None, optional
+        Returned canonical dual cone vector ``lambda``.
+    iterations : tuple of IterationRecord, optional
+        Continuation attempts belonging to the selected run.
+    runs : tuple of RunRecord, optional
+        Every deterministic or explicit ``best_of`` run in index order.
+    selected_run_index : int or None, optional
+        Zero-based index of the run whose state is exposed by the top-level
+        fields.
+    final_iteration : IterationRecord or None, optional
+        Record representing the returned selected-run state. If omitted while
+        ``iterations`` is nonempty, the last attempted record is used.
+    message : str or None, optional
+        Terminal failure or diagnostic detail.
+
+    Raises
+    ------
+    ValueError
+        If a scalar field, numerical snapshot, iteration or run collection,
+        selected-run index, or final iteration is invalid or inconsistent.
+
+    Notes
+    -----
+    Numeric values are copied into read-only NumPy arrays, and mappings are
+    read-only views. A ``"continuation_failed"`` result exposes the best
+    available partial run but is not successful. Every returned solution is
+    local; status and small residuals do not constitute a rigorous bilevel
+    certificate.
     """
 
     status: str
@@ -334,50 +517,50 @@ class BilevelResult:
 
     @property
     def epsilon_history(self) -> tuple[float, ...]:
-        """Successful continuation tolerances in decreasing accepted order."""
+        """tuple of float: Selected-run tolerances accepted in decreasing order."""
 
         return _accepted_epsilon_history(self.iterations)
 
     @property
     def attempted_epsilon_history(self) -> tuple[float, ...]:
-        """All attempted tolerances, including failures and retries."""
+        """tuple of float: All selected-run attempts, including failures and retries."""
 
         return tuple(record.epsilon for record in self.iterations)
 
     @property
     def solver_statuses(self) -> tuple[str, ...]:
-        """Solver statuses in continuation order."""
+        """tuple of str: Status of every selected-run continuation attempt."""
 
         return tuple(record.status for record in self.iterations)
 
     @property
     def residuals(self) -> Residuals | None:
-        """Residuals at the returned canonical and source-variable point."""
+        """Residuals or None: Independent residuals at the returned point."""
 
         return self.final_iteration.residuals if self.final_iteration is not None else None
 
     @property
     def complementarity(self) -> float | None:
-        """Complementarity at the last recorded continuation iterate."""
+        """float or None: Canonical complementarity at the returned point."""
 
         residuals = self.residuals
         return None if residuals is None else residuals.complementarity
 
     @property
     def final_epsilon(self) -> float | None:
-        """Last successfully accepted continuation tolerance."""
+        """float or None: Epsilon associated with the returned point."""
 
         return self.final_iteration.epsilon if self.final_iteration is not None else None
 
     @property
     def succeeded(self) -> bool:
-        """Whether the public status denotes a solver success."""
+        """bool: Whether the top-level status is a BLVPY success status."""
 
         return self.status.lower() in _SUCCESS_STATUSES
 
     @property
     def selected_run(self) -> RunRecord | None:
-        """The run whose state is exposed by the top-level result fields."""
+        """RunRecord or None: Run exposed by the top-level result fields."""
 
         if self.selected_run_index is None:
             return None
@@ -385,7 +568,7 @@ class BilevelResult:
 
     @property
     def all_objectives(self) -> tuple[float | None, ...]:
-        """Terminal objectives for all attempted runs, in recorded order."""
+        """tuple: Terminal objective of every run in recorded order."""
 
         return tuple(record.objective for record in self.runs)
 

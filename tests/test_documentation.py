@@ -118,6 +118,20 @@ def test_every_public_export_has_an_explicit_autodoc_entry() -> None:
     assert documented == set(blvpy.__all__)
 
 
+def test_markdown_sources_respect_configured_line_width() -> None:
+    project = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    line_length = project["tool"]["ruff"]["line-length"]
+    violations = []
+    for path in sorted(DOCS_ROOT.rglob("*.md")):
+        if "_build" in path.parts:
+            continue
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if len(line) > line_length:
+                violations.append(f"{path.relative_to(REPOSITORY_ROOT)}:{line_number}:{len(line)}")
+
+    assert violations == []
+
+
 def test_gallery_links_are_release_pinned_and_target_every_example() -> None:
     documentation = "\n".join(path.read_text(encoding="utf-8") for path in DOCS_ROOT.rglob("*.md"))
     examples = sorted(path.name for path in EXAMPLES_ROOT.glob("*.py"))
