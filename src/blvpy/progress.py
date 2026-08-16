@@ -329,7 +329,7 @@ class ProgressReporter:
         attempted_solves: int,
         elapsed: float | None,
     ) -> None:
-        """Write the terminal result and local-solution qualification."""
+        """Write the terminal result summary."""
 
         try:
             if not self.enabled:
@@ -352,7 +352,6 @@ class ProgressReporter:
             )
             if result.message:
                 self._detail("Message", _clean_text(result.message))
-            self._write(f"{_PREFIX} Local numerical solution; not a rigorous bilevel certificate.")
         except Exception:
             return
 

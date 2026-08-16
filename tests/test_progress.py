@@ -240,7 +240,7 @@ def test_summary_and_failure_include_terminal_information(capfd) -> None:
         objective=0.125,
         iterations=(final,),
         final_iteration=final,
-        message="local result",
+        message="diagnostic detail",
     )
 
     _problem(reporter)
@@ -266,8 +266,7 @@ def test_summary_and_failure_include_terminal_information(capfd) -> None:
     assert "gap_violation=2.500e-08" in residuals_block
     assert "complementarity=7.500e-07" in residuals_block
     assert "Progress: accepted=6 | attempted=8 | successful_runs=2/3" in transcript
-    assert "Message: local result" in transcript
-    assert "Local numerical solution; not a rigorous bilevel certificate." in transcript
+    assert "Message: diagnostic detail" in transcript
 
     failed = ProgressReporter(enabled=True)
     failed.failure(ValueError("multi\nline"), elapsed=0.25)

@@ -15,6 +15,7 @@ build/
 .mypy_cache/
 .coverage
 htmlcov/
+docs/_build/
 
 # Generated Marimo outputs and session state
 examples/figures/

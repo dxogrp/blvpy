@@ -55,7 +55,43 @@ class _LiftedProblem:
 
 
 class BilevelProblem:
-    """An optimistic bilevel problem with a DPP convex lower problem."""
+    """An optimistic bilevel minimization problem.
+
+    The upper expressions reuse the lower decision-variable objects from
+    ``lower_problem``. BLVPY therefore optimizes over all lower-optimal
+    solutions and implements optimistic bilevel semantics.
+
+    Parameters
+    ----------
+    upper_objective : cvxpy.Objective
+        Objective of the upper problem. Validation requires a real-valued
+        scalar :class:`cvxpy.Minimize` objective.
+    lower_problem : LowerProblem
+        Convex lower problem and its linked upper variables.
+    upper_constraints : sequence of cvxpy.Constraint, optional
+        Constraints of the upper problem. Generated constraints that preserve
+        the domains of linked variables are added internally.
+
+    Attributes
+    ----------
+    upper_objective : cvxpy.Objective
+        The upper objective supplied at construction.
+    lower_problem : LowerProblem
+        The lower model supplied at construction.
+    upper_constraints : tuple of cvxpy.Constraint
+        The supplied upper constraints in construction order.
+
+    Raises
+    ------
+    TypeError
+        If an argument is not the required CVXPY or BLVPY type.
+
+    Notes
+    -----
+    Constructing this object does not canonicalize or solve either level.
+    Call :meth:`validate` for detailed structural diagnostics or :meth:`solve`
+    to validate and compute a local numerical result.
+    """
 
     def __init__(
         self,
@@ -84,7 +120,11 @@ class BilevelProblem:
 
     @property
     def upper_variables(self) -> tuple[cp.Variable, ...]:
-        """Upper variables, excluding source variables owned by the lower problem."""
+        """tuple of cvxpy.Variable: Upper variables in stable discovery order.
+
+        Variables owned by the generated lower CVXPY problem are excluded,
+        even when they also occur in the upper objective or constraints.
+        """
 
         lower_ids = {variable.id for variable in self._cvxpy_lower_problem.variables()}
         candidates: list[cp.Variable] = []
@@ -96,7 +136,11 @@ class BilevelProblem:
 
     @property
     def source_variables(self) -> tuple[cp.Variable, ...]:
-        """All user-created upper and lower variables in stable order."""
+        """tuple of cvxpy.Variable: All user-created variables in stable order.
+
+        Upper variables precede lower decision variables, and repeated CVXPY
+        objects appear only once.
+        """
 
         return _unique_variables((*self.upper_variables, *self._cvxpy_lower_problem.variables()))
 
@@ -110,7 +154,19 @@ class BilevelProblem:
         return self._lifted
 
     def is_dbp(self) -> bool:
-        """Return whether the problem passes structural and DNLP validation."""
+        """Return whether the model passes BLVPY's structural validation.
+
+        Returns
+        -------
+        bool
+            ``True`` when :meth:`validate` succeeds, otherwise ``False``.
+
+        Notes
+        -----
+        This convenience check suppresses the validation exception. Use
+        :meth:`validate` when the failure reason is needed. It does not test
+        numerical feasibility, boundedness, or solver availability.
+        """
 
         try:
             self.validate()
@@ -119,7 +175,38 @@ class BilevelProblem:
         return True
 
     def validate(self) -> None:
-        """Validate the lower canonicalization and complete lifted DNLP model."""
+        """Validate and assemble the supported single-level reformulation.
+
+        Validation checks the upper model, lower DCP and DPP compliance, the
+        audited exact-canonicalization policy, the zero/nonnegative/SOC cone
+        restriction, and DNLP compatibility of the lifted formulation.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValidationError
+            If the upper or lower model violates a structural requirement.
+        UnsupportedModelError
+            If the model uses an unsupported variable type, atom, or DNLP
+            expression.
+        UnsupportedConeError
+            If lower canonicalization produces a cone outside SOCP mode.
+        ApproximateCanonicalizationError
+            If an accepted-looking source expression would be canonicalized
+            only approximately.
+        CanonicalizationError
+            If CVXPY does not expose the expected exact conic program.
+
+        Notes
+        -----
+        The canonical and lifted representations produced by successful
+        validation are cached. Source-level structural checks are repeated on
+        later calls. Validation does not prove feasibility, boundedness,
+        constraint qualifications, or solver convergence.
+        """
 
         self._validate_upper()
         _validate_lower(self._cvxpy_lower_problem, self._parameter_links)
@@ -128,7 +215,29 @@ class BilevelProblem:
             self._lifted = self._assemble_lifted(canonical)
 
     def canonicalize(self) -> CanonicalLowerProblem:
-        """Return immutable metadata for the fixed Clarabel SOCP reduction."""
+        """Canonicalize the lower problem into BLVPY's affine SOCP form.
+
+        Returns
+        -------
+        CanonicalLowerProblem
+            Cached metadata for ``min c.T @ u + d`` subject to
+            ``A @ u + s == b`` and ``s`` in the recorded product cone.
+
+        Raises
+        ------
+        ValidationError
+            If the lower problem is not a supported DCP/DPP minimization.
+        UnsupportedConeError
+            If canonicalization contains PSD, exponential, or power cones.
+        CanonicalizationError
+            If the fixed Clarabel-compatible reduction cannot be extracted.
+
+        Notes
+        -----
+        This method is intended for numerical inspection. Fixed ordinary
+        CVXPY parameters are frozen at their current values the first time
+        canonicalization occurs.
+        """
 
         if self._canonical is None:
             self._canonical = _canonicalize_lower(
@@ -155,16 +264,80 @@ class BilevelProblem:
         verbose: bool = True,
         solver_verbose: bool = False,
     ) -> BilevelResult:
-        """Solve locally with deterministic or best-of epsilon continuation.
+        """Solve locally by epsilon-gap continuation.
 
-        IPOPT is the default nonlinear backend. Any backend accepted by
-        CVXPY's DNLP solve path may be selected when installed independently.
-        Solver options are passed through CVXPY; returned feasibility and gap
-        diagnostics are computed independently from solver status. ``verbose``
-        controls BLVPY's progress transcript, while ``solver_verbose`` controls
-        CVXPY and native solver output. Explicit ``best_of=N`` runs ``N``
-        independently initialized complete continuations and returns the best
-        acceptable target-epsilon result.
+        Parameters
+        ----------
+        epsilon_initial : float, default=1e-1
+            Positive relaxation used for the first nonlinear solve.
+        epsilon_target : float, default=1e-6
+            Positive final relaxation. It cannot exceed ``epsilon_initial``.
+        contraction : float, default=0.1
+            Factor in ``(0, 1)`` used to decrease epsilon after an accepted
+            continuation point.
+        best_of : int or None, default=None
+            ``None`` performs one deterministic continuation. A positive
+            integer performs that many independently initialized complete
+            continuations and selects the acceptable target-epsilon result
+            with the smallest upper objective.
+        feasibility_tolerance : float, default=1e-7
+            Nonnegative threshold applied to independently computed lifted
+            feasibility and relaxed-gap residuals.
+        seed : int, numpy.random.Generator, or None, default=None
+            Random generator specification for explicit ``best_of`` runs.
+            It has no effect on deterministic initialization.
+        solver : str, default=cvxpy.IPOPT
+            CVXPY DNLP backend used for restoration and continuation. IPOPT is
+            BLVPY's installed and tested default; other CVXPY DNLP backends
+            must be installed independently.
+        conic_solver : str, default=cvxpy.CLARABEL
+            CVXPY conic backend used for upper-point projection and fixed-upper
+            lower initialization.
+        solver_options : mapping or None, default=None
+            Backend-specific options forwarded to each DNLP solve. The mapping
+            is copied and is not modified by BLVPY.
+        conic_solver_options : mapping or None, default=None
+            Backend-specific options forwarded to conic solves. The mapping is
+            copied and is not modified by BLVPY.
+        restoration : bool, default=True
+            Whether to attempt a DNLP feasibility-restoration solve when the
+            initialized lifted point exceeds ``feasibility_tolerance``.
+        max_retries : int, default=8
+            Maximum number of intermediate-epsilon insertions following failed
+            continuation attempts within each run.
+        verbose : bool, default=True
+            Whether to write BLVPY's concise progress transcript to standard
+            error.
+        solver_verbose : bool, default=False
+            Whether to request CVXPY and native backend output. Backend silence
+            is best effort.
+
+        Returns
+        -------
+        BilevelResult
+            Immutable snapshots of the selected local point, its residuals,
+            and every attempted run and continuation step. If no run reaches
+            the target after successful initialization, a best partial result
+            with status ``"continuation_failed"`` is returned.
+
+        Raises
+        ------
+        ValueError
+            If a numerical setting has an invalid type or range.
+        ValidationError
+            If the model does not satisfy BLVPY's structural requirements.
+        InitializationError
+            If no run produces an acceptable initial-epsilon point.
+        SolverUnavailableError
+            If a requested solver is unavailable or cannot load.
+
+        Notes
+        -----
+        Deterministic initialization preserves existing upper-variable values;
+        otherwise it uses native-bound interior points or zero. Explicit
+        ``best_of`` uses ``variable.sample_bounds`` first, then an existing
+        value, then finite native bounds. Every viable run has an independent
+        continuation and retry budget.
         """
 
         from .continuation import _SolveSettings, solve_bilevel
@@ -195,13 +368,44 @@ class BilevelProblem:
         solver_options: Mapping[str, Any] | None = None,
         solver_verbose: bool = False,
     ) -> GapDiagnostics:
-        """Diagnose the returned lower point with one reference lower solve.
+        """Compute canonical and source-level gap diagnostics for a result.
 
-        The diagnostic is computed from immutable result snapshots. It
-        includes both the canonical inexact-gap identity and the signed
-        source-level lower suboptimality at the returned upper point. The
-        selected conic solver is used only for that reference lower solve;
-        its options and verbosity are passed through to CVXPY.
+        Parameters
+        ----------
+        result : BilevelResult
+            Successful or ``"continuation_failed"`` result produced by this
+            problem. Complete source and canonical snapshots are required.
+        solver : str, default=cvxpy.CLARABEL
+            CVXPY conic backend for one fresh fixed-upper lower solve.
+        solver_options : mapping or None, default=None
+            Backend-specific options copied and forwarded unchanged to CVXPY.
+        solver_verbose : bool, default=False
+            Whether to request CVXPY and native conic-solver output.
+
+        Returns
+        -------
+        GapDiagnostics
+            Canonical inexact-gap terms and the signed difference between the
+            returned lower objective and the reference optimum.
+
+        Raises
+        ------
+        TypeError
+            If ``result`` is not a :class:`blvpy.BilevelResult`.
+        ValueError
+            If the result is incompatible, incomplete, nonfinite, or has a
+            status unsuitable for diagnosis.
+        SolverUnavailableError
+            If the requested conic solver is unavailable or cannot load.
+        SolveError
+            If the fixed-upper lower reference solve fails or returns no
+            usable solution.
+
+        Notes
+        -----
+        The diagnostic solve uses fixed-parameter values captured at initial
+        canonicalization. All affected CVXPY variable and parameter values are
+        restored before this method returns or raises.
         """
 
         from .diagnostics import _gap_diagnostics

@@ -24,7 +24,7 @@ $$
 We say a bilevel problem is *disciplined bilevel programming* (DBP) compatible if it satisfies the following conditions:
 
 * The objective and constraint functions $F_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, m$ of the upper problem are [DNLP](https://www.cvxpy.org/tutorial/dnlp/index.html)-compatible with variables $x \in \mathbf{R}^n$ and $y \in \mathbf{R}^k$.
-* The objective and constraint functions $f_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, p$ of the lower problem are [DPP](https://www.cvxpy.org/tutorial/dpp/index.html)-compatible with variable $z \in \mathbf{R}^k$, so that the lower problem is a disciplined convex program, parameterized by $x \in \mathbf{R}^n$.
+* The objective and constraint functions $f_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, p$ of the lower problem are [DPP](https://www.cvxpy.org/tutorial/dpp/index.html)-compatible with variable $z \in \mathbf{R}^k$ (or $y \in \mathbf{R}^k$), so that the lower problem is a disciplined convex program, parameterized by $x \in \mathbf{R}^n$.
 
 BLVPY supports the modeling and solving of DBP-compliant problems and uses *optimistic semantics*, i.e., when the lower problem has multiple minimizers, the upper problem may select the one most favorable to its objective.
 
@@ -55,7 +55,38 @@ CVXPY also exposes DNLP paths for KNITRO, UNO, and COPT; these solvers may be se
 The required default (and recommended) nonlinear solver is IPOPT, which is free and open-source.
 [Clarabel](https://clarabel.org/stable/) is the default backend conic solver.
 
+### Development setup
+
+BLVPY manages its development environment with [uv](https://docs.astral.sh/uv/).
+Before setting up the repository, you should install uv and IPOPT.
+
+1. Clone the repository:
+
+   ```shell
+   git clone https://github.com/dxogrp/blvpy.git
+   cd blvpy
+   ```
+
+2. Create the virtual environment and install the locked development
+   dependencies:
+
+   ```shell
+   make sync
+   ```
+
 ## Quick start
+
+The following example models the bilevel problem
+
+$$
+\begin{array}{ll}
+\text{minimize} & (x-1)^2+(y+1)^2 \\
+\text{subject to} & x\geq -1, \\
+  & y\in\mathop{\mathrm{argmin}}_z (z-x)^2
+\end{array}
+$$
+
+with variables $x, y \in \mathbf{R}$.
 
 ```python
 import cvxpy as cp
@@ -105,6 +136,15 @@ make marimo
 ```
 
 to install Marimo and open the notebooks in your browser.
+
+## Documentation
+
+The complete user guide and API reference are available at [this page](https://dxogrp.github.io/blvpy/).
+To build and preview the Sphinx documentation locally, run:
+
+```shell
+make docs
+```
 
 ## License
 

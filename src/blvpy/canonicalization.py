@@ -80,7 +80,30 @@ _AUDITED_REDUCTION_CHAIN = (
 
 @dataclass(frozen=True, slots=True)
 class CanonicalData:
-    """Numerical data for ``min c.T @ u + d`` with ``A @ u + s == b``."""
+    """Numerical data for one evaluated canonical lower problem.
+
+    Parameters
+    ----------
+    A : scipy.sparse.csc_array
+        Constraint matrix in the convention ``A @ u + s == b``.
+    b : array-like
+        One-dimensional right-hand-side vector.
+    c : array-like
+        One-dimensional linear-objective vector.
+    d : float
+        Scalar objective offset, so the primal objective is ``c.T @ u + d``.
+
+    Raises
+    ------
+    ValueError
+        If dimensions are inconsistent or any data are nonfinite.
+
+    Notes
+    -----
+    ``b`` and ``c`` are stored as read-only ``float64`` arrays. The row order
+    of ``A`` and ``b`` is described by the corresponding
+    :class:`blvpy.ConeLayout`.
+    """
 
     A: sp.csc_array
     b: NDArray[np.float64]
@@ -106,24 +129,76 @@ class CanonicalData:
 
 @dataclass(frozen=True, slots=True)
 class AffineRecoveryMap:
-    """Immutable affine recovery for all original lower variables."""
+    """Affine recovery maps for the original lower variables.
+
+    Parameters
+    ----------
+    specs : tuple of RecoverySpec
+        Per-variable maps in the original lower problem's variable order.
+    """
 
     specs: tuple[RecoverySpec, ...]
 
     def expressions(self, u: cp.Expression) -> dict[int, cp.Expression]:
-        """Return shaped recovery expressions keyed by source variable ID."""
+        """Construct source-variable recovery expressions.
+
+        Parameters
+        ----------
+        u : cvxpy.Expression
+            Canonical primal vector.
+
+        Returns
+        -------
+        dict[int, cvxpy.Expression]
+            Shaped affine expressions keyed by original CVXPY variable ID.
+        """
 
         return {spec.variable_id: spec.expression(u) for spec in self.specs}
 
     def numeric(self, u: ArrayLike) -> dict[int, NDArray[np.float64]]:
-        """Return recovered numeric values keyed by source variable ID."""
+        """Evaluate all source-variable recovery maps.
+
+        Parameters
+        ----------
+        u : array-like
+            Canonical primal vector.
+
+        Returns
+        -------
+        dict[int, numpy.ndarray]
+            Shaped values keyed by original CVXPY variable ID.
+
+        Raises
+        ------
+        ValueError
+            If ``u`` has an incompatible length.
+        """
 
         return {spec.variable_id: spec.numeric(u) for spec in self.specs}
 
 
 @dataclass(frozen=True, slots=True)
 class CanonicalExpressions:
-    """CVXPY expressions for a canonical lower problem's affine data."""
+    """Symbolic affine data of a canonical lower problem.
+
+    Parameters
+    ----------
+    A : cvxpy.Expression
+        Canonical constraint matrix as an affine expression of linked upper
+        variables.
+    b : cvxpy.Expression
+        Canonical right-hand-side vector.
+    c : cvxpy.Expression
+        Canonical linear-objective vector.
+    d : cvxpy.Expression
+        Canonical scalar objective offset.
+
+    Notes
+    -----
+    These expressions use the convention ``A @ u + s == b`` and objective
+    ``c.T @ u + d``. They are primarily intended for advanced inspection;
+    BLVPY constructs the lifted model from them internally.
+    """
 
     A: cp.Expression
     b: cp.Expression
@@ -133,7 +208,38 @@ class CanonicalExpressions:
 
 @dataclass(frozen=True, slots=True)
 class ParameterSpec:
-    """How one original lower parameter enters CVXPY's parameter vector."""
+    """Description of one parameter in CVXPY's packed canonical data.
+
+    Parameters
+    ----------
+    parameter_id : int
+        ID of the parameter before CVXPY attribute reduction.
+    name : str
+        Source parameter name used in diagnostics.
+    shape : tuple of int
+        Original parameter shape.
+    size : int
+        Number of entries in the original shape.
+    mapped : bool
+        Whether the parameter represents a linked upper variable.
+    internal_parameter_id : int
+        ID after CVXPY attribute reduction.
+    internal_shape : tuple of int
+        Shape after attribute reduction.
+    internal_size : int
+        Number of packed entries after attribute reduction.
+    offset : int
+        Starting column in CVXPY's packed parameter vector.
+    transform : {"identity", "symmetric", "diagonal", "sparse"}, optional
+        Transformation from the source value to the packed representation.
+    sparse_indices : tuple of tuple of int, optional
+        Source indices retained by the ``"sparse"`` transformation.
+
+    Notes
+    -----
+    This is provisional inspection metadata returned through
+    :class:`blvpy.CanonicalLowerProblem`; users normally do not construct it.
+    """
 
     parameter_id: int
     name: str
@@ -148,7 +254,23 @@ class ParameterSpec:
     sparse_indices: tuple[tuple[int, ...], ...] = ()
 
     def pack_numeric(self, value: ArrayLike) -> NDArray[np.float64]:
-        """Pack an original-shaped value in CVXPY's internal Fortran order."""
+        """Pack a numeric source value in CVXPY's internal order.
+
+        Parameters
+        ----------
+        value : array-like
+            Finite value whose shape exactly matches ``shape``.
+
+        Returns
+        -------
+        numpy.ndarray
+            One-dimensional packed value of length ``internal_size``.
+
+        Raises
+        ------
+        ParameterMappingError
+            If the shape is wrong or any entry is nonfinite.
+        """
 
         array = np.asarray(value, dtype=float)
         if array.shape != self.shape:
@@ -166,7 +288,24 @@ class ParameterSpec:
         return np.asarray(packed, dtype=float).reshape(-1, order="F")
 
     def pack_expression(self, value: cp.Expression) -> cp.Expression:
-        """Symbolically pack an original-shaped affine expression."""
+        """Pack an affine CVXPY expression in the internal parameter order.
+
+        Parameters
+        ----------
+        value : cvxpy.Expression or array-like
+            Affine expression with shape ``shape``.
+
+        Returns
+        -------
+        cvxpy.Expression
+            One-dimensional packed expression of length
+            ``internal_size``.
+
+        Raises
+        ------
+        ParameterMappingError
+            If the expression has the wrong shape or is not affine.
+        """
 
         expression = cp.Expression.cast_to_const(value)
         if expression.shape != self.shape:
@@ -185,7 +324,31 @@ class ParameterSpec:
 
 @dataclass(frozen=True, slots=True)
 class RecoverySpec:
-    """A fixed affine map from canonical ``u`` to one source variable."""
+    """Fixed affine recovery of one source lower variable.
+
+    Parameters
+    ----------
+    variable_id : int
+        ID of the original CVXPY lower variable.
+    name : str
+        Original variable name used in diagnostics.
+    shape : tuple of int
+        Original variable shape.
+    matrix : array-like
+        Two-dimensional matrix multiplying the canonical primal vector.
+    offset : array-like
+        Vector added before reshaping in Fortran order to ``shape``.
+
+    Raises
+    ------
+    ValueError
+        If ``matrix`` and ``offset`` do not describe the requested source
+        shape.
+
+    Notes
+    -----
+    Recovery has the form ``reshape(matrix @ u + offset, shape, order="F")``.
+    """
 
     variable_id: int
     name: str
@@ -206,14 +369,41 @@ class RecoverySpec:
         object.__setattr__(self, "offset", offset)
 
     def expression(self, u: cp.Expression) -> cp.Expression:
-        """Recover a shaped source-variable expression from canonical ``u``."""
+        """Construct the shaped affine recovery expression.
+
+        Parameters
+        ----------
+        u : cvxpy.Expression
+            Canonical primal vector.
+
+        Returns
+        -------
+        cvxpy.Expression
+            Source-shaped affine expression.
+        """
 
         vector = cp.reshape(cp.Expression.cast_to_const(u), (self.matrix.shape[1],), order="F")
         flat = self.matrix @ vector + self.offset
         return cp.reshape(flat, self.shape, order="F")
 
     def numeric(self, u: ArrayLike) -> NDArray[np.float64]:
-        """Recover a shaped source-variable value from canonical ``u``."""
+        """Evaluate the shaped affine recovery map.
+
+        Parameters
+        ----------
+        u : array-like
+            Canonical primal vector.
+
+        Returns
+        -------
+        numpy.ndarray
+            Recovered value with ``shape``.
+
+        Raises
+        ------
+        ValueError
+            If ``u`` has an incompatible length.
+        """
 
         vector = np.asarray(u, dtype=float).reshape(-1)
         if vector.size != self.matrix.shape[1]:
@@ -233,7 +423,41 @@ class _DataAffineMap:
 
 @dataclass(frozen=True, slots=True)
 class CanonicalLowerProblem:
-    """A fixed exact SOCP canonicalization of a CVXPY lower problem."""
+    """Fixed exact SOCP canonicalization of a lower problem.
+
+    Instances are produced and cached by
+    :meth:`blvpy.BilevelProblem.canonicalize`.
+    They expose the affine canonical data and source-recovery metadata for
+    advanced numerical inspection; direct construction is not a supported
+    modeling workflow.
+
+    Attributes
+    ----------
+    canonical_variable_offsets : collections.abc.Mapping[int, int]
+        Read-only mapping from each CVXPY canonical variable ID to its
+        starting canonical column.
+    cone_layout : ConeLayout
+        Ordered zero, nonnegative, and second-order cone blocks.
+    canonical_size : int
+        Length of the canonical primal vector ``u``.
+    constraint_size : int
+        Length of the canonical slack and dual vectors.
+    parameter_specs : tuple of ParameterSpec
+        Packing metadata for parameters retained in the affine data map.
+    recovery_specs : tuple of RecoverySpec
+        Affine source-variable recovery maps.
+    fixed_parameter_values : collections.abc.Mapping[int, numpy.ndarray]
+        Read-only mapping of unmapped parameter IDs to read-only value
+        snapshots captured at canonicalization time.
+
+    Notes
+    -----
+    The represented program is ``min c(x).T @ u + d(x)`` subject to
+    ``A(x) @ u + s == b(x)`` and ``s`` in
+    :attr:`blvpy.CanonicalLowerProblem.cone_layout`. Its matrix
+    convention is pre-solver CVXPY canonical data, before Clarabel scaling or
+    presolve.
+    """
 
     _source_problem: cp.Problem
     _canonical_problem: cp.Problem
@@ -267,19 +491,19 @@ class CanonicalLowerProblem:
 
     @property
     def source_variable_ids(self) -> tuple[int, ...]:
-        """Original lower-variable IDs in CVXPY problem order."""
+        """tuple of int: Original lower-variable IDs in CVXPY problem order."""
 
         return tuple(spec.variable_id for spec in self.recovery_specs)
 
     @property
     def recovery_map(self) -> AffineRecoveryMap:
-        """Fixed affine recovery map for the source lower variables."""
+        """AffineRecoveryMap: Combined recovery map for all source lower variables."""
 
         return AffineRecoveryMap(self.recovery_specs)
 
     @property
     def parameter_ids(self) -> tuple[int, ...]:
-        """Mapped lower-parameter IDs in CVXPY problem order.
+        """tuple of int: Retained parameter IDs in CVXPY problem order.
 
         Unmapped parameters are frozen into constant canonical data at
         canonicalization time and therefore do not appear here.
@@ -291,11 +515,28 @@ class CanonicalLowerProblem:
         self,
         values: Mapping[cp.Parameter | int, ArrayLike] | None = None,
     ) -> CanonicalData:
-        """Evaluate canonical data using overrides and current fixed values.
+        """Evaluate the affine canonical data numerically.
 
-        ``values`` may be keyed by original Parameter objects or IDs. Missing
-        mapped parameters are read from their linked expression. Unmapped
-        parameters were frozen at canonicalization time.
+        Parameters
+        ----------
+        values : mapping or None, optional
+            Parameter overrides keyed by a retained CVXPY parameter object or
+            its integer ID. Missing mapped values are read from their linked
+            upper expressions. Unmapped parameters remain frozen at their
+            canonicalization-time values.
+
+        Returns
+        -------
+        CanonicalData
+            Evaluated ``A``, ``b``, ``c``, and ``d``.
+
+        Raises
+        ------
+        ParameterMappingError
+            If a required linked value is absent, has the wrong shape, or is
+            nonfinite.
+        ValueError
+            If the evaluated canonical dimensions or values are invalid.
         """
 
         overrides = _normalise_value_keys(values or {})
@@ -306,11 +547,31 @@ class CanonicalLowerProblem:
         self,
         parameter_expr_by_id: Mapping[cp.Parameter | int, cp.Expression],
     ) -> CanonicalExpressions:
-        """Build affine CVXPY expressions for ``A``, ``b``, ``c``, and ``d``.
+        """Build symbolic affine expressions for the canonical data.
 
-        Linked parameter expressions should normally be supplied by original
-        parameter ID. Unmapped parameters were frozen as constants before this
-        affine map was extracted.
+        Parameters
+        ----------
+        parameter_expr_by_id : mapping
+            Optional replacements keyed by a retained CVXPY parameter object
+            or its integer ID. Values must be affine CVXPY expressions with
+            the source parameter shape. Missing mapped entries use their
+            linked upper expressions.
+
+        Returns
+        -------
+        CanonicalExpressions
+            Affine expressions for ``A``, ``b``, ``c``, and ``d``.
+
+        Raises
+        ------
+        ParameterMappingError
+            If a replacement has an incompatible shape or is not affine, or
+            if no value is available for a required parameter.
+
+        Notes
+        -----
+        Unmapped parameters were frozen as constants before the affine map was
+        extracted.
         """
 
         expressions = _normalise_expression_keys(parameter_expr_by_id)
@@ -334,12 +595,39 @@ class CanonicalLowerProblem:
         return CanonicalExpressions(A=A, b=b, c=c, d=d)
 
     def recovery_expressions(self, u: cp.Expression) -> dict[int, cp.Expression]:
-        """Return source-variable recovery expressions keyed by variable ID."""
+        """Construct recovery expressions for all source lower variables.
+
+        Parameters
+        ----------
+        u : cvxpy.Expression
+            Canonical primal vector.
+
+        Returns
+        -------
+        dict[int, cvxpy.Expression]
+            Source-shaped expressions keyed by original variable ID.
+        """
 
         return self.recovery_map.expressions(u)
 
     def recover_numeric(self, u: ArrayLike) -> dict[int, NDArray[np.float64]]:
-        """Recover source-variable values keyed by variable ID."""
+        """Recover all source lower variables from a canonical vector.
+
+        Parameters
+        ----------
+        u : array-like
+            Canonical primal vector.
+
+        Returns
+        -------
+        dict[int, numpy.ndarray]
+            Source-shaped values keyed by original variable ID.
+
+        Raises
+        ------
+        ValueError
+            If the canonical vector has an incompatible length.
+        """
 
         return self.recovery_map.numeric(u)
 

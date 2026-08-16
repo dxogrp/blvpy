@@ -245,8 +245,7 @@ def _(
     The selected penalty substantially improves validation error over the
     conventional $\alpha=1$ baseline. Its nonzero value also illustrates the
     bias-variance tradeoff: the training curve worsens as regularization grows,
-    while the validation curve initially improves. This remains a local
-    numerical bilevel solution, not a global certificate.
+    while the validation curve initially improves.
     """)
     return
 

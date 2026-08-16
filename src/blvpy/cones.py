@@ -21,7 +21,25 @@ ConeKind = Literal["zero", "nonnegative", "second_order"]
 
 @dataclass(frozen=True, slots=True)
 class ConeBlock:
-    """One contiguous cone block in a canonical constraint vector."""
+    """One contiguous block in a canonical product-cone vector.
+
+    Parameters
+    ----------
+    kind : {"zero", "nonnegative", "second_order"}
+        Cone represented by the block.
+    start : int
+        Inclusive zero-based row offset.
+    stop : int
+        Exclusive row offset; it must be greater than ``start``.
+    index : int, default=0
+        Zero-based index among blocks of the same kind. It distinguishes
+        multiple second-order cones.
+
+    Raises
+    ------
+    ValueError
+        If the kind, offsets, or index are invalid.
+    """
 
     kind: ConeKind
     start: int
@@ -38,24 +56,42 @@ class ConeBlock:
 
     @property
     def size(self) -> int:
-        """Number of scalar rows in the block."""
+        """int: Number of scalar rows in the block."""
 
         return self.stop - self.start
 
     @property
     def slice(self) -> slice:
-        """Slice selecting this block from a canonical vector."""
+        """slice: Python slice selecting the block from a canonical vector."""
 
         return slice(self.start, self.stop)
 
 
 @dataclass(frozen=True, slots=True)
 class ConeLayout:
-    """Immutable layout of a zero/nonnegative/SOC product cone.
+    """Ordered layout of a zero/nonnegative/SOC product cone.
 
-    Parameters follow the canonical CVXPY row order.  A second-order cone
-    size includes its scalar head, so every entry in ``second_order`` must be
-    at least two.
+    Parameters
+    ----------
+    zero : int, default=0
+        Number of scalar rows in the zero-cone block.
+    nonnegative : int, default=0
+        Number of scalar rows in the nonnegative-cone block.
+    second_order : tuple of int, optional
+        Dimensions of the second-order cone blocks. Each dimension includes
+        the scalar head and must be at least two.
+
+    Raises
+    ------
+    ValueError
+        If a dimension is negative, nonintegral, or an SOC dimension is less
+        than two.
+
+    Notes
+    -----
+    Rows follow CVXPY's canonical order: zero, nonnegative, then each SOC in
+    sequence. The associated dual cone is unrestricted on zero-cone rows and
+    self-dual on nonnegative and SOC rows.
     """
 
     zero: int = 0
@@ -79,10 +115,24 @@ class ConeLayout:
 
     @classmethod
     def from_dims(cls, dims: object) -> ConeLayout:
-        """Build a layout from CVXPY ``ConeDims`` or an equivalent mapping.
+        """Build a layout from CVXPY cone dimensions.
 
-        Unsupported nonempty cone dimensions are rejected here, rather than
-        being omitted from the canonical row count.
+        Parameters
+        ----------
+        dims : object or mapping
+            A CVXPY ``ConeDims``-like object or mapping. CVXPY aliases such as
+            ``f``, ``l``, and ``q`` are recognized.
+
+        Returns
+        -------
+        ConeLayout
+            Validated zero/nonnegative/SOC row layout.
+
+        Raises
+        ------
+        ValueError
+            If ``dims`` is ``None``, contains invalid dimensions, or declares
+            nonempty PSD, exponential, or power cones.
         """
 
         if dims is None:
@@ -114,43 +164,43 @@ class ConeLayout:
 
     @property
     def nonneg(self) -> int:
-        """CVXPY-compatible alias for :attr:`nonnegative`."""
+        """int: CVXPY-compatible alias for ``nonnegative``."""
 
         return self.nonnegative
 
     @property
     def soc(self) -> tuple[int, ...]:
-        """CVXPY-compatible alias for :attr:`second_order`."""
+        """tuple of int: CVXPY-compatible alias for ``second_order``."""
 
         return self.second_order
 
     @property
     def size(self) -> int:
-        """Total number of scalar cone rows."""
+        """int: Total number of scalar product-cone rows."""
 
         return self.zero + self.nonnegative + sum(self.second_order)
 
     @property
     def zero_slice(self) -> slice:
-        """Slice of the zero-cone rows, possibly empty."""
+        """slice: Zero-cone rows, possibly an empty slice."""
 
         return slice(0, self.zero)
 
     @property
     def nonnegative_slice(self) -> slice:
-        """Slice of the nonnegative-cone rows, possibly empty."""
+        """slice: Nonnegative-cone rows, possibly an empty slice."""
 
         return slice(self.zero, self.zero + self.nonnegative)
 
     @property
     def nonneg_slice(self) -> slice:
-        """CVXPY-compatible alias for :attr:`nonnegative_slice`."""
+        """slice: Alias for ``nonnegative_slice``."""
 
         return self.nonnegative_slice
 
     @property
     def second_order_slices(self) -> tuple[slice, ...]:
-        """Slices of the ordered second-order cone blocks."""
+        """tuple of slice: Ordered second-order cone row slices."""
 
         start = self.zero + self.nonnegative
         slices: list[slice] = []
@@ -161,13 +211,13 @@ class ConeLayout:
 
     @property
     def soc_slices(self) -> tuple[slice, ...]:
-        """CVXPY-compatible alias for :attr:`second_order_slices`."""
+        """tuple of slice: Alias for ``second_order_slices``."""
 
         return self.second_order_slices
 
     @property
     def blocks(self) -> tuple[ConeBlock, ...]:
-        """All nonempty blocks in canonical row order."""
+        """tuple of ConeBlock: All nonempty blocks in canonical row order."""
 
         blocks: list[ConeBlock] = []
         if self.zero:
@@ -187,7 +237,24 @@ class ConeLayout:
         return tuple(blocks)
 
     def primal_constraints(self, value: cp.Expression | ArrayLike) -> tuple[cp.Constraint, ...]:
-        """Return constraints imposing membership in the primal cone."""
+        """Construct CVXPY constraints for primal-cone membership.
+
+        Parameters
+        ----------
+        value : cvxpy.Expression or array-like
+            Real vector with :attr:`size` entries.
+
+        Returns
+        -------
+        tuple of cvxpy.Constraint
+            Zero equalities, nonnegative inequalities, and scalar-form SOC
+            inequalities in canonical block order.
+
+        Raises
+        ------
+        ValueError
+            If ``value`` is complex or has the wrong number of entries.
+        """
 
         vector = _expression_vector(value, self.size)
         constraints: list[cp.Constraint] = []
@@ -199,10 +266,23 @@ class ConeLayout:
         return tuple(constraints)
 
     def dual_constraints(self, value: cp.Expression | ArrayLike) -> tuple[cp.Constraint, ...]:
-        """Return constraints imposing membership in the dual product cone.
+        """Construct CVXPY constraints for dual-cone membership.
 
-        The dual of the zero cone is the whole space, while the nonnegative
-        and second-order cones are self-dual.
+        Parameters
+        ----------
+        value : cvxpy.Expression or array-like
+            Real vector with :attr:`size` entries.
+
+        Returns
+        -------
+        tuple of cvxpy.Constraint
+            Nonnegative and SOC membership constraints. Zero-cone dual rows
+            are unrestricted and therefore add no constraints.
+
+        Raises
+        ------
+        ValueError
+            If ``value`` is complex or has the wrong number of entries.
         """
 
         vector = _expression_vector(value, self.size)
@@ -213,7 +293,26 @@ class ConeLayout:
         return tuple(constraints)
 
     def primal_distance(self, value: ArrayLike) -> float:
-        """Euclidean distance from ``value`` to the primal product cone."""
+        """Compute distance to the primal product cone.
+
+        Parameters
+        ----------
+        value : array-like
+            Real numeric vector with :attr:`size` entries.
+
+        Returns
+        -------
+        float
+            Euclidean product-cone distance. With finite zero-cone entries,
+            nonfinite entries in a nonnegative or second-order block produce
+            positive infinity; NaN in a zero-cone block propagates to the
+            result.
+
+        Raises
+        ------
+        ValueError
+            If ``value`` is complex, nonnumeric, or has the wrong size.
+        """
 
         vector = _numeric_vector(value, self.size)
         squared_distance = float(np.dot(vector[self.zero_slice], vector[self.zero_slice]))
@@ -222,7 +321,24 @@ class ConeLayout:
         return float(np.sqrt(squared_distance))
 
     def dual_distance(self, value: ArrayLike) -> float:
-        """Euclidean distance from ``value`` to the dual product cone."""
+        """Compute distance to the dual product cone.
+
+        Parameters
+        ----------
+        value : array-like
+            Real numeric vector with :attr:`size` entries.
+
+        Returns
+        -------
+        float
+            Euclidean distance, with zero-cone dual rows unrestricted, or
+            positive infinity for nonfinite constrained entries.
+
+        Raises
+        ------
+        ValueError
+            If ``value`` is complex, nonnumeric, or has the wrong size.
+        """
 
         vector = _numeric_vector(value, self.size)
         squared_distance = _nonnegative_squared_distance(vector[self.nonnegative_slice])
@@ -230,7 +346,25 @@ class ConeLayout:
         return float(np.sqrt(squared_distance))
 
     def complementarity(self, primal: ArrayLike, dual: ArrayLike) -> float:
-        """Return the canonical Euclidean pairing ``primal @ dual``."""
+        """Compute the canonical primal-dual pairing.
+
+        Parameters
+        ----------
+        primal : array-like
+            Primal cone vector with :attr:`size` entries.
+        dual : array-like
+            Dual cone vector with :attr:`size` entries.
+
+        Returns
+        -------
+        float
+            Euclidean pairing ``primal @ dual``.
+
+        Raises
+        ------
+        ValueError
+            If either vector is complex, nonnumeric, or has the wrong size.
+        """
 
         primal_vector = _numeric_vector(primal, self.size)
         dual_vector = _numeric_vector(dual, self.size)

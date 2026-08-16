@@ -47,6 +47,10 @@ jobs:
         if: matrix.python-version == '3.13'
         run: uv run --frozen --group examples marimo check --strict examples
 
+      - name: Check documentation
+        if: matrix.python-version == '3.13'
+        run: make check-docs
+
       - name: Run lint checks
         run: |
           uv run ruff check .
