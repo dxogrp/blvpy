@@ -95,40 +95,6 @@ diagnostics = problem.gap_diagnostics(result)
 Every variable in `LowerProblem.parameters` is an upper-level variable and is replaced internally by a CVXPY parameter in the lower problem.
 Unlisted lower variables remain the original CVXPY objects, so the upper objective can use the returned lower solution directly.
 
-## Solving and results
-
-BLVPY currently supports linear, quadratic, and second-order cone lower problems.
-By default, BLVPY builds one deterministic initial upper point and runs epsilon continuation from $10^{-1}$ to $10^{-6}$.
-It preserves existing variable `.value` assignments, otherwise uses finite-bound midpoints, one unit inside a one-sided bound, or zero for an unbounded variable.
-
-Use CVXPY's sampling-only bound argument `sample_bounds` and `best_of` to compare several local solutions without adding mathematical bounds:
-
-```python
-x.sample_bounds = (-2.0, 2.0)
-result = problem.solve(best_of=5, seed=7)
-```
-
-Each viable best-of initialization performs a complete independent continuation.
-BLVPY selects the acceptable target-epsilon run with the lowest upper objective.
-
-`problem.solve()` returns a `BilevelResult` object containing:
-
-* status, objective, and source-variable snapshots;
-* canonical primal, slack, and dual values;
-* upper, recovery, primal, dual, cone, complementarity, and gap residuals;
-* accepted and attempted epsilon histories; and
-* all `RunRecord` histories plus the selected run.
-
-Use `result.succeeded` for the normal success check.
-If continuation cannot reach the requested target after at least one viable initialization, BLVPY returns `status="continuation_failed"` with the best partial run and its diagnostics.
-
-`problem.gap_diagnostics(result)` performs one additional fixed-upper conic solve.
-It reports the signed source-level lower suboptimality and the canonical primal-dual gap identity.
-
-The `problem.solve()` and `problem.gap_diagnostics()` argument `solver` selects the nonlinear backend.
-The argument `conic_solver` of `problem.solve()` instead selects the numerical conic backend.
-Solver-specific option mappings are passed through to CVXPY (and the conic solver).
-
 ## Examples
 
 The [`examples`](examples) directory contains several [Marimo](https://marimo.io/) notebooks for demonstrating the use of BLVPY.
