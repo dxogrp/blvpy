@@ -7,7 +7,13 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from blvpy.canonicalization import CanonicalData, CanonicalLowerProblem, _canonicalize_lower
+from blvpy.canonicalization import (
+    CanonicalData,
+    CanonicalLowerProblem,
+    _canonicalize_lower,
+    _symbolic_matrix_combination,
+    _symbolic_vector_combination,
+)
 from blvpy.errors import (
     ApproximateCanonicalizationError,
     ParameterMappingError,
@@ -69,6 +75,22 @@ def _matrix_leaf_value(leaf: cp.Variable | cp.Parameter) -> np.ndarray:
         return np.asarray(leaf.value_sparse.toarray(), dtype=float)
     assert leaf.value is not None
     return np.asarray(leaf.value, dtype=float)
+
+
+def test_symbolic_affine_helpers_preserve_empty_output_shapes() -> None:
+    parameters = cp.Constant(np.array([2.0, 1.0]))
+    matrix = _symbolic_matrix_combination(
+        (sp.csc_array((0, 3)), sp.csc_array((0, 3))),
+        parameters,
+        0,
+        3,
+    )
+    vector = _symbolic_vector_combination(np.empty((0, 2)), parameters)
+
+    assert matrix.shape == (0, 3)
+    assert np.asarray(matrix.value).shape == (0, 3)
+    assert vector.shape == (0,)
+    assert np.asarray(vector.value).shape == (0,)
 
 
 def test_affine_data_matches_cvxpy_for_parameter_dependent_A_b_c() -> None:

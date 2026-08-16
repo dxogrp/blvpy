@@ -315,26 +315,22 @@ class CanonicalLowerProblem:
 
         expressions = _normalise_expression_keys(parameter_expr_by_id)
         packed = self._parameter_vector_expression(expressions)
+        packed_vector = cp.hstack(packed)
         affine = self._affine_map
 
-        # CVXPY does not support sparse three-dimensional constants. Assemble
-        # A entry-by-entry from sparse coefficient matrices, retaining a dense
-        # symbolic matrix only at this final (typically small) lifted layer.
-        rows: list[cp.Expression] = []
-        for row in range(self.constraint_size):
-            entries: list[cp.Expression] = []
-            for column in range(self.canonical_size):
-                entry: cp.Expression = cp.Constant(0.0)
-                for parameter_index, coefficient in enumerate(affine.A):
-                    value = float(coefficient[row, column])
-                    if value:
-                        entry = entry + value * packed[parameter_index]
-                entries.append(entry)
-            rows.append(cp.hstack(entries))
-        A = cp.vstack(rows) if rows else cp.Constant(np.empty((0, self.canonical_size)))
-        b = _symbolic_linear_combination(affine.b, packed)
-        c = _symbolic_linear_combination(affine.c, packed)
-        d = cp.sum(cp.multiply(affine.d, cp.hstack(packed)))
+        # CVXPY supports sparse two-dimensional constants but not sparse 3-D
+        # tensors. Flatten the coefficient matrices into one sparse linear
+        # operator, apply it to the packed parameter vector, and reshape once.
+        # This avoids an expression node for every entry of every coefficient.
+        A = _symbolic_matrix_combination(
+            affine.A,
+            packed_vector,
+            self.constraint_size,
+            self.canonical_size,
+        )
+        b = _symbolic_vector_combination(affine.b, packed_vector)
+        c = _symbolic_vector_combination(affine.c, packed_vector)
+        d = cp.Constant(affine.d) @ packed_vector
         return CanonicalExpressions(A=A, b=b, c=c, d=d)
 
     def recovery_expressions(self, u: cp.Expression) -> dict[int, cp.Expression]:
@@ -833,15 +829,33 @@ def _parameter_by_id(problem: cp.Problem, parameter_id: int) -> cp.Parameter:
     raise CanonicalizationError(f"Unknown lower parameter ID {parameter_id}.")
 
 
-def _symbolic_linear_combination(
-    coefficients: NDArray[np.float64],
-    parameters: list[cp.Expression],
+def _symbolic_matrix_combination(
+    coefficients: tuple[sp.csc_array, ...],
+    parameters: cp.Expression,
+    rows: int,
+    columns: int,
 ) -> cp.Expression:
-    rows = [
-        cp.sum(cp.hstack([float(value) * parameter for value, parameter in zip(row, parameters)]))
-        for row in coefficients
-    ]
-    return cp.hstack(rows) if rows else cp.Constant(np.empty(0))
+    """Apply sparse affine-matrix coefficients to packed parameters."""
+
+    if rows == 0 or columns == 0:
+        return cp.Constant(np.empty((rows, columns)))
+    operator = sp.hstack(
+        [coefficient.reshape((-1, 1), order="C") for coefficient in coefficients],
+        format="csc",
+    )
+    vector = cp.Constant(operator) @ parameters
+    return cp.reshape(vector, (rows, columns), order="C")
+
+
+def _symbolic_vector_combination(
+    coefficients: NDArray[np.float64],
+    parameters: cp.Expression,
+) -> cp.Expression:
+    """Apply sparse affine-vector coefficients to packed parameters."""
+
+    if coefficients.shape[0] == 0:
+        return cp.Constant(np.empty(0))
+    return cp.Constant(sp.csc_array(coefficients)) @ parameters
 
 
 def _readonly_vector(value: ArrayLike) -> NDArray[np.float64]:

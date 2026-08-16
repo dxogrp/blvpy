@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import warnings
 
 import cvxpy as cp
 import numpy as np
@@ -78,6 +79,59 @@ def test_lifted_affine_data_tracks_mapped_parameter() -> None:
     for value in (0.5, 1.25, 2.0):
         x.value = value
         expected = canonical.apply_numeric({parameter: value})
+        np.testing.assert_allclose(expressions.A.value, expected.A.toarray())
+        np.testing.assert_allclose(expressions.b.value, expected.b)
+        np.testing.assert_allclose(expressions.c.value, expected.c)
+        assert float(expressions.d.value) == pytest.approx(expected.d)
+
+
+def test_demand_response_lifted_data_is_compact_and_tracks_price() -> None:
+    hours = np.arange(24, dtype=float)
+    preferred_load = (
+        1.2 + 0.35 * np.sin(2.0 * np.pi * (hours - 7.0) / 24.0) + 0.55 * np.exp(-0.5 * ((hours - 19.0) / 2.2) ** 2)
+    )
+    daily_energy = float(np.sum(preferred_load))
+
+    price = cp.Variable(24, nonneg=True, bounds=[0.0, 0.8], name="hourly_price")
+    peak_load = cp.Variable(nonneg=True, bounds=[0.0, 4.0], name="peak_load")
+    load = cp.Variable(24, name="hourly_load")
+    lower = LowerProblem(
+        cp.Minimize(price @ load + 0.8 * cp.sum_squares(load - preferred_load)),
+        [
+            cp.sum(load) == daily_energy,
+            load >= 0.2,
+            load <= 2.5,
+        ],
+        parameters=[price],
+    )
+    problem = BilevelProblem(
+        cp.Minimize(peak_load + 0.025 * cp.sum_squares(price) + 0.12 * cp.sum_squares(price[1:] - price[:-1])),
+        lower,
+        outer_constraints=[load <= peak_load],
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        problem.validate()
+
+    assert not any("too many subexpressions" in str(item.message).lower() for item in caught)
+
+    canonical = problem.canonicalize()
+    lifted = problem._lifted_problem
+    expressions = lifted.canonical_expressions
+    generated_parameter = next(iter(problem._parameter_links))
+
+    assert lifted.problem.is_dnlp()
+    assert expressions.A.shape == (canonical.constraint_size, canonical.canonical_size)
+    assert expressions.b.shape == (canonical.constraint_size,)
+    assert expressions.c.shape == (canonical.canonical_size,)
+    assert expressions.d.shape == ()
+    assert lifted.primal_equality.shape == (canonical.constraint_size,)
+    assert lifted.dual_equality.shape == (canonical.canonical_size,)
+
+    for value in (np.zeros(24), np.linspace(0.05, 0.75, 24)):
+        price.value = value
+        expected = canonical.apply_numeric({generated_parameter: value})
         np.testing.assert_allclose(expressions.A.value, expected.A.toarray())
         np.testing.assert_allclose(expressions.b.value, expected.b)
         np.testing.assert_allclose(expressions.c.value, expected.c)
