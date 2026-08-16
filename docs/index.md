@@ -1,6 +1,7 @@
 # BLVPY: Disciplined Bilevel Programming in Python
 
-BLVPY is a [CVXPY](https://www.cvxpy.org/) extension for modeling and (approximately) solving optimistic bilevel optimization problems.
+BLVPY is a [CVXPY](https://www.cvxpy.org/) extension for modeling and
+(approximately) solving optimistic bilevel optimization problems.
 A bilevel problem contains an optimization problem inside another optimization problem, i.e.,
 
 $$
@@ -11,8 +12,10 @@ $$
     \end{array}
 $$
 
-where $x \in \mathbf{R}^n$ contains the upper variables and $y \in \mathbf{R}^k$ contains lower variables constrained to belong to the set $S(x)$.
-For a fixed $x \in \mathbf{R}^n$, the constraint set $S(x)$ is defined as the solution set of the following lower problem:
+where $x \in \mathbf{R}^n$ contains the upper variables and $y \in
+\mathbf{R}^k$ contains lower variables constrained to belong to the set
+$S(x)$. For a fixed $x \in \mathbf{R}^n$, the constraint set $S(x)$ is the
+solution set of the following lower problem:
 
 $$
     \begin{array}{rl}
@@ -25,8 +28,16 @@ $$
 
 A model is **disciplined bilevel programming (DBP)** compatible when:
 
-* The objective and constraint functions $F_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, m$ of the upper problem are [DNLP](https://www.cvxpy.org/tutorial/dnlp/index.html)-compatible with variables $x \in \mathbf{R}^n$ and $y \in \mathbf{R}^k$.
-* The objective and constraint functions $f_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, p$ of the lower problem are [DPP](https://www.cvxpy.org/tutorial/dpp/index.html)-compatible with variable $z \in \mathbf{R}^k$ (or $y \in \mathbf{R}^k$), so that the lower problem is a disciplined convex program, parameterized by $x \in \mathbf{R}^n$.
+* The upper objective and constraint functions $F_i \colon \mathbf{R}^n
+  \times \mathbf{R}^k \to \mathbf{R}$, for $i=0,1,\ldots,m$, are
+  [DNLP](https://www.cvxpy.org/tutorial/dnlp/index.html)-compatible with upper
+  variables $x \in \mathbf{R}^n$ and lower variables $y \in \mathbf{R}^k$.
+* The lower objective and constraint functions $f_i \colon \mathbf{R}^n
+  \times \mathbf{R}^k \to \mathbf{R}$, for $i=0,1,\ldots,p$, are
+  [DPP](https://www.cvxpy.org/tutorial/dpp/index.html)-compatible with lower
+  variable $z \in \mathbf{R}^k$ (or $y \in \mathbf{R}^k$). Thus the lower
+  problem is a disciplined convex program parameterized by $x \in
+  \mathbf{R}^n$.
 
 BLVPY models and solves this supported DBP subset with *optimistic
 semantics*. When the lower problem has multiple minimizers, the upper problem

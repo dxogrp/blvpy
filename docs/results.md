@@ -17,21 +17,77 @@ The following statuses can be produced by {meth}`blvpy.BilevelProblem.solve`.
 The **scope** column distinguishes the top-level result from a best-of run and
 an individual epsilon attempt.
 
-| Status | Scope | Meaning | Successful? |
-| --- | --- | --- | --- |
-| `optimal` | result, run, attempt | The returned point passed the solver and BLVPY's independent residual checks. | Yes |
-| `optimal_inaccurate` | attempt | CVXPY reported a numerically less accurate solution that still passed BLVPY's residual checks. BLVPY may accept the attempt, but it recomputes the selected run's final diagnostics before returning the result. | Yes |
-| `continuation_failed` | result, run | The run initialized, but continuation did not reach the requested target epsilon; the top-level result contains the best partial run when no run reached the target. | No |
-| `initialization_failed` | run | This run failed before BLVPY accepted its initial-epsilon point. Other best-of runs may still continue. | No |
-| `residual_check_failed` | run, attempt | A solver returned a point, but BLVPY's independently recomputed feasibility or relaxed-gap residuals exceeded the tolerance. | No |
-| `objective_unavailable` | run, final attempt | A target-epsilon point was available, but its upper objective was missing or nonfinite. | No |
-| `solver_error` | run, attempt | The selected nonlinear backend raised an ordinary solve error or failed to provide a status. | No |
-| `user_limit` | run, attempt | CVXPY reports that the solver stopped at a user limit, such as an iteration or time limit. | No |
-| `infeasible` | run, attempt | CVXPY reports the lifted problem as infeasible. | No |
-| `infeasible_inaccurate` | run, attempt | CVXPY reports likely infeasibility, but with reduced numerical confidence. | No |
-| `unbounded` | run, attempt | CVXPY reports the lifted problem as unbounded. | No |
-| `unbounded_inaccurate` | run, attempt | CVXPY reports likely unboundedness, but with reduced numerical confidence. | No |
-| `infeasible_or_unbounded` | run, attempt | The solver could not distinguish infeasibility from unboundedness. | No |
+```{list-table}
+:header-rows: 1
+:widths: 18 15 57 10
+
+* - Status
+  - Scope
+  - Meaning
+  - Successful?
+* - `optimal`
+  - result, run, attempt
+  - The returned point passed the solver and BLVPY's independent residual
+    checks.
+  - Yes
+* - `optimal_inaccurate`
+  - attempt
+  - CVXPY reported a numerically less accurate solution that still passed
+    BLVPY's residual checks. BLVPY may accept the attempt, but it recomputes
+    the selected run's final diagnostics before returning the result.
+  - Yes
+* - `continuation_failed`
+  - result, run
+  - The run initialized, but continuation did not reach the requested target
+    epsilon. The top-level result contains the best partial run when no run
+    reached the target.
+  - No
+* - `initialization_failed`
+  - run
+  - This run failed before BLVPY accepted its initial-epsilon point. Other
+    best-of runs may still continue.
+  - No
+* - `residual_check_failed`
+  - run, attempt
+  - A solver returned a point, but BLVPY's independently recomputed
+    feasibility or relaxed-gap residuals exceeded the tolerance.
+  - No
+* - `objective_unavailable`
+  - run, final attempt
+  - A target-epsilon point was available, but its upper objective was missing
+    or nonfinite.
+  - No
+* - `solver_error`
+  - run, attempt
+  - The selected nonlinear backend raised an ordinary solve error or failed
+    to provide a status.
+  - No
+* - `user_limit`
+  - run, attempt
+  - CVXPY reports that the solver stopped at a user limit, such as an
+    iteration or time limit.
+  - No
+* - `infeasible`
+  - run, attempt
+  - CVXPY reports the lifted problem as infeasible.
+  - No
+* - `infeasible_inaccurate`
+  - run, attempt
+  - CVXPY reports likely infeasibility, but with reduced numerical confidence.
+  - No
+* - `unbounded`
+  - run, attempt
+  - CVXPY reports the lifted problem as unbounded.
+  - No
+* - `unbounded_inaccurate`
+  - run, attempt
+  - CVXPY reports likely unboundedness, but with reduced numerical confidence.
+  - No
+* - `infeasible_or_unbounded`
+  - run, attempt
+  - The solver could not distinguish infeasibility from unboundedness.
+  - No
+```
 
 Use `result.succeeded` rather than matching status strings in application code.
 For `continuation_failed`, inspect `result.message`, `result.selected_run`, and
@@ -56,7 +112,8 @@ $$
 \end{array}
 $$
 
-where $u$ is the canonical lower primal vector, the vector $s$ is the conic slack variable, and $\mathcal{K}$ is the product of cones.
+where $u$ is the canonical lower primal vector, $s$ is the conic slack
+variable, and $\mathcal{K}$ is the product of cones.
 The numerical arrays
 $A(x)$, $b(x)$, $c(x)$, and $d(x)$ are evaluated at the returned upper point.
 Let $\lambda$ be the equality dual vector
@@ -72,16 +129,46 @@ snapshots after each nonlinear attempt; no additional solver call is required.
 {class}`blvpy.Residuals` reports how closely the returned numerical point
 satisfies this canonical system and the original bilevel model:
 
-| Field | Mathematical quantity | Interpretation |
-| --- | --- | --- |
-| `primal_equality` | $\|A(x)u+s-b(x)\|_2$ | Violation of the canonical lower equality. It is zero when the primal vector and slack satisfy the conic equations. |
-| `dual_equality` | $\|A(x)^T\lambda+c(x)\|_2$ | Violation of lower-level stationarity with respect to $u$. |
-| `recovery` | $\max_i\|y_i-(R_i u+r_i)\|_2$ | Checks that every returned source lower variable $y_i$ agrees with the affine value recovered from the canonical vector. The matrices $R_i$ and offsets $r_i$ are produced during canonicalization. |
-| `upper_constraints` | $\max_j\operatorname{violation}(g_j(x,y))$ | Largest CVXPY violation norm among the upper constraints and generated linked-variable domain constraints. |
-| `primal_cone` | $\operatorname{dist}(s,\mathcal{K})$ | Distance of the slack from the primal product cone. |
-| `dual_cone` | $\operatorname{dist}(\lambda,\mathcal{K}^*)$ | Distance of the dual vector from the dual product cone. |
-| `complementarity` | $s^T\lambda$ | Signed primal-dual cone pairing. Exact lower optimality requires zero complementarity; a numerically infeasible point can make it slightly negative. |
-| `gap_violation` | $\max(s^T\lambda-\epsilon,0)$ | Amount by which complementarity exceeds the continuation relaxation $s^T\lambda\leq\epsilon$. It is zero whenever that relaxed inequality is satisfied. |
+```{list-table}
+:header-rows: 1
+:widths: 22 28 50
+
+* - Field
+  - Mathematical quantity
+  - Interpretation
+* - `primal_equality`
+  - $\|A(x)u+s-b(x)\|_2$
+  - Violation of the canonical lower equality. It is zero when the primal
+    vector and slack satisfy the conic equations.
+* - `dual_equality`
+  - $\|A(x)^T\lambda+c(x)\|_2$
+  - Violation of lower-level stationarity with respect to $u$.
+* - `recovery`
+  - $\max_i\|y_i-(R_i u+r_i)\|_2$
+  - Checks that every returned source lower variable $y_i$ agrees with the
+    affine value recovered from the canonical vector. Canonicalization produces
+    the matrices $R_i$ and offsets $r_i$.
+* - `upper_constraints`
+  - $\max_j\operatorname{violation}(g_j(x,y))$
+  - Largest CVXPY violation norm among the upper constraints and generated
+    linked-variable domain constraints.
+* - `primal_cone`
+  - $\operatorname{dist}(s,\mathcal{K})$
+  - Distance of the slack from the primal product cone.
+* - `dual_cone`
+  - $\operatorname{dist}(\lambda,\mathcal{K}^*)$
+  - Distance of the dual vector from the dual product cone.
+* - `complementarity`
+  - $s^T\lambda$
+  - Signed primal-dual cone pairing. Exact lower optimality requires zero
+    complementarity; a numerically infeasible point can make it slightly
+    negative.
+* - `gap_violation`
+  - $\max(s^T\lambda-\epsilon,0)$
+  - Amount by which complementarity exceeds the continuation relaxation
+    $s^T\lambda\leq\epsilon$. It is zero whenever that relaxed inequality is
+    satisfied.
+```
 
 All six feasibility residuals ideally equal zero. For a residual record $r$,
 BLVPY defines the aggregate

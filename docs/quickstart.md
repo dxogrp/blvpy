@@ -12,7 +12,8 @@ $$
 
 with variables $x, y \in \mathbf{R}$.
 For every fixed $x$, the lower problem has the unique response $y=x$.
-Substitution gives the reduced upper objective $2x^2+2$, so the exact bilevel solution is $(x,y)=(0,0)$ with objective value $2$.
+Substitution gives the reduced upper objective $2x^2+2$, so the exact bilevel
+solution is $(x,y)=(0,0)$ with objective value $2$.
 The CVXPY variable `y` below is shared by the lower model and the upper objective.
 
 ```python

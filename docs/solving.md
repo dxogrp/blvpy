@@ -12,7 +12,9 @@ $$
 \end{array}
 $$
 
-where $u, s$ are the lower primal and slack variables, $c(x), d(x), A(x), b(x)$ are upper-dependent canonical data, and $\mathcal{K}$ is a Cartesian product of cones.
+where $u,s$ are the lower primal and slack variables; $c(x),d(x),A(x),b(x)$
+are upper-dependent canonical data; and $\mathcal{K}$ is a Cartesian product
+of cones.
 BLVPY solves the bilevel problem by continuation on a small relaxation of the lower KKT complementarity condition.
 
 BLVPY introduces a dual vector $\lambda\in \mathcal{K}^*$ and imposes
@@ -84,12 +86,14 @@ $$
 $$
 
 with variables $u, s$.
-(Here the objective offset $d(x^{(0)})$ is irrelevant to the lower solution and is thus omitted.)
+(Here the objective offset $d(x^{(0)})$ is irrelevant to the lower solution
+and is therefore omitted.)
 The conic solution supplies the initial canonical primal $u^{(0)}$, slack
 $s^{(0)}$, and equality dual $\lambda^{(0)}$; BLVPY recovers the corresponding
 source lower variables from its affine recovery map.
 
-If every automatic path fails, BLVPY raises an `InitializationError` naming variables for which an explicit `.value` may help.
+If every automatic path fails, BLVPY raises an `InitializationError` naming
+variables for which an explicit `.value` may help.
 
 When `restoration=True` (the default) and this initial point fails BLVPY's
 independent residual check, BLVPY introduces a nonnegative restoration radius
@@ -113,9 +117,12 @@ relaxed-gap residuals are within `feasibility_tolerance`.
 ## Best-of search for local solutions
 
 With `best_of=None`, BLVPY follows one deterministic path.
-Explicit `best_of=N`, including `N=1`, generates exactly $N$ upper initializations and runs a complete, independent continuation for every viable one.
-Eligible components are sampled; components controlled by an existing `.value` remain fixed unless `sample_bounds` overrides that value.
-Only runs that reach the target epsilon with acceptable residuals compete, and BLVPY selects the lowest final upper objective, breaking ties by run index.
+Explicit `best_of=N`, including `N=1`, generates exactly $N$ upper
+initializations and runs a complete, independent continuation for every viable
+one. Eligible components are sampled; components controlled by an existing
+`.value` remain fixed unless `sample_bounds` overrides that value. Only runs
+that reach the target epsilon with acceptable residuals compete, and BLVPY
+selects the lowest final upper objective, breaking ties by run index.
 
 ```python
 x.sample_bounds = (-2.0, 2.0)  # sampling metadata (not a constraint)

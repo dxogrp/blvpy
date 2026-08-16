@@ -1,7 +1,8 @@
 # API reference
 
-The symbols below are the complete public namespace exported by `blvpy` {sub-ref}`release`.
-Objects in the advanced section expose canonical numerical metadata for inspection; their detailed structure might change.
+The symbols below are the complete public namespace exported by `blvpy`
+{sub-ref}`release`. Objects in the advanced section expose canonical numerical
+metadata for inspection; their detailed structure might change.
 
 ## Modeling and solving
 
@@ -13,7 +14,8 @@ Objects in the advanced section expose canonical numerical metadata for inspecti
 
 ```{eval-rst}
 .. autoclass:: blvpy.BilevelProblem
-   :members: upper_variables, source_variables, is_dbp, validate, canonicalize, solve, gap_diagnostics
+   :members: upper_variables, source_variables, is_dbp, validate, canonicalize,
+             solve, gap_diagnostics
    :member-order: bysource
 ```
 
@@ -21,13 +23,16 @@ Objects in the advanced section expose canonical numerical metadata for inspecti
 
 ```{eval-rst}
 .. autoclass:: blvpy.BilevelResult
-   :members: epsilon_history, attempted_epsilon_history, solver_statuses, residuals, complementarity, final_epsilon, succeeded, selected_run, all_objectives
+   :members: epsilon_history, attempted_epsilon_history, solver_statuses,
+             residuals, complementarity, final_epsilon, succeeded,
+             selected_run, all_objectives
    :member-order: bysource
 ```
 
 ```{eval-rst}
 .. autoclass:: blvpy.RunRecord
-   :members: epsilon_history, attempted_epsilon_history, solver_statuses, residuals, complementarity, final_epsilon, succeeded
+   :members: epsilon_history, attempted_epsilon_history, solver_statuses,
+             residuals, complementarity, final_epsilon, succeeded
    :member-order: bysource
 ```
 
@@ -108,7 +113,8 @@ unchanged.
 
 ```{eval-rst}
 .. autoclass:: blvpy.CanonicalLowerProblem
-   :members: source_variable_ids, recovery_map, parameter_ids, apply_numeric, build_data_expressions, recovery_expressions, recover_numeric
+   :members: source_variable_ids, recovery_map, parameter_ids, apply_numeric,
+             build_data_expressions, recovery_expressions, recover_numeric
    :member-order: bysource
 ```
 
@@ -144,7 +150,10 @@ unchanged.
 
 ```{eval-rst}
 .. autoclass:: blvpy.ConeLayout
-   :members: from_dims, nonneg, soc, size, zero_slice, nonnegative_slice, nonneg_slice, second_order_slices, soc_slices, blocks, primal_constraints, dual_constraints, primal_distance, dual_distance, complementarity
+   :members: from_dims, nonneg, soc, size, zero_slice, nonnegative_slice,
+             nonneg_slice, second_order_slices, soc_slices, blocks,
+             primal_constraints, dual_constraints, primal_distance,
+             dual_distance, complementarity
    :member-order: bysource
 ```
 
