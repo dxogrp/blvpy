@@ -18,6 +18,8 @@ import scipy.sparse as sp
 from cvxpy import settings as cvxpy_settings
 from cvxpy.atoms.affine.affine_atom import AffAtom
 from cvxpy.atoms.atom import Atom
+from cvxpy.atoms.cummax import cummax
+from cvxpy.atoms.dotsort import dotsort
 from cvxpy.atoms.elementwise.abs import abs as abs_atom
 from cvxpy.atoms.elementwise.huber import huber
 from cvxpy.atoms.elementwise.maximum import maximum
@@ -55,6 +57,9 @@ ParameterTransform = Literal["identity", "symmetric", "diagonal", "sparse"]
 _AUDITED_NONLINEAR_ATOMS = frozenset(
     {
         abs_atom,
+        cummax,
+        dotsort,
+        GeoMeanApprox,
         huber,
         max_atom,
         maximum,
@@ -857,11 +862,14 @@ def _reject_approximate_source_nodes(problem: cp.Problem) -> None:
             continue
         seen.add(id(expression))
         if isinstance(expression, (PowerApprox, PnormApprox, GeoMeanApprox)):
-            error = float(getattr(expression, "approx_error", 0.0))
-            if error > 10 * np.finfo(float).eps:
+            approximation_error = _approximation_error(expression)
+            if not np.isfinite(approximation_error) or approximation_error != 0.0:
+                metadata = _approximation_metadata(expression)
+                details = f", {metadata}" if metadata else ""
                 raise ApproximateCanonicalizationError(
-                    f"Atom {type(expression).__name__} uses a numerical approximation "
-                    f"(error {error:.3g}); exact source atoms are required."
+                    f"Atom {type(expression).__name__} has nonzero or nonfinite approximation error "
+                    f"(approx_error={approximation_error!r}{details}); "
+                    "exact source atoms are required."
                 )
         stack.extend(getattr(expression, "args", ()))
     for constraint in problem.constraints:
@@ -869,6 +877,70 @@ def _reject_approximate_source_nodes(problem: cp.Problem) -> None:
             raise ApproximateCanonicalizationError(
                 f"Constraint {type(constraint).__name__} uses quadrature approximation."
             )
+
+
+def _approximation_error(expression: Atom) -> float:
+    """Read CVXPY's approximation error without assuming optional metadata."""
+
+    value = getattr(expression, "approx_error", None)
+    try:
+        array = np.asarray(value, dtype=float)
+        if array.shape:
+            raise ValueError("approximation error is not scalar")
+        return float(array)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ApproximateCanonicalizationError(
+            f"Atom {type(expression).__name__} has invalid approximation error metadata "
+            f"(approx_error={_safe_metadata_repr(value)}); exact source atoms are required."
+        ) from error
+
+
+def _approximation_metadata(expression: Atom) -> str:
+    """Return concise atom metadata when CVXPY exposes it safely."""
+
+    if isinstance(expression, PowerApprox):
+        metadata = (
+            ("requested_p", getattr(expression, "_p_orig", None)),
+            ("used_p", getattr(expression, "p_used", getattr(expression, "p", None))),
+        )
+    elif isinstance(expression, PnormApprox):
+        metadata = (
+            ("requested_p", getattr(expression, "original_p", None)),
+            ("used_p", getattr(expression, "p", None)),
+        )
+    elif isinstance(expression, GeoMeanApprox):
+        metadata = (
+            ("requested_weights", getattr(expression, "p", None)),
+            ("used_weights", getattr(expression, "w", None)),
+        )
+    else:
+        metadata = ()
+
+    fields: list[str] = []
+    for name, value in metadata:
+        try:
+            if isinstance(value, cp.Expression):
+                value = value.value if value.is_constant() else None
+        except Exception:
+            continue
+        if value is not None:
+            fields.append(f"{name}={_safe_metadata_repr(value)}")
+    return ", ".join(fields)
+
+
+def _safe_metadata_repr(value: Any) -> str:
+    """Bound diagnostics for metadata whose concrete CVXPY type may vary."""
+
+    try:
+        if isinstance(value, np.ndarray):
+            rendered = np.array2string(value, threshold=8, edgeitems=2, max_line_width=80)
+        else:
+            rendered = repr(value)
+    except Exception:
+        return "<unavailable>"
+    if len(rendered) > 160:
+        return rendered[:157] + "..."
+    return rendered
 
 
 def _audit_source_atoms(problem: cp.Problem) -> None:
@@ -889,19 +961,6 @@ def _audit_source_atoms(problem: cp.Problem) -> None:
                 raise UnsupportedModelError(
                     f"Atom {atom_type.__name__} is not in BLVPY's audited exact SOCP canonicalization allowlist."
                 )
-            if isinstance(expression, PnormApprox):
-                p = float(expression.p)
-                if p not in {1.0, 2.0} and not np.isinf(p):
-                    raise UnsupportedModelError(
-                        f"Atom {atom_type.__name__} with p={p:g} is outside the "
-                        "audited LP/SOCP norm cases p in {1, 2, inf}."
-                    )
-            if isinstance(expression, PowerApprox):
-                p = float(expression.p.value)
-                if p not in {1.0, 2.0}:
-                    raise UnsupportedModelError(
-                        f"Atom {atom_type.__name__} with p={p:g} is outside the audited affine/quadratic power cases."
-                    )
         stack.extend(getattr(expression, "args", ()))
 
 
