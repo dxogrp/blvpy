@@ -1,5 +1,7 @@
 # BLVPY: Disciplined Bilevel Programming
 
+[![CI](https://github.com/dxogrp/blvpy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dxogrp/blvpy/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/blvpy.svg)](https://pypi.org/project/blvpy/) [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://dxogrp.github.io/blvpy/) [![License](https://img.shields.io/github/license/dxogrp/blvpy.svg)](https://github.com/dxogrp/blvpy/blob/main/LICENSE)
+
 BLVPY is a [CVXPY](https://www.cvxpy.org/) extension for modeling and locally solving optimistic bilevel optimization problems.
 A bilevel problem contains an optimization problem inside another optimization problem, i.e.,
 
