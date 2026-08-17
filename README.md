@@ -74,6 +74,8 @@ Before setting up the repository, you should install uv and IPOPT.
    make sync
    ```
 
+Run `make test` and `make lint` before contributing changes.
+
 ## Quick start
 
 The following example models the bilevel problem
