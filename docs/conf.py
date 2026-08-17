@@ -73,7 +73,7 @@ html_title = f"BLVPY {release}"
 html_baseurl = f"https://dxogrp.github.io/blvpy/version/{release}/"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-html_js_files = ["version-switcher.js"]
+html_js_files = [("version-switcher.js", {"defer": "defer"})]
 html_theme_options = {
     "description": "Disciplined bilevel programming in Python",
     "fixed_sidebar": True,

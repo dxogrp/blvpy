@@ -154,7 +154,9 @@ def test_refresh_root_migrates_redirect_site_and_is_idempotent(tmp_path: Path) -
 
 def test_version_switcher_uses_exact_latest_label_and_contextual_selection() -> None:
     script = (DOCS_ROOT / "_static" / "version-switcher.js").read_text(encoding="utf-8")
+    namespace = runpy.run_path(str(DOCS_ROOT / "conf.py"))
 
+    assert namespace["html_js_files"] == [("version-switcher.js", {"defer": "defer"})]
     assert "option.textContent = label;" in script
     assert "(latest)" not in script
     assert "window.location.pathname.startsWith(numberedPath)" in script
