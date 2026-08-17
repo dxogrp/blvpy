@@ -154,7 +154,8 @@ def test_release_workflows_are_ordered_and_action_pins_are_immutable() -> None:
     assert "workflow_dispatch:" in documentation
     assert "workflow_call:" in documentation
     assert "scripts/stage_docs.py stage-release" in documentation
-    assert "scripts/stage_docs.py refresh-root" in documentation
+    assert "Rebuild single-version documentation site" in documentation
+    assert "Refusing to rebuild documentation history" in documentation
 
     external_actions = [
         action for action in ACTION_PATTERN.findall(release + "\n" + documentation) if not action.startswith("./")
