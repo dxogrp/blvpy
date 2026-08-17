@@ -1,0 +1,200 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+
+concurrency:
+  group: blvpy-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify and build ${{ github.event.release.tag_name }}
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
+
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Verify release identity
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          release_tag = os.environ["RELEASE_TAG"]
+          if release_tag != f"v{project_version}":
+              raise SystemExit(
+                  f"Version mismatch: tag={release_tag!r}, project={project_version!r}."
+              )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"package_version={project_version}\n")
+          PY
+          if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+            echo "The release tag must point to a commit contained in main." >&2
+            exit 1
+          fi
+
+      - name: Install native IPOPT and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes coinor-libipopt-dev pkg-config libblas-dev liblapack-dev gfortran
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install all verification dependencies
+        run: uv sync --frozen --group dev --group examples --group docs
+
+      - name: Validate stable package version
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: |
+          uv run --frozen --group dev python -c \
+            'import os; from scripts.verify_release import canonical_stable_version; canonical_stable_version(os.environ["PACKAGE_VERSION"])'
+
+      - name: Check the lockfile
+        run: uv lock --check
+
+      - name: Run warning-as-error tests
+        run: uv run --frozen --group dev python -W error -m pytest tests
+
+      - name: Check source formatting and lint
+        run: |
+          uv run --frozen --group dev ruff check .
+          uv run --frozen --group dev ruff format --check .
+
+      - name: Check Marimo examples
+        run: uv run --frozen --group examples marimo check --strict examples
+
+      - name: Check Sphinx documentation
+        run: |
+          uv run --frozen --group dev --group docs python -m pytest tests/test_documentation.py
+          uv run --frozen --group docs sphinx-build -M clean docs docs/_build
+          uv run --frozen --group docs sphinx-build -W --keep-going -n -b html docs docs/_build/html
+
+      - name: Compile Python sources
+        run: uv run --frozen --group dev python -m compileall -q src scripts tests examples docs/conf.py
+
+      - name: Build release distributions
+        run: uv build --no-sources
+
+      - name: Verify release distributions
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: uv run --frozen --group dev python scripts/verify_release.py --version "$PACKAGE_VERSION"
+
+      - name: Smoke-test wheel and source distribution
+        env:
+          BLVPY_RELEASE_VERSION: ${{ steps.version.outputs.package_version }}
+          BLVPY_REPOSITORY_ROOT: ${{ github.workspace }}
+        run: |
+          for distribution in dist/*.whl dist/*.tar.gz; do
+            uv run --isolated --no-project --with "$distribution" -- python scripts/release_smoke.py
+          done
+
+      - name: Upload verified distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: blvpy-distributions-${{ steps.version.outputs.package_version }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload distribution checksums
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: blvpy-checksums-${{ steps.version.outputs.package_version }}
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish distributions to PyPI
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/project/blvpy/${{ needs.verify.outputs.package_version }}/
+
+    steps:
+      - name: Download verified distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: blvpy-distributions-${{ needs.verify.outputs.package_version }}
+          path: dist
+
+      - name: Publish distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist
+
+  attach-assets:
+    name: Attach distributions to GitHub Release
+    needs:
+      - verify
+      - publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download verified distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: blvpy-distributions-${{ needs.verify.outputs.package_version }}
+          path: assets
+
+      - name: Download distribution checksums
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: blvpy-checksums-${{ needs.verify.outputs.package_version }}
+          path: assets
+
+      - name: Attach immutable release assets
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" assets/*
+
+  documentation:
+    name: Publish versioned documentation
+    needs:
+      - verify
+      - attach-assets
+    permissions:
+      contents: write
+      id-token: write
+      pages: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      tag_name: ${{ github.event.release.tag_name }}
+      package_version: ${{ needs.verify.outputs.package_version }}
