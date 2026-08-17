@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Installation &#8212; BLVPY 0.1.0</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=91272d87" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=8f59a566" />
+    <script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/version-switcher.js?v=8a3961bd"></script>
+    <link rel="canonical" href="https://dxogrp.github.io/blvpy/0.1.0/installation.html" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Quick start" href="quickstart.html" />
+    <link rel="prev" title="BLVPY: Disciplined Bilevel Programming in Python" href="index.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">BLVPY</a></h1>
+
+
+
+<p class="blurb">Disciplined bilevel programming in Python</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=dxogrp&repo=blvpy&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#development-setup">Development setup</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modeling.html">Problem modeling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="supported-atoms.html">Supported atoms</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solving.html">Solving</a></li>
+<li class="toctree-l1"><a class="reference internal" href="results.html">Results and diagnostics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release notes</a></li>
+</ul>
+
+
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><div class="version-switcher" role="navigation" aria-label="Documentation version">
+  <h3>Version</h3>
+  <select
+    id="blvpy-version-select"
+    data-current-version="0.1.0"
+    data-switcher-url="https://dxogrp.github.io/blvpy/switcher.json"
+    aria-label="Documentation version"
+    hidden
+  >
+    <option value="" selected>0.1.0</option>
+  </select>
+  <p class="version-switcher-fallback">
+    Release 0.1.0
+  </p>
+</div>
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section class="tex2jax_ignore mathjax_ignore" id="installation">
+<h1>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h1>
+<p>BLVPY requires Python 3.12 or newer, CVXPY 1.9 or newer, and a native IPOPT installation.
+IPOPT and its Python binding, <code class="docutils literal notranslate"><span class="pre">cyipopt</span></code>, are mandatory runtime dependencies.</p>
+<ol class="arabic">
+<li><p>Install IPOPT by following the official
+<a class="reference external" href="https://coin-or.github.io/Ipopt/INSTALL.html">IPOPT installation guide</a>.</p></li>
+<li><p>Install BLVPY:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>blvpy
+</pre></div>
+</div>
+</li>
+</ol>
+<p>Confirm that the native binding can be imported:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import cyipopt, blvpy; print(blvpy.__version__)&quot;</span>
+</pre></div>
+</div>
+<section id="development-setup">
+<h2>Development setup<a class="headerlink" href="#development-setup" title="Link to this heading">¶</a></h2>
+<p>BLVPY manages its development environment with <a class="reference external" href="https://docs.astral.sh/uv/">uv</a>.
+Before setting up the repository, you should install uv and IPOPT on your development system.</p>
+<ol class="arabic">
+<li><p>Clone the repository:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/dxogrp/blvpy.git
+<span class="nb">cd</span><span class="w"> </span>blvpy
+</pre></div>
+</div>
+</li>
+<li><p>Create the virtual environment and install the locked development
+dependencies:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>sync
+</pre></div>
+</div>
+<p>which runs the frozen uv workflow.</p>
+</li>
+</ol>
+<p>Run the primary contributor checks with:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span><span class="nb">test</span>
+make<span class="w"> </span>lint
+</pre></div>
+</div>
+<p>The example and documentation toolchains use separate locked dependency
+groups. Install them only when needed:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>sync-examples<span class="w">  </span><span class="c1"># Marimo and Matplotlib</span>
+make<span class="w"> </span>sync-docs<span class="w">      </span><span class="c1"># Sphinx and MyST</span>
+</pre></div>
+</div>
+<p>For dependency updates, you should update <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>, run <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">lock</span></code>, and commit the resulting <code class="docutils literal notranslate"><span class="pre">uv.lock</span></code> change.</p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, Hao Zhu and BLVPY contributors.
+      
+      |
+      <a href="_sources/installation.md.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
