@@ -30,6 +30,7 @@ and replaces each listed variable with a generated CVXPY parameter of matching
 shape and domain.
 Unlisted variables remain the original lower variables.
 
+(structural-requirements)=
 ## Structural requirements
 
 The complete model must satisfy **all** of the following:
@@ -49,6 +50,10 @@ to the accepted conic form, and second-order cone programs.
 
 Call {meth}`blvpy.BilevelProblem.validate` to obtain a specific exception for an unsupported model.
 See {doc}`troubleshooting` for the exception categories.
+
+BLVPY also audits every nonlinear node in the lower source expression tree.
+See {doc}`supported-atoms` for the complete allowlist, exactness conditions,
+and unsupported atom families.
 
 ## Parameters and fixed data
 

@@ -19,7 +19,7 @@ identifies which boundary failed:
 
 - {class}`blvpy.UnsupportedModelError` means the source atom is not in the
   audited exact-SOCP set. Reformulate it using an accepted composition when
-  possible; {doc}`modeling` lists representative families.
+  possible; {doc}`supported-atoms` lists every directly audited atom.
 - {class}`blvpy.ApproximateCanonicalizationError` means a power, p-norm, or
   geometric-mean atom has nonzero or nonfinite `approx_error`, or a constraint
   uses a quadrature approximation. BLVPY requires error exactly equal to zero,

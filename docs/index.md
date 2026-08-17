@@ -50,6 +50,7 @@ may select the one most favorable to its objective.
 installation
 quickstart
 modeling
+supported-atoms
 solving
 results
 examples
