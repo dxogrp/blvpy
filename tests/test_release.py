@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import io
 import re
 import tarfile
@@ -19,7 +20,10 @@ ACTION_PATTERN = re.compile(r"^\s*uses:\s+([^\s#]+)", re.MULTILINE)
 def _source_tree(root: Path) -> Path:
     source = root / "src" / "blvpy"
     source.mkdir(parents=True)
-    (source / "__init__.py").write_text('__version__ = "0.1.0"\n', encoding="utf-8")
+    (source / "__init__.py").write_text(
+        'from importlib.metadata import version\n\n__version__ = version("blvpy")\n',
+        encoding="utf-8",
+    )
     (source / "problem.py").write_text("class BilevelProblem: ...\n", encoding="utf-8")
     return source
 
@@ -28,7 +32,10 @@ def _wheel(dist: Path, *, version: str = "0.1.0", metadata_version: str | None =
     path = dist / f"blvpy-{version}-py3-none-any.whl"
     metadata = metadata_version or version
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("blvpy/__init__.py", f'__version__ = "{version}"\n')
+        archive.writestr(
+            "blvpy/__init__.py",
+            'from importlib.metadata import version\n\n__version__ = version("blvpy")\n',
+        )
         archive.writestr("blvpy/problem.py", "class BilevelProblem: ...\n")
         archive.writestr(
             f"blvpy-{version}.dist-info/METADATA",
@@ -126,6 +133,12 @@ def test_hatch_sdist_manifest_is_minimal() -> None:
     assert project["tool"]["hatch"]["build"]["targets"]["sdist"] == {
         "only-include": ["src/blvpy", "README.md", "LICENSE", "pyproject.toml"]
     }
+
+
+def test_runtime_version_comes_from_distribution_metadata() -> None:
+    import blvpy
+
+    assert blvpy.__version__ == importlib.metadata.version("blvpy")
 
 
 def test_release_workflows_are_ordered_and_action_pins_are_immutable() -> None:

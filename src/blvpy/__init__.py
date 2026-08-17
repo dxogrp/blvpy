@@ -1,5 +1,7 @@
 """BLVPY: disciplined optimistic bilevel optimization with CVXPY."""
 
+from importlib.metadata import version as _distribution_version
+
 from .canonicalization import (
     AffineRecoveryMap,
     CanonicalData,
@@ -53,4 +55,4 @@ __all__ = [
     "ValidationError",
 ]
 
-__version__ = "0.1.0"
+__version__ = _distribution_version("blvpy")
