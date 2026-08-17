@@ -1,4 +1,4 @@
-"""Publish stable and immutable BLVPY documentation on GitHub Pages."""
+"""Publish latest and immutable BLVPY documentation on GitHub Pages."""
 
 from __future__ import annotations
 
@@ -120,40 +120,6 @@ def _published_versions(site_dir: Path) -> list[tuple[str, Version]]:
     return sorted(versions, key=lambda item: item[1], reverse=True)
 
 
-def _migrate_legacy_versions(site_dir: Path) -> None:
-    """Move releases from the legacy root layout into the version directory."""
-    version_root = _version_root(site_dir)
-    migrations: list[tuple[Path, Path, bool]] = []
-    for source in site_dir.iterdir():
-        if source.name == VERSION_DIRECTORY:
-            continue
-        try:
-            canonical, _ = _canonical_version(source.name)
-        except ValueError:
-            continue
-        if source.is_symlink() or not source.is_dir():
-            raise ValueError(f"Legacy documentation version is not a safe directory: {source}.")
-
-        source_manifest = _tree_manifest(source)
-        target = version_root / canonical
-        if target.is_symlink() or (target.exists() and not target.is_dir()):
-            raise ValueError(f"Documentation version target is not a safe directory: {target}.")
-        duplicate = target.exists()
-        if duplicate and _tree_manifest(target) != source_manifest:
-            raise ValueError(f"Documentation version {canonical!r} exists with conflicting legacy content.")
-        migrations.append((source, target, duplicate))
-
-    if not migrations:
-        return
-
-    version_root.mkdir(exist_ok=True)
-    for source, target, duplicate in migrations:
-        if duplicate:
-            shutil.rmtree(source)
-        else:
-            os.replace(source, target)
-
-
 def _write_text_atomic(path: Path, content: str) -> None:
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
     temporary = Path(temporary_name)
@@ -224,27 +190,21 @@ def _copy_tree_contents(source: Path, destination: Path) -> None:
             shutil.copy2(path, target)
 
 
-def refresh_documentation_root(site_dir: Path, base_url: str) -> None:
+def _refresh_documentation_root(site_dir: Path, base_url: str) -> None:
     """Serve the greatest published version directly from the Pages root."""
-    normalized_url = _canonical_base_url(base_url)
-    destination = site_dir.expanduser().resolve()
-    if not destination.is_dir():
-        raise ValueError(f"Documentation site directory does not exist: {destination}.")
-
-    _migrate_legacy_versions(destination)
-    versions = _published_versions(destination)
+    versions = _published_versions(site_dir)
     if not versions:
         raise ValueError("The staged site does not contain a released documentation version.")
 
-    version_root = _version_root(destination)
+    version_root = _version_root(site_dir)
     for version, _ in versions:
         _tree_manifest(version_root / version)
 
     preferred = version_root / versions[0][0]
     _validate_root_tree(preferred)
-    _remove_root_documentation(destination)
-    _copy_tree_contents(preferred, destination)
-    _write_site_metadata(destination, normalized_url)
+    _remove_root_documentation(site_dir)
+    _copy_tree_contents(preferred, site_dir)
+    _write_site_metadata(site_dir, base_url)
 
 
 def stage_documentation(build_dir: Path, site_dir: Path, version: str, base_url: str) -> None:
@@ -261,7 +221,6 @@ def stage_documentation(build_dir: Path, site_dir: Path, version: str, base_url:
     _validate_root_tree(source)
 
     destination.mkdir(parents=True, exist_ok=True)
-    _migrate_legacy_versions(destination)
     version_root = _version_root(destination)
     version_root.mkdir(exist_ok=True)
     target = version_root / canonical
@@ -269,37 +228,29 @@ def stage_documentation(build_dir: Path, site_dir: Path, version: str, base_url:
         raise ValueError(f"Unsafe documentation version target: {target}.")
 
     _install_immutable_tree(source, target)
-    refresh_documentation_root(destination, normalized_url)
+    _refresh_documentation_root(destination, normalized_url)
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
 
-    stage = commands.add_parser("stage-release", help="install one immutable release and refresh the stable root")
+    stage = commands.add_parser("stage-release", help="install one immutable release and refresh the latest root")
     stage.add_argument("--build-dir", type=Path, required=True, help="completed Sphinx HTML build")
     stage.add_argument("--site-dir", type=Path, required=True, help="checked-out gh-pages worktree")
     stage.add_argument("--version", required=True, help="canonical PEP 440 release version")
-
-    refresh = commands.add_parser("refresh-root", help="refresh the stable root from published releases")
-    refresh.add_argument("--site-dir", type=Path, required=True, help="checked-out gh-pages worktree")
-
-    for command in (stage, refresh):
-        command.add_argument(
-            "--base-url",
-            default="https://dxogrp.github.io/blvpy/",
-            help="public documentation URL without a version suffix",
-        )
+    stage.add_argument(
+        "--base-url",
+        default="https://dxogrp.github.io/blvpy/",
+        help="public documentation URL without a version suffix",
+    )
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
     try:
-        if args.command == "stage-release":
-            stage_documentation(args.build_dir, args.site_dir, args.version, args.base_url)
-        else:
-            refresh_documentation_root(args.site_dir, args.base_url)
+        stage_documentation(args.build_dir, args.site_dir, args.version, args.base_url)
     except (OSError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
     return 0

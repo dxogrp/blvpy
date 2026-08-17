@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import blvpy
-from scripts.stage_docs import refresh_documentation_root, stage_documentation
+from scripts.stage_docs import stage_documentation
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DOCS_ROOT = REPOSITORY_ROOT / "docs"
@@ -113,45 +113,6 @@ def test_restaging_is_idempotent_but_rejects_changed_release(tmp_path: Path) -> 
     assert sum(bool(entry["preferred"]) for entry in _switcher(site)) == 1
 
 
-def test_refresh_root_migrates_redirect_site_and_is_idempotent(tmp_path: Path) -> None:
-    site = tmp_path / "site"
-    legacy_release = _make_build(site / "0.1.0", "release 0.1.0")
-    immutable_manifest = {
-        path.relative_to(legacy_release): path.read_bytes() for path in legacy_release.rglob("*") if path.is_file()
-    }
-    (site / "index.html").write_text("Redirecting to 0.1.0", encoding="utf-8")
-    (site / "switcher.json").write_text("[]\n", encoding="utf-8")
-    (site / ".nojekyll").write_text("", encoding="utf-8")
-    (site / ".git").write_text("gitdir: worktree-metadata\n", encoding="utf-8")
-
-    refresh_documentation_root(site, "https://docs.example.test/blvpy/")
-    first_root = (site / "index.html").read_bytes()
-    refresh_documentation_root(site, "https://docs.example.test/blvpy/")
-
-    release = site / "version" / "0.1.0"
-    assert first_root == b"release 0.1.0"
-    assert (site / "index.html").read_bytes() == first_root
-    assert not legacy_release.exists()
-    assert {
-        path.relative_to(release): path.read_bytes() for path in release.rglob("*") if path.is_file()
-    } == immutable_manifest
-    assert (site / ".git").read_text(encoding="utf-8") == "gitdir: worktree-metadata\n"
-    assert _switcher(site)[:2] == [
-        {
-            "name": "latest",
-            "version": "0.1.0",
-            "url": "https://docs.example.test/blvpy/",
-            "preferred": True,
-        },
-        {
-            "name": "0.1.0",
-            "version": "0.1.0",
-            "url": "https://docs.example.test/blvpy/version/0.1.0/",
-            "preferred": False,
-        },
-    ]
-
-
 def test_version_switcher_uses_exact_latest_label_and_contextual_selection() -> None:
     script = (DOCS_ROOT / "_static" / "version-switcher.js").read_text(encoding="utf-8")
     namespace = runpy.run_path(str(DOCS_ROOT / "conf.py"))
@@ -161,14 +122,6 @@ def test_version_switcher_uses_exact_latest_label_and_contextual_selection() -> 
     assert "(latest)" not in script
     assert "window.location.pathname.startsWith(numberedPath)" in script
     assert "entry.preferred === true" in script
-
-
-def test_refresh_root_rejects_empty_site(tmp_path: Path) -> None:
-    site = tmp_path / "site"
-    site.mkdir()
-
-    with pytest.raises(ValueError, match="released documentation version"):
-        refresh_documentation_root(site, "https://docs.example.test")
 
 
 @pytest.mark.parametrize("entry", ["version", "2.0"])
@@ -182,20 +135,21 @@ def test_stage_rejects_version_directory_collision(tmp_path: Path, entry: str) -
     assert not (tmp_path / "site").exists()
 
 
-def test_stage_and_refresh_reject_symbolic_links_before_mutating_root(tmp_path: Path) -> None:
+def test_stage_rejects_symbolic_links_before_mutating_root(tmp_path: Path) -> None:
     build = _make_build(tmp_path / "build", "release")
     (build / "unsafe").symlink_to(build / "index.html")
     with pytest.raises(ValueError, match="symbolic links"):
         stage_documentation(build, tmp_path / "site", "0.1.0", "https://docs.example.test")
 
+    safe_build = _make_build(tmp_path / "safe-build", "release")
     site = tmp_path / "existing-site"
-    _make_build(site / "version" / "0.1.0", "release")
-    (site / "index.html").write_text("existing root", encoding="utf-8")
+    stage_documentation(safe_build, site, "0.1.0", "https://docs.example.test")
     (site / "unsafe").symlink_to(site / "index.html")
     with pytest.raises(ValueError, match="symbolic links"):
-        refresh_documentation_root(site, "https://docs.example.test")
+        stage_documentation(safe_build, site, "0.1.0", "https://docs.example.test")
 
-    assert (site / "index.html").read_text(encoding="utf-8") == "existing root"
+    assert (site / "index.html").read_text(encoding="utf-8") == "release"
+    assert (site / "unsafe").is_symlink()
 
 
 @pytest.mark.parametrize("version", ["../0.1.0", "/0.1.0", "v0.1.0", "1.0-final", "not-a-version"])

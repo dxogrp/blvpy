@@ -150,12 +150,9 @@ def test_release_workflows_are_ordered_and_action_pins_are_immutable() -> None:
     assert "- publish" in release
     assert "- attach-assets" in release
     assert "uses: ./.github/workflows/docs.yml" in release
-    assert "Publish stable and versioned documentation" in release
-    assert "workflow_dispatch:" in documentation
+    assert "Publish latest and versioned documentation" in release
     assert "workflow_call:" in documentation
     assert "scripts/stage_docs.py stage-release" in documentation
-    assert "Rebuild single-version documentation site" in documentation
-    assert "Refusing to rebuild documentation history" in documentation
 
     external_actions = [
         action for action in ACTION_PATTERN.findall(release + "\n" + documentation) if not action.startswith("./")
