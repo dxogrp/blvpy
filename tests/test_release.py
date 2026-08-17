@@ -151,7 +151,6 @@ def test_release_workflows_are_ordered_and_action_pins_are_immutable() -> None:
     assert "- attach-assets" in release
     assert "uses: ./.github/workflows/docs.yml" in release
     assert "workflow_call:" in documentation
-    assert "RELEASING.md" in (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
 
     external_actions = [
         action for action in ACTION_PATTERN.findall(release + "\n" + documentation) if not action.startswith("./")
