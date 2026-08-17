@@ -72,7 +72,6 @@ def test_initialization_failure_without_upper_variables_has_clear_message() -> N
     assert "status 'infeasible'" in _notes(caught.value)
 
 
-@pytest.mark.ipopt
 def test_real_feasibility_restoration_reaches_active_upper_constraint(monkeypatch) -> None:
     x = cp.Variable(name="x", bounds=[-3.0, 3.0])
     y = cp.Variable(name="y")
@@ -154,7 +153,6 @@ def _solve_double_well(
     return result, float(x.value), tuple(initializations)
 
 
-@pytest.mark.ipopt
 def test_seeded_real_best_of_escapes_inferior_local_minimum(monkeypatch) -> None:
     single, single_x, _ = _solve_double_well(monkeypatch, best_of=None, seed=19)
     first, first_x, first_initializations = _solve_double_well(monkeypatch, best_of=5, seed=19)
@@ -185,7 +183,6 @@ def test_seeded_real_best_of_escapes_inferior_local_minimum(monkeypatch) -> None
     assert first.selected_run.objective == pytest.approx(first.objective, abs=2e-6)
 
 
-@pytest.mark.ipopt
 def test_best_of_selects_by_target_epsilon_after_branch_ranking_reverses() -> None:
     x = cp.Variable(name="x", bounds=[-2.0, 2.0])
     x.sample_bounds = (-1.5, 1.5)
@@ -219,7 +216,6 @@ def test_best_of_selects_by_target_epsilon_after_branch_ranking_reverses() -> No
     assert result.objective == pytest.approx(positive.objective, abs=1e-9)
 
 
-@pytest.mark.ipopt
 def test_retry_uses_real_solves_after_one_injected_failure(monkeypatch) -> None:
     model, x, y = _quadratic_response_model()
     original = continuation._solve_one
@@ -258,7 +254,6 @@ def test_retry_uses_real_solves_after_one_injected_failure(monkeypatch) -> None:
     assert float(y.value) == pytest.approx(-expected, abs=5e-4)
 
 
-@pytest.mark.ipopt
 def test_infeasible_upper_constraints_report_restoration_reason() -> None:
     x = cp.Variable(name="x", bounds=[-2.0, 2.0])
     y = cp.Variable(name="y")

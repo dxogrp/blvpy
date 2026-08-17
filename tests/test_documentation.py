@@ -211,7 +211,6 @@ def test_documentation_dependencies_and_make_targets_match_release_contract() ->
         assert re.search(rf"(?m)^\.PHONY: {re.escape(target)}$", makefile)
 
 
-@pytest.mark.ipopt
 def test_documented_quickstart_and_gap_diagnostics_workflow() -> None:
     x = cp.Variable(name="x")
     y = cp.Variable(name="y")

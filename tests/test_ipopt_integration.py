@@ -1,6 +1,5 @@
 """Native IPOPT end-to-end checks against independent numerical oracles.
 
-These tests are marked because they execute against the native IPOPT library.
 Every returned bilevel point is checked without using BLVPY's residual helper,
 and its fixed-upper lower problem is solved again with Clarabel.
 """
@@ -20,8 +19,6 @@ from blvpy import BilevelProblem, GapDiagnostics, LowerProblem, Residuals
 
 if TYPE_CHECKING:
     from blvpy import BilevelResult, ConeLayout
-
-pytestmark = pytest.mark.ipopt
 
 _ANALYTIC_ATOL = 3e-3
 _OBJECTIVE_ATOL = 5e-3
@@ -253,6 +250,7 @@ def _check_against_numerical_oracles(
     *,
     check_reference_recovery: bool = True,
     check_gap_convenience: bool = False,
+    canonical_source_atol: float = 1e-8,
 ) -> _NumericalOracle:
     assert result.succeeded
     assert result.objective is not None
@@ -269,7 +267,7 @@ def _check_against_numerical_oracles(
     data = model.canonicalize().apply_numeric(parameter_values)
     canonical_primal = np.asarray(result.canonical_primal, dtype=float).reshape(-1)
     returned_canonical_value = float(data.c @ canonical_primal + data.d)
-    assert returned_canonical_value == pytest.approx(returned_lower_value, abs=1e-8)
+    assert returned_canonical_value == pytest.approx(returned_lower_value, abs=canonical_source_atol)
 
     independent_residuals, gap_diagnostics = _independent_residuals(
         model,
@@ -429,6 +427,77 @@ def test_parameter_dependent_socp_with_active_upper_constraint() -> None:
         model,
         result,
         check_gap_convenience=True,
+    )
+
+
+def test_exact_geometric_mean_and_rational_power_lower_problem() -> None:
+    x = cp.Variable(name="x", bounds=[0.5, 1.5])
+    y = cp.Variable(2, nonneg=True, name="y")
+    z = cp.Variable(name="z")
+    lower = LowerProblem(
+        cp.Minimize(-cp.geo_mean(y) + cp.power(z, 1.5)),
+        [cp.sum(y) == 2.0 * x, z >= x],
+        parameters=[x],
+    )
+    target = 0.9
+    model = BilevelProblem(
+        cp.Minimize(cp.square(x - target) + cp.sum_squares(y - target) + cp.square(z - target)),
+        lower,
+    )
+
+    canonical = model.canonicalize()
+    assert len(canonical.cone_layout.second_order) >= 3
+    result = _solve(
+        model,
+        epsilon_initial=1e-5,
+        epsilon_target=1e-5,
+        seed=9,
+    )
+
+    np.testing.assert_allclose([x.value, *y.value, z.value], np.full(4, target), atol=_ANALYTIC_ATOL)
+    assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+        canonical_source_atol=2e-5,
+    )
+
+
+def test_cummax_and_dotsort_lower_problem_with_affine_response() -> None:
+    x = cp.Variable(name="x", bounds=[-1.0, 1.0])
+    y = cp.Variable(3, name="y")
+    response = cp.hstack([x, 1.0 - x, 0.5 + 0.25 * x])
+    lower = LowerProblem(
+        cp.Minimize(cp.sum(cp.cummax(y, axis=0)) + cp.dotsort(y, np.array([-0.5, 0.25, 1.0]))),
+        [y == response],
+        parameters=[x],
+    )
+    target = 0.2
+    expected_y = np.array([target, 1.0 - target, 0.5 + 0.25 * target])
+    model = BilevelProblem(
+        cp.Minimize(cp.square(x - target) + cp.sum_squares(y - expected_y)),
+        lower,
+    )
+
+    canonical = model.canonicalize()
+    assert canonical.cone_layout.nonnegative > 0
+    assert canonical.cone_layout.second_order == ()
+    result = _solve(
+        model,
+        epsilon_initial=1e-5,
+        epsilon_target=1e-5,
+        seed=13,
+    )
+
+    assert float(x.value) == pytest.approx(target, abs=_ANALYTIC_ATOL)
+    np.testing.assert_allclose(y.value, expected_y, atol=_ANALYTIC_ATOL)
+    assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+        canonical_source_atol=2e-5,
     )
 
 

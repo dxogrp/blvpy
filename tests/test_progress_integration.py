@@ -254,7 +254,6 @@ def test_progress_reports_terminal_initialization_exception(capfd) -> None:
     assert "Automatic initialization failed." in failure
 
 
-@pytest.mark.ipopt
 def test_progress_is_numerically_inert_and_reports_real_restoration(capfd) -> None:
     silent_model, silent_x, silent_y = _quadratic_model(constrained=True)
     silent = silent_model.solve(
