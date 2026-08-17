@@ -46,13 +46,13 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "packaging" },
     { name = "pytest" },
     { name = "ruff" },
 ]
 docs = [
     { name = "alabaster" },
     { name = "myst-parser" },
-    { name = "packaging" },
     { name = "sphinx" },
 ]
 examples = [
@@ -70,13 +70,13 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "packaging", specifier = ">=25" },
     { name = "pytest", specifier = ">=8.4" },
     { name = "ruff", specifier = ">=0.12" },
 ]
 docs = [
     { name = "alabaster", specifier = ">=1,<2" },
     { name = "myst-parser", specifier = ">=5.1,<6" },
-    { name = "packaging", specifier = ">=25" },
     { name = "sphinx", specifier = ">=9.1,<10" },
 ]
 examples = [

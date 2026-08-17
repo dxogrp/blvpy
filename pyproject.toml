@@ -33,8 +33,17 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/blvpy"]
 
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src/blvpy",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
 [dependency-groups]
 dev = [
+    "packaging>=25",
     "pytest>=8.4",
     "ruff>=0.12",
 ]
@@ -45,7 +54,6 @@ examples = [
 docs = [
     "alabaster>=1,<2",
     "myst-parser>=5.1,<6",
-    "packaging>=25",
     "sphinx>=9.1,<10",
 ]
 

@@ -201,10 +201,10 @@ def test_documentation_dependencies_and_make_targets_match_release_contract() ->
     assert project["project"]["requires-python"] == ">=3.12"
     assert "cvxpy>=1.9" in project["project"]["dependencies"]
     assert project["project"]["urls"]["Documentation"] == "https://dxogrp.github.io/blvpy/"
+    assert "packaging>=25" in project["dependency-groups"]["dev"]
     assert set(project["dependency-groups"]["docs"]) == {
         "alabaster>=1,<2",
         "myst-parser>=5.1,<6",
-        "packaging>=25",
         "sphinx>=9.1,<10",
     }
     for target in ("sync-docs", "docs", "check-docs", "check-examples", "test", "lint", "build"):
