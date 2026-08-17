@@ -55,8 +55,3 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
-
-[tool.pytest.ini_options]
-markers = [
-    "ipopt: integration tests that require cyipopt and a native IPOPT installation",
-]
