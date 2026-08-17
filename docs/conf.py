@@ -70,7 +70,7 @@ nitpick_ignore_regex = [
 
 html_theme = "alabaster"
 html_title = f"BLVPY {release}"
-html_baseurl = f"https://dxogrp.github.io/blvpy/{release}/"
+html_baseurl = f"https://dxogrp.github.io/blvpy/version/{release}/"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_js_files = ["version-switcher.js"]
