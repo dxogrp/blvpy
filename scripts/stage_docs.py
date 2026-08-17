@@ -170,15 +170,24 @@ def _write_site_metadata(site_dir: Path, base_url: str) -> None:
     if not versions:
         raise ValueError("The staged site does not contain a released documentation version.")
 
+    latest_version = versions[0][0]
     entries = [
+        {
+            "name": "latest",
+            "version": latest_version,
+            "url": f"{base_url}/",
+            "preferred": True,
+        }
+    ]
+    entries.extend(
         {
             "name": version,
             "version": version,
             "url": f"{base_url}/{VERSION_DIRECTORY}/{version}/",
-            "preferred": index == 0,
+            "preferred": False,
         }
-        for index, (version, _) in enumerate(versions)
-    ]
+        for version, _ in versions
+    )
     _write_text_atomic(site_dir / "switcher.json", json.dumps(entries, indent=2) + "\n")
     _write_text_atomic(site_dir / ".nojekyll", "")
 

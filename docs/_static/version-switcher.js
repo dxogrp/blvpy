@@ -24,6 +24,26 @@
         return;
       }
 
+      const currentNumberedEntry = entries.find(
+        (entry) =>
+          entry &&
+          entry.preferred !== true &&
+          entry.version === currentVersion &&
+          typeof entry.url === "string",
+      );
+      let selectLatest = false;
+      if (currentNumberedEntry) {
+        const switcherLocation = new URL(switcherUrl, window.location.href);
+        const numberedLocation = new URL(currentNumberedEntry.url, window.location.href);
+        const numberedPath = numberedLocation.pathname.endsWith("/")
+          ? numberedLocation.pathname
+          : `${numberedLocation.pathname}/`;
+        const onNumberedPath =
+          window.location.pathname === numberedPath.slice(0, -1) ||
+          window.location.pathname.startsWith(numberedPath);
+        selectLatest = window.location.origin === switcherLocation.origin && !onNumberedPath;
+      }
+
       select.replaceChildren();
       for (const entry of entries) {
         if (!entry || typeof entry.url !== "string") {
@@ -32,8 +52,10 @@
         const label = String(entry.name || entry.version || "unknown");
         const option = document.createElement("option");
         option.value = entry.url;
-        option.textContent = entry.preferred ? `${label} (latest)` : label;
-        option.selected = entry.version === currentVersion || label === currentVersion;
+        option.textContent = label;
+        option.selected = selectLatest
+          ? entry.preferred === true
+          : entry.preferred !== true && (entry.version === currentVersion || label === currentVersion);
         select.appendChild(option);
       }
 
@@ -56,4 +78,3 @@
     }
   });
 })();
-

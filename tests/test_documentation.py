@@ -51,11 +51,17 @@ def test_stage_first_documentation_release(tmp_path: Path) -> None:
     assert (site / ".nojekyll").is_file()
     assert _switcher(site) == [
         {
+            "name": "latest",
+            "version": "0.1.0",
+            "url": "https://dxogrp.github.io/blvpy/",
+            "preferred": True,
+        },
+        {
             "name": "0.1.0",
             "version": "0.1.0",
             "url": "https://dxogrp.github.io/blvpy/version/0.1.0/",
-            "preferred": True,
-        }
+            "preferred": False,
+        },
     ]
     assert 'http-equiv="refresh"' not in (site / "index.html").read_text(encoding="utf-8")
 
@@ -77,8 +83,15 @@ def test_stage_new_release_preserves_and_sorts_existing_versions(tmp_path: Path)
     assert (site / "index.html").read_text(encoding="utf-8") == "new release"
     assert not (site / "obsolete.html").exists()
     assert not obsolete_assets.exists()
-    assert [entry["version"] for entry in _switcher(site)] == ["0.10.0", "0.9.0"]
-    assert [entry["preferred"] for entry in _switcher(site)] == [True, False]
+    switcher = _switcher(site)
+    assert [entry["name"] for entry in switcher] == ["latest", "0.10.0", "0.9.0"]
+    assert [entry["version"] for entry in switcher] == ["0.10.0", "0.10.0", "0.9.0"]
+    assert [entry["preferred"] for entry in switcher] == [True, False, False]
+    assert [entry["url"] for entry in switcher] == [
+        "https://docs.example.test/blvpy/",
+        "https://docs.example.test/blvpy/version/0.10.0/",
+        "https://docs.example.test/blvpy/version/0.9.0/",
+    ]
 
 
 def test_restaging_is_idempotent_but_rejects_changed_release(tmp_path: Path) -> None:
@@ -123,7 +136,29 @@ def test_refresh_root_migrates_redirect_site_and_is_idempotent(tmp_path: Path) -
         path.relative_to(release): path.read_bytes() for path in release.rglob("*") if path.is_file()
     } == immutable_manifest
     assert (site / ".git").read_text(encoding="utf-8") == "gitdir: worktree-metadata\n"
-    assert _switcher(site)[0]["url"] == "https://docs.example.test/blvpy/version/0.1.0/"
+    assert _switcher(site)[:2] == [
+        {
+            "name": "latest",
+            "version": "0.1.0",
+            "url": "https://docs.example.test/blvpy/",
+            "preferred": True,
+        },
+        {
+            "name": "0.1.0",
+            "version": "0.1.0",
+            "url": "https://docs.example.test/blvpy/version/0.1.0/",
+            "preferred": False,
+        },
+    ]
+
+
+def test_version_switcher_uses_exact_latest_label_and_contextual_selection() -> None:
+    script = (DOCS_ROOT / "_static" / "version-switcher.js").read_text(encoding="utf-8")
+
+    assert "option.textContent = label;" in script
+    assert "(latest)" not in script
+    assert "window.location.pathname.startsWith(numberedPath)" in script
+    assert "entry.preferred === true" in script
 
 
 def test_refresh_root_rejects_empty_site(tmp_path: Path) -> None:
