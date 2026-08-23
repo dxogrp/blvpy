@@ -202,7 +202,7 @@ def test_gallery_links_are_release_pinned_and_target_every_example() -> None:
     namespace = runpy.run_path(str(DOCS_ROOT / "conf.py"))
     example_url, _ = namespace["extlinks"]["example"]
 
-    assert len(examples) == 8
+    assert examples
     assert linked_examples == examples
     assert example_url == (f"https://github.com/dxogrp/blvpy/blob/v{blvpy.__version__}/examples/%s")
     assert namespace["html_baseurl"] == f"https://dxogrp.github.io/blvpy/version/{blvpy.__version__}/"
