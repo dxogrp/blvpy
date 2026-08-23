@@ -294,17 +294,17 @@ def _(
         sharex=True,
         gridspec_kw={"height_ratios": [2.0, 1.0]},
     )
-    axes[0].plot(hours, preferred_load, linestyle="--", linewidth=2.0, label="preferred load")
-    axes[0].plot(hours, baseline_load, linestyle=":", linewidth=1.5, label="flat-price response")
-    axes[0].plot(hours, optimized_load, linewidth=2.2, label="optimized-price response")
-    axes[0].set(ylabel="hourly load", title="Demand response to a time-of-use tariff")
+    axes[0].plot(hours, preferred_load, linestyle="--", linewidth=2.0, label=r"$\bar{\ell}$")
+    axes[0].plot(hours, baseline_load, linestyle=":", linewidth=1.5, label="Flat-price response")
+    axes[0].plot(hours, optimized_load, linewidth=2.2, label="Optimized-price response")
+    axes[0].set(ylabel=r"$\ell$")
     axes[0].grid(alpha=0.25)
-    axes[0].legend(frameon=False, ncols=2)
+    axes[0].legend(frameon=False)
 
     axes[1].bar(hours, optimized_price, width=0.85, color="#e41a1c", alpha=0.85)
     axes[1].set(
-        xlabel="hour of day",
-        ylabel="price",
+        xlabel="$t$",
+        ylabel="$p$",
         xticks=range(0, 24, 3),
     )
     axes[1].grid(axis="y", alpha=0.25)
