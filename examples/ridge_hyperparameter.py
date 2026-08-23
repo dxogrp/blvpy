@@ -28,6 +28,7 @@ def _():
 
     from blvpy import BilevelProblem, LowerProblem
 
+    plt.style.use(Path(__file__).resolve().parent / "zhlatex.mplstyle")
     return BilevelProblem, LowerProblem, Path, cp, mo, np, plt
 
 
@@ -42,7 +43,7 @@ def _(mo):
     $\alpha\in[10^{-4},10]$, the lower problem computes
 
     \[
-    \beta(\alpha)\in\mathop{\mathrm{argmin}}_{\beta}
+    \beta(\alpha) = \mathop{\mathrm{argmin}}_{\beta}
       (1/n_{\mathrm{tr}})
       \lVert X_{\mathrm{tr}}\beta-q_{\mathrm{tr}}\rVert_2^2
       +\alpha\lVert\beta\rVert_2^2.
@@ -144,7 +145,7 @@ def _(
     )
     validation_loss = cp.sum_squares(validation_features @ coefficients - validation_targets) / n_validation
     problem = BilevelProblem(cp.Minimize(validation_loss), lower_problem)
-    return coefficients, problem, ridge_weight
+    return problem, ridge_weight
 
 
 @app.cell
@@ -156,7 +157,7 @@ def _(problem):
         verbose=True,
     )
     diagnostics = problem.gap_diagnostics(result)
-    return diagnostics, epsilon_target, result
+    return diagnostics, result
 
 
 @app.cell(hide_code=True)
@@ -216,13 +217,7 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(
-    baseline_validation_error,
-    diagnostics,
-    mo,
-    result,
-    ridge_weight,
-):
+def _(baseline_validation_error, diagnostics, mo, result, ridge_weight):
     assert result.succeeded, result.message
     assert float(result.objective) < baseline_validation_error - 0.1, (
         "The selected ridge weight did not improve validation error."
@@ -274,9 +269,9 @@ def _(
     figure_dir = Path(__file__).resolve().parent / "figures"
     figure_dir.mkdir(parents=True, exist_ok=True)
 
-    fig, axis = plt.subplots(figsize=(7.5, 4.5))
-    axis.semilogx(grid_weights, grid_training_errors, label="training MSE", color="#377eb8")
-    axis.semilogx(grid_weights, grid_validation_errors, label="validation MSE", color="#e41a1c")
+    fig, axis = plt.subplots(figsize=(6.5, 4.5))
+    axis.semilogx(grid_weights, grid_training_errors, label="Training", color="C0")
+    axis.semilogx(grid_weights, grid_validation_errors, label="Validation", color="C3")
     axis.scatter(
         [float(ridge_weight.value)],
         [float(result.objective)],
@@ -287,9 +282,8 @@ def _(
         label="BLVPY selection",
     )
     axis.set(
-        xlabel=r"ridge weight $\alpha$",
-        ylabel="mean squared error",
-        title="Training and validation error along the ridge path",
+        xlabel=r"$\alpha$",
+        ylabel=r"${\|X\beta - q\|}_2^2$",
     )
     axis.grid(alpha=0.25)
     axis.legend(frameon=False)
