@@ -208,14 +208,14 @@ def _(
 
     _grid = np.linspace(-1.6, 1.6, 500)
     _landscape = (_grid**2 - 1.0) ** 2 + 0.2 * _grid
-    axes[0].plot(_grid, _landscape, color="0.25", linewidth=2, label=r"$\phi(x)$")
+    axes[0].plot(_grid, _landscape, color="0.25", linewidth=2)
     axes[0].scatter(
         deterministic_x,
         deterministic_result.objective,
         color="tab:orange",
         marker="s",
         s=75,
-        label="deterministic",
+        label="Deterministic",
         zorder=3,
     )
     axes[0].scatter(
@@ -224,13 +224,12 @@ def _(
         color="tab:red",
         marker="*",
         s=150,
-        label="best-of selected",
+        label="Best-of selected",
         zorder=3,
     )
-    axes[0].set_xlabel("upper variable $x$")
-    axes[0].set_ylabel(r"reduced upper objective $\phi(x)$")
-    axes[0].set_title("Two local minima")
-    axes[0].legend(fontsize=8)
+    axes[0].set_xlabel("$x$")
+    axes[0].set_ylabel(r"$\phi(x) = (x^2-1)^2+0.2x$")
+    axes[0].legend(fontsize=12, frameon=False)
 
     for _run, _initial, _objective in zip(best_result.runs, initial_x, run_objectives):
         _selected = _run.index == best_result.selected_run_index
@@ -245,19 +244,19 @@ def _(
         axes[1].annotate(
             f"run {_run.index + 1}",
             (_initial, _objective),
-            xytext=(5, 6),
+            xytext=(2, 6),
             textcoords="offset points",
-            fontsize=8,
+            fontsize=10,
         )
-    axes[1].set_xlabel("sampled initial $x$")
-    axes[1].set_ylabel("terminal upper objective")
-    axes[1].set_title("Five complete local runs")
+    axes[1].set_xlabel("Sampled initial $x$")
+    axes[1].set_ylabel("Terminal upper objective")
+    axes[1].set_ylim(-0.25, 0.25)
+    axes[1].set_xlim(-1.8, 1.8)
 
     figure.tight_layout()
     figure_path = figure_directory / "best_of_local_optima.pdf"
     figure.savefig(figure_path, bbox_inches="tight")
     plt.show()
-
     return
 
 
