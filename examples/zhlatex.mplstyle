@@ -1,0 +1,9 @@
+text.usetex: True
+mathtext.fontset: cm
+font.family: ['serif']
+font.size: 15
+
+xtick.direction: in
+ytick.direction: in
+xtick.top: True
+ytick.right: True

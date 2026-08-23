@@ -24,6 +24,8 @@ The gallery consists of standalone [Marimo](https://marimo.io/) notebooks for ex
   trades capacity investment against lower-level electricity dispatch.
 - {example}`Traffic tolling <traffic_tolling.py>`
   selects tolls while anticipating a congestion equilibrium.
+- {example}`Stackelberg port security <stackelberg_port_security.py>`
+  allocates limited patrol coverage against a best-responding attacker.
 
 Install and open the gallery from a repository checkout:
 
