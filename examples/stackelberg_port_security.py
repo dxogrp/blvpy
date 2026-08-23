@@ -148,15 +148,7 @@ def _(
         payoff_labels,
         strict=True,
     ):
-        payoff_axis.bar(
-            target_indices,
-            values,
-            width=0.72,
-            facecolor="w",
-            edgecolor="k",
-            linewidth=1.0,
-            hatch='....'
-        )
+        payoff_axis.bar(target_indices, values, width=0.72, facecolor="w", edgecolor="k", linewidth=1.0, hatch="....")
         payoff_axis.set(ylabel=label, ylim=(0.0, 1.08 * maximum_payoff))
     payoff_axes[-1].set_xticks(target_indices)
     payoff_axes[-1].set_xlabel("$i$")
