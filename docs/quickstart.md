@@ -39,7 +39,7 @@ problem = bp.BilevelProblem(
 
 # validate() raises a detailed exception if BLVPY cannot reformulate the model.
 problem.validate()
-assert problem.is_dbp()
+assert problem.is_dblp()
 
 # The default solve follows one deterministic epsilon-continuation path.
 result = problem.solve()

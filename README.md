@@ -23,12 +23,12 @@ $$
     \end{array}
 $$
 
-We say a bilevel problem is *disciplined bilevel programming* (DBP) compatible if it satisfies the following conditions:
+We say a bilevel problem is *disciplined bilevel programming* (DBLP) compatible if it satisfies the following conditions:
 
 * The objective and constraint functions $F_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, m$ of the upper problem are [DNLP](https://www.cvxpy.org/tutorial/dnlp/index.html)-compatible with variables $x \in \mathbf{R}^n$ and $y \in \mathbf{R}^k$.
 * The objective and constraint functions $f_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, p$ of the lower problem are [DPP](https://www.cvxpy.org/tutorial/dpp/index.html)-compatible with variable $z \in \mathbf{R}^k$ (or $y \in \mathbf{R}^k$), so that the lower problem is a disciplined convex program, parameterized by $x \in \mathbf{R}^n$.
 
-BLVPY supports the modeling and solving of DBP-compliant problems and uses *optimistic semantics*, i.e., when the lower problem has multiple minimizers, the upper problem may select the one most favorable to its objective.
+BLVPY supports the modeling and solving of DBLP-compliant problems and uses *optimistic semantics*, i.e., when the lower problem has multiple minimizers, the upper problem may select the one most favorable to its objective.
 
 ## Basic idea
 
@@ -117,7 +117,7 @@ problem = bp.BilevelProblem(
 )
 
 # Check that BLVPY can construct its supported single-level reformulation.
-assert problem.is_dbp()
+assert problem.is_dblp()
 problem.validate()
 
 # Solve the problem.

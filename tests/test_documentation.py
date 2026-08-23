@@ -285,7 +285,7 @@ def test_documented_quickstart_and_gap_diagnostics_workflow() -> None:
     )
 
     problem.validate()
-    assert problem.is_dbp()
+    assert problem.is_dblp()
     result = problem.solve(verbose=False)
     diagnostics = problem.gap_diagnostics(result)
 

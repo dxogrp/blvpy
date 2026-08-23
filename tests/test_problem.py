@@ -33,7 +33,7 @@ def _quadratic_bilevel(*, bounds: tuple[float, float] = (-2.0, 2.0)):
 def test_valid_problem_caches_canonical_and_lifted_models() -> None:
     problem, x, y, parameter = _quadratic_bilevel()
 
-    assert problem.is_dbp()
+    assert problem.is_dblp()
     assert problem.validate() is None
     assert problem.canonicalize() is problem.canonicalize()
     assert problem._lifted_problem is problem._lifted_problem
@@ -175,7 +175,7 @@ def test_rejects_maximization_levels(factory, message: str) -> None:
     objective, lower = factory()
     problem = BilevelProblem(objective, lower)
 
-    assert not problem.is_dbp()
+    assert not problem.is_dblp()
     with pytest.raises(ValidationError, match=message):
         problem.validate()
 
@@ -187,7 +187,7 @@ def test_rejects_missing_fixed_parameter_value() -> None:
     lower = LowerProblem(cp.Minimize(cp.square(y - x) + fixed * y), parameters=[x])
     problem = BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), lower)
 
-    assert not problem.is_dbp()
+    assert not problem.is_dblp()
     with pytest.raises(ParameterMappingError, match="fixed value"):
         problem.validate()
 
@@ -198,7 +198,7 @@ def test_rejects_upper_atom_that_is_not_dnlp() -> None:
     lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
     problem = BilevelProblem(cp.Minimize(cp.ceil(x) + cp.square(y)), lower)
 
-    assert not problem.is_dbp()
+    assert not problem.is_dblp()
     with pytest.raises(UnsupportedModelError, match="not DNLP compliant"):
         problem.validate()
 

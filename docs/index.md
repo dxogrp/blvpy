@@ -26,7 +26,7 @@ $$
 
 ## Disciplined bilevel programming
 
-A model is **disciplined bilevel programming (DBP)** compatible when:
+A model is **disciplined bilevel programming (DBLP)** compatible when:
 
 * The upper objective and constraint functions $F_i \colon \mathbf{R}^n
   \times \mathbf{R}^k \to \mathbf{R}$, for $i=0,1,\ldots,m$, are
@@ -39,7 +39,7 @@ A model is **disciplined bilevel programming (DBP)** compatible when:
   problem is a disciplined convex program parameterized by $x \in
   \mathbf{R}^n$.
 
-BLVPY models and solves this supported DBP subset with *optimistic
+BLVPY models and solves this supported DBLP subset with *optimistic
 semantics*. When the lower problem has multiple minimizers, the upper problem
 may select the one most favorable to its objective.
 

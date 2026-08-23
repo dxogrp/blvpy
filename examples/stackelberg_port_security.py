@@ -189,7 +189,7 @@ def _(
         attacker_problem,
         upper_constraints=[cp.sum(coverage) <= patrol_budget],
     )
-    assert problem.is_dbp()
+    assert problem.is_dblp()
     problem.validate()
     return attack_probability, coverage, problem
 

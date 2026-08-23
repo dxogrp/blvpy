@@ -3,7 +3,7 @@
 ## Validation fails before solving
 
 Call `problem.validate()` directly instead of relying only on
-`problem.is_dbp()`. The former preserves the detailed exception. Common causes
+`problem.is_dblp()`. The former preserves the detailed exception. Common causes
 are a non-DPP lower expression, a lower maximization problem, an unsupported
 cone, an approximate or unaudited atom, an unset ordinary CVXPY parameter, or
 a lifted expression that CVXPY does not recognize as DNLP.

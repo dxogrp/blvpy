@@ -1127,7 +1127,7 @@ def _recover_source_values(
             # CvxAttr2Constr.invert projects ordinary sign/bound-attributed
             # variables. Projection is harmless for a feasible solver point
             # but nonlinear, so it cannot define the fixed affine recovery map
-            # required by DBP. Its public ``var_forward`` performs exactly the
+            # required by DBLP. Its public ``var_forward`` performs exactly the
             # desired linear unpacking, including symmetric/sparse variables.
             if type(reduction).__name__ == "CvxAttr2Constr":
                 solution = Solution(

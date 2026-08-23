@@ -153,7 +153,7 @@ class BilevelProblem:
         assert self._lifted is not None
         return self._lifted
 
-    def is_dbp(self) -> bool:
+    def is_dblp(self) -> bool:
         """Return whether the model passes BLVPY's structural validation.
 
         Returns
