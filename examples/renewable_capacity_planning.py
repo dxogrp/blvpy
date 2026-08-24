@@ -9,12 +9,11 @@ def _(mo):
     mo.md(r"""
     # Renewable Capacity Planning with Market Dispatch
 
-    A generation planner must choose renewable capacity before an electricity
-    dispatcher sees the resulting operating limits. The dispatcher is the
-    lower-level decision maker: for the installed capacity, it minimizes
-    operating cost while meeting demand in every representative time block.
-    The planner anticipates that response and trades investment cost against
-    the thermal generation that remains in the dispatch.
+    We consider renewable capacity planning in a power system, where a
+    generation planner must choose renewable capacity before an electricity
+    dispatcher sees the resulting operating limits and optimizes the dispatch
+    accordingly. The planner anticipates that response and trades investment
+    cost against the thermal generation that remains in the dispatch.
     """)
     return
 
@@ -39,36 +38,41 @@ def _(mo):
     mo.md(r"""
     ## Bilevel formulation
 
-    Let $k$ denote installed renewable capacity, $a_t$ its availability,
-    and $d_t$ demand. For a fixed $k$, the dispatcher chooses renewable
-    output $r_t$ and thermal output $g_t$:
+    Let $\alpha\in\mathbf{R}$ denote renewable capacity, and let
+    $L\in\mathbf{R}^m$ denote renewable availability over $m$ time periods.
+    Thus, $\alpha L\in\mathbf{R}^m$ gives the renewable-generation limits.
+    Let $D\in\mathbf{R}^m$ denote electricity demand, and let
+    $r,g\in\mathbf{R}^m$ denote renewable and thermal dispatch. The generation
+    planner solves
 
     \[
     \begin{array}{ll}
-    \mathop{\mathrm{minimize}}_{r,g}
+    \mathop{\mathrm{minimize}}_{\alpha,r,g}
+        & p_r\alpha^2+p_g\mathbf{1}^Tg \\
+    \mathop{\mathrm{subject\ to}}
+        & 0\leq\alpha\leq\alpha_{\mathrm{max}},\\
+        & (r,g)\in S(\alpha).
+    \end{array}
+    \]
+
+    For a fixed $\alpha$, the grid dispatcher solves the lower problem
+
+    \[
+    \begin{array}{ll}
+    S(\alpha)=\mathop{\mathrm{argmin}}_{r,g}
         & c_r\mathbf{1}^Tr+c_g\mathbf{1}^Tg
-          +\delta(\|r\|_2^2+\|g\|_2^2) \\
+          +\delta\left(\lVert r\rVert_2^2+\lVert g\rVert_2^2\right) \\
     \mathop{\mathrm{subject\ to}}
-        & 0\leq r_t\leq a_t k,\quad g_t\geq0,\\
-        & r_t+g_t\geq d_t.
+        & 0\preceq r\preceq\alpha L,\quad g\succeq0,\\
+        & r+g\succeq D.
     \end{array}
     \]
 
-    The small quadratic term makes the lower response stable. Anticipating this
-    dispatch, the planner solves
-
-    \[
-    \begin{array}{ll}
-    \mathop{\mathrm{minimize}}_{k,r,g}
-        & 0.08k^2+0.6\mathbf{1}^Tg \\
-    \mathop{\mathrm{subject\ to}}
-        & 0\leq k\leq12,\\
-        & (r,g)\text{ solves the dispatch problem for }k.
-    \end{array}
-    \]
-
-    The two upper-level terms represent increasing marginal investment cost
-    and a penalty on thermal production.
+    The upper variable is $\alpha$, while $r$ and $g$ are the lower variables.
+    The planning and dispatch cost coefficients $p_r,p_g,c_r,c_g$, maximum
+    capacity $\alpha_{\mathrm{max}}$, regularization parameter $\delta$, and
+    vectors $L,D$ are given. The small quadratic term makes the lower response
+    stable.
     """)
     return
 
@@ -78,19 +82,56 @@ def _(mo):
     mo.md(r"""
     ## Representative operating data
 
-    Twelve two-hour blocks capture a morning shoulder, an evening peak, and a
-    daylight-only renewable profile.
+    Twenty-four hourly periods capture a morning shoulder and an evening
+    demand peak. The aggregate renewable-availability model has two distinct
+    windows: a smaller morning peak and a larger afternoon peak separated by a
+    midday lull.
     """)
     return
 
 
 @app.cell
 def _(np):
-    hours = np.arange(0, 24, 2)
-    block = np.arange(hours.size)
-    demand = 3.5 + 1.8 * np.exp(-0.5 * ((block - 4.0) / 1.3) ** 2) + 3.0 * np.exp(-0.5 * ((block - 9.5) / 1.6) ** 2)
-    availability = np.maximum(np.sin(np.pi * (block - 3.0) / 6.0), 0.0)
-    return availability, demand, hours
+    def demand_profile(time):
+        return 3.5 + 1.8 * np.exp(-0.5 * ((time - 8.0) / 2.6) ** 2) + 3.0 * np.exp(-0.5 * ((time - 19.0) / 3.2) ** 2)
+
+    def availability_profile(time):
+        morning = np.where(
+            (time >= 5.0) & (time <= 11.0),
+            0.8 * np.sin(np.pi * (time - 5.0) / 6.0),
+            0.0,
+        )
+        afternoon = np.where(
+            (time >= 13.0) & (time <= 21.0),
+            np.sin(np.pi * (time - 13.0) / 8.0),
+            0.0,
+        )
+        return morning + afternoon
+
+    hours = np.arange(24)
+    m = hours.size
+    D = demand_profile(hours)
+    L = availability_profile(hours)
+
+    p_r = 0.08
+    p_g = 0.6
+    c_r = 0.4
+    c_g = 2.5
+    alpha_max = 12.0
+    delta = 1e-3
+    return (
+        D,
+        L,
+        alpha_max,
+        availability_profile,
+        c_g,
+        c_r,
+        delta,
+        demand_profile,
+        m,
+        p_g,
+        p_r,
+    )
 
 
 @app.cell(hide_code=True)
@@ -98,7 +139,7 @@ def _(mo):
     mo.md(r"""
     ## Specify and solve the model
 
-    `capacity` is listed as a `LowerProblem` parameter, so BLVPY treats it as
+    `alpha` is listed as a `LowerProblem` parameter, so BLVPY treats it as
     fixed inside dispatch while retaining it as the planner's variable. Its
     planning limits are written as explicit CVXPY constraints. The initial
     `.value` provides a starting point for the nonlinear solve.
@@ -107,39 +148,48 @@ def _(mo):
 
 
 @app.cell
-def _(BilevelProblem, LowerProblem, availability, cp, demand):
-    capacity = cp.Variable(name="renewable_capacity")
-    renewable = cp.Variable(demand.size, name="renewable_dispatch")
-    thermal = cp.Variable(demand.size, name="thermal_dispatch")
-    capacity.value = 6.0
+def _(
+    BilevelProblem,
+    D,
+    L,
+    LowerProblem,
+    alpha_max,
+    c_g,
+    c_r,
+    cp,
+    delta,
+    m,
+    p_g,
+    p_r,
+):
+    alpha = cp.Variable(name="alpha")
+    r = cp.Variable(m, name="r")
+    g = cp.Variable(m, name="g")
+    alpha.value = 8.5
 
     dispatch = LowerProblem(
-        cp.Minimize(
-            0.4 * cp.sum(renewable)
-            + 2.5 * cp.sum(thermal)
-            + 1e-3 * (cp.sum_squares(renewable) + cp.sum_squares(thermal))
-        ),
+        cp.Minimize(c_r * cp.sum(r) + c_g * cp.sum(g) + delta * (cp.sum_squares(r) + cp.sum_squares(g))),
         [
-            renewable >= 0.0,
-            thermal >= 0.0,
-            renewable <= cp.multiply(availability, capacity),
-            renewable + thermal >= demand,
+            r >= 0.0,
+            g >= 0.0,
+            r <= cp.multiply(L, alpha),
+            r + g >= D,
         ],
-        parameters=[capacity],
+        parameters=[alpha],
     )
     problem = BilevelProblem(
-        cp.Minimize(0.08 * cp.square(capacity) + 0.6 * cp.sum(thermal)),
+        cp.Minimize(p_r * cp.square(alpha) + p_g * cp.sum(g)),
         dispatch,
-        upper_constraints=[capacity >= 0.0, capacity <= 12.0],
+        upper_constraints=[alpha >= 0.0, alpha <= alpha_max],
     )
-    return capacity, problem, renewable, thermal
+    return alpha, g, problem
 
 
 @app.cell
 def _(problem):
     result = problem.solve(
         epsilon_initial=1e-2,
-        epsilon_target=1e-5,
+        epsilon_target=1e-9,
         verbose=False,
     )
     diagnostics = problem.gap_diagnostics(result)
@@ -147,22 +197,22 @@ def _(problem):
 
 
 @app.cell(hide_code=True)
-def _(capacity, demand, diagnostics, mo, np, result, thermal):
+def _(D, alpha, diagnostics, g, mo, np, result):
     assert result.succeeded, result.message
 
-    baseline_thermal = float(np.sum(demand))
-    optimized_thermal = float(np.sum(thermal.value))
-    assert optimized_thermal < baseline_thermal - 1e-3, "Renewable investment did not reduce thermal generation."
+    baseline_g = float(np.sum(D))
+    optimized_g = float(np.sum(g.value))
+    assert optimized_g < baseline_g - 1e-3, "Renewable investment did not reduce thermal generation."
 
-    mo.md(f"""
+    mo.md(rf"""
     ## Result
 
     | quantity | value |
     | --- | ---: |
     | status | `{result.status}` |
-    | installed renewable capacity | {float(capacity.value):.3f} |
-    | thermal production without renewables | {baseline_thermal:.3f} |
-    | optimized thermal production | {optimized_thermal:.3f} |
+    | installed renewable capacity $\alpha$ | {float(alpha.value):.3f} |
+    | thermal production without renewables | {baseline_g:.3f} |
+    | optimized thermal production $\mathbf{{1}}^Tg$ | {optimized_g:.3f} |
     | upper objective | {float(result.objective):.6f} |
     | final epsilon | {result.final_epsilon:.3e} |
     | maximum lifted residual | {result.residuals.max_violation:.3e} |
@@ -170,7 +220,8 @@ def _(capacity, demand, diagnostics, mo, np, result, thermal):
     | signed source gap | {diagnostics.source_gap:.3e} |
 
     The planner installs enough capacity to displace thermal generation during
-    daylight, but not so much that the quadratic investment penalty dominates.
+    both renewable-availability windows, but not so much that the quadratic
+    investment penalty dominates.
     """)
     return
 
@@ -185,114 +236,114 @@ def _(mo):
     capacity; thermal generation fills the shortfall when renewable potential
     is below demand.
 
-    The lower-left panel shows how total thermal production falls as capacity
-    is added. The curve flattens because renewable availability is low or zero
-    in some blocks, so capacity alone cannot displace all thermal generation.
-
-    The lower-right panel explains the planner's choice: investment cost rises
+    The bottom panel explains the planner's choice: investment cost rises
     quadratically, while the thermal-production penalty falls. Their sum is
     minimized close to the capacity returned by BLVPY. These grid curves use
     the hand-derived dispatch response
-    $r_t(k)=\min\{d_t,a_tk\}$ and $g_t(k)=d_t-r_t(k)$ for this example.
+    $r_t(\alpha)=\min\{D_t,\alpha L_t\}$ and
+    $g_t(\alpha)=D_t-r_t(\alpha)$ for this example.
     """)
     return
 
 
 @app.cell
-def _(availability, capacity, demand, np, result):
-    capacity_grid = np.linspace(0.0, 12.0, 241)
-    renewable_grid = np.minimum(
-        demand[None, :],
-        capacity_grid[:, None] * availability[None, :],
+def _(
+    D,
+    L,
+    alpha,
+    alpha_max,
+    availability_profile,
+    demand_profile,
+    np,
+    p_g,
+    p_r,
+    result,
+):
+    alpha_grid = np.linspace(0.0, alpha_max, 500)
+    r_grid = np.minimum(
+        D[None, :],
+        alpha_grid[:, None] * L[None, :],
     )
-    thermal_grid = demand[None, :] - renewable_grid
-    thermal_totals = np.sum(thermal_grid, axis=1)
-    investment_costs = 0.08 * np.square(capacity_grid)
-    thermal_penalties = 0.6 * thermal_totals
+    g_grid = D[None, :] - r_grid
+    g_totals = np.sum(g_grid, axis=1)
+    investment_costs = p_r * np.square(alpha_grid)
+    thermal_penalties = p_g * g_totals
     planner_objectives = investment_costs + thermal_penalties
-    selected_capacity = float(np.asarray(result.variable_values[capacity]))
+    selected_alpha = float(np.asarray(result.variable_values[alpha]))
+
+    plot_hours = np.linspace(0.0, 23.0, 461)
+    D_plot = demand_profile(plot_hours)
+    L_plot = availability_profile(plot_hours)
+    r_plot = np.minimum(D_plot, selected_alpha * L_plot)
+    g_plot = D_plot - r_plot
     return (
-        capacity_grid,
+        D_plot,
+        L_plot,
+        alpha_grid,
+        g_plot,
         investment_costs,
         planner_objectives,
-        selected_capacity,
+        plot_hours,
+        r_plot,
+        selected_alpha,
         thermal_penalties,
-        thermal_totals,
     )
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
+    D_plot,
+    L_plot,
     Path,
-    availability,
-    capacity_grid,
-    demand,
-    hours,
+    alpha_grid,
+    g_plot,
     investment_costs,
     np,
     planner_objectives,
+    plot_hours,
     plt,
-    renewable,
-    selected_capacity,
-    thermal,
+    r_plot,
+    selected_alpha,
     thermal_penalties,
-    thermal_totals,
 ):
     figure_dir = Path(__file__).resolve().parent / "figures"
     figure_dir.mkdir(parents=True, exist_ok=True)
 
-    fig = plt.figure(figsize=(9.0, 8.0))
-    grid = fig.add_gridspec(2, 2, height_ratios=[1.15, 1.0])
-    dispatch_axis = fig.add_subplot(grid[0, :])
-    thermal_axis = fig.add_subplot(grid[1, 0])
-    objective_axis = fig.add_subplot(grid[1, 1])
+    fig, (dispatch_axis, objective_axis) = plt.subplots(2, 1, figsize=(6.5, 7))
 
     dispatch_axis.stackplot(
-        hours,
-        renewable.value,
-        thermal.value,
-        labels=["renewable dispatch", "thermal dispatch"],
-        colors=["#4daf4a", "#777777"],
+        plot_hours,
+        r_plot,
+        g_plot,
+        labels=[r"$r$", r"$g$"],
+        colors=["C2", "grey"],
         alpha=0.85,
     )
-    dispatch_axis.plot(hours, demand, color="black", linestyle="--", linewidth=1.8, label="demand")
+    dispatch_axis.plot(plot_hours, D_plot, color="k", linestyle="--", label=r"$D$", zorder=10)
     dispatch_axis.plot(
-        hours,
-        selected_capacity * availability,
-        color="#377eb8",
+        plot_hours,
+        selected_alpha * L_plot,
+        color="C2",
         linestyle=":",
-        linewidth=1.8,
-        label="available renewable output",
+        label=r"$\alpha L$",
     )
-    dispatch_axis.set(
-        xlabel="hour of day",
-        ylabel="power per two-hour block",
-        title=f"Dispatch at selected renewable capacity {selected_capacity:.2f}",
-        xticks=np.arange(0, 24, 4),
-    )
-    dispatch_axis.legend(loc="upper left", frameon=False, ncols=2)
+    dispatch_axis.set(xlabel=r"$t$", ylabel=r"Generation and demand", xticks=np.arange(0, 24, 4), xlim=(0, 23))
+    dispatch_axis.legend(loc="upper left", frameon=False, fontsize=13)
 
-    thermal_axis.plot(capacity_grid, thermal_totals, color="#777777", linewidth=2.0)
-    thermal_axis.axvline(selected_capacity, color="#e41a1c", linestyle="--", label="BLVPY capacity")
-    thermal_axis.set(
-        xlabel="renewable capacity",
-        ylabel="total thermal production",
-        title="Thermal displacement",
-    )
-    thermal_axis.legend(frameon=False)
-
-    objective_axis.plot(capacity_grid, investment_costs, label="investment cost", color="#377eb8")
-    objective_axis.plot(capacity_grid, thermal_penalties, label="thermal penalty", color="#777777")
+    objective_axis.plot(alpha_grid, investment_costs, label=r"$p_r\alpha^2$", color="C2")
+    objective_axis.plot(alpha_grid, thermal_penalties, label=r"$p_g\mathbf{1}^Tg$", color="grey")
     objective_axis.plot(
-        capacity_grid, planner_objectives, label="total upper objective", color="#4daf4a", linewidth=2.0
+        alpha_grid,
+        planner_objectives,
+        label=r"$p_r\alpha^2+p_g\mathbf{1}^Tg$",
+        color="k",
     )
-    objective_axis.axvline(selected_capacity, color="#e41a1c", linestyle="--", label="BLVPY capacity")
+    objective_axis.axvline(selected_alpha, color="C3", linestyle="--")
     objective_axis.set(
-        xlabel="renewable capacity",
-        ylabel="objective contribution",
-        title="Planner's tradeoff",
+        xlabel=r"$\alpha$",
+        ylabel="Planning cost",
     )
-    objective_axis.legend(frameon=False, fontsize=8)
+    objective_axis.legend(loc=(0, 0.1), frameon=False, fontsize=13)
 
     fig.tight_layout()
     figure_path = figure_dir / "renewable_capacity_planning.pdf"
