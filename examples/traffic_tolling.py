@@ -7,17 +7,17 @@ app = marimo.App(width="medium")
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    # Congestion Pricing on Parallel Routes
+    # Congestion Pricing on a Braess Network
 
-    Consider two roads connecting the same origin and destination. A fixed
-    amount of traffic must make the trip, and every traveler chooses one of the
-    roads. The road authority cannot assign routes directly, but it can influence
-    those choices by charging tolls.
+    A road authority chooses a toll before travelers select their routes
+    through a network. Travelers minimize their own generalized travel cost,
+    while the authority anticipates this equilibrium and minimizes total time
+    spent in the network.
 
-    This creates two linked optimization problems. In the **upper problem**, the
-    authority chooses tolls to reduce congestion. In the **lower problem**,
-    travelers observe those tolls and choose routes that minimize their own
-    perceived cost.
+    The example uses a four-node Braess network. Without a toll, the apparently
+    attractive central link draws too much traffic and increases congestion.
+    Pricing that link can coordinate individual route choices and recover a
+    nearly system-optimal allocation.
     """)
     return
 
@@ -40,142 +40,133 @@ def _():
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Travel time and individual route choice
+    ## Bilevel formulation
 
-    Let $D$ be the total travel demand and $f_i$ the aggregate flow using route
-    $i$. The flows are continuous here: one unit can represent one vehicle, one
-    thousand vehicles, or any other consistent traffic unit. Because every trip
-    uses exactly one route,
+    Let the directed edge set be ordered as
 
     \[
-    f_i\geq0,\qquad \sum_i f_i=D.
+    E=(OA,OB,AD,BD,AB),
     \]
 
-    Travelers are treated as **nonatomic**: each individual is too small to
-    change congestion alone and therefore takes the current route times as
-    given when choosing a road.
-
-    Congestion makes a route slower as more travelers use it. We use the affine
-    travel-time function
+    and let the three paths be $OAD$, $OBD$, and $OABD$. The path flow
+    $x\in\mathbf{R}^3$ induces the edge flow $f\in\mathbf{R}^5$ through
 
     \[
-    T_i(f_i)=b_i+a_i f_i,
+    f=Hx,\qquad
+    H=\begin{bmatrix}
+    1&0&1\\
+    0&1&0\\
+    1&0&0\\
+    0&1&1\\
+    0&0&1
+    \end{bmatrix}.
     \]
 
-    where $b_i$ is the free-flow time when the road is empty and $a_i$ measures
-    how quickly congestion grows. A traveler perceives the generalized cost
-    $T_i(f_i)+\tau_i$, where the toll $\tau_i$ is expressed in time-equivalent
-    units.
+    Thus, each column of $H$ records the edges used by one path. In particular,
+    only the third path uses the central edge $AB$. The fixed demand is $q$, so
+    feasible path flows satisfy $x\succeq0$ and $\mathbf{1}^Tx=q$.
 
-    A **Wardrop equilibrium** is reached when no traveler can improve their
-    perceived cost by switching routes. Thus every used route has the same
-    minimum generalized cost; an unused route cannot have a lower cost.
-
-    ## The traveler's lower problem
-
-    For separable increasing travel times, the Wardrop conditions are exactly
-    the optimality conditions of the Beckmann problem
+    Edge $e$ has affine travel time
 
     \[
-    \begin{array}{ll}
-    \mathop{\mathrm{minimize}}_f
-        & \displaystyle\sum_i\left(b_i f_i+\frac12a_i f_i^2+\tau_i f_i\right)\\
-    \mathop{\mathrm{subject\ to}}
-        & f\geq0,\quad \mathbf{1}^Tf=D.
-    \end{array}
+    T_e(f_e)=b_e+a_ef_e.
     \]
 
-    Notice that the objective derivative with respect to one route's flow is
+    For a toll $\tau$ on $AB$, travelers reach the Wardrop equilibrium
 
     \[
-    \frac{d}{df_i}\left(b_if_i+\frac12a_if_i^2+\tau_if_i\right)
-      =T_i(f_i)+\tau_i.
+        \begin{array}{rl}
+            S(\tau) = \mathop{\rm argmin}_x & \sum_{e \in E} (b_e f_e + (1/2) a_e f_e^2) + \tau f_{AB}\\
+            \mbox{subject to} & x \succeq 0,\quad \mathbf{1}^T x = q\\
+            & f = Hx,
+        \end{array}
     \]
 
-    Consequently, its optimality conditions equalize travelers' perceived
-    route costs. `LowerProblem(parameters=[toll])` tells BLVPY to hold the tolls
-    fixed while solving this equilibrium problem.
-
-    ## The road authority's upper problem
-
-    The authority cares about actual time spent by all travelers, i.e.,
-    $\sum_i f_iT_i(f_i)$. It anticipates the equilibrium response and solves
+    which is called the Beckmann formulation.
+    Noticing that differentiating its edge term with
+    respect to $f_e$ gives $T_e(f_e)$, so its optimality conditions reproduce
+    travelers' route-choice conditions. The authority solves
 
     \[
     \begin{array}{ll}
-    \mathop{\mathrm{minimize}}_{\tau,f}
-        & \displaystyle\sum_i f_iT_i(f_i)+0.01\lVert\tau\rVert_2^2\\
+    \mathop{\mathrm{minimize}}_{\tau,x}
+        & \displaystyle\sum_{e\in E}f_eT_e(f_e)+\rho\tau^2\\
     \mathop{\mathrm{subject\ to}}
-        & 0\leq\tau_i\leq5,\\
-        & f\text{ is a Wardrop equilibrium under }\tau.
+        & 0\leq\tau\leq5,\\
+        & x\in S(\tau).
     \end{array}
     \]
 
-    Toll payments are transfers rather than travel time, so they are not added
-    directly to the performance measure. The small quadratic term only
-    discourages tolls larger than needed to induce a useful route allocation.
+    Toll payments are transfers rather than travel time and therefore do not
+    enter the first term. The small quadratic penalty selects the least costly
+    toll among policies with similar network performance.
     """)
     return
 
 
 @app.cell
 def _(np):
-    demand = 10.0
-    free_flow_time = np.array([1.0, 2.0])
-    congestion_slope = np.array([0.20, 0.05])
-    route_names = ("route 1", "route 2")
-    return congestion_slope, demand, free_flow_time, route_names
+    q = 6.0
+    b = np.array([0.0, 5.0, 5.0, 0.0, 0.0])
+    a = np.array([1.0, 0.01, 0.01, 1.0, 0.01])
+    H = np.array(
+        [
+            [1.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 1.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    rho = 0.1
+    edge_labels = ("OA", "OB", "AD", "BD", "AB")
+    return H, a, b, q, rho
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Numerical scenario and BLVPY model
+    ## Synthetic network
 
-    Ten units of traffic must be allocated. Route 1 has free-flow time $1$ but
-    congestion slope $0.20$; route 2 starts slower, at time $2$, but has the
-    gentler slope $0.05$. Route 1 is therefore attractive at low flow but becomes
-    congested much faster.
+    We set $q=6$ and use
 
-    Without tolls, travelers overuse the initially faster route because each
-    traveler considers their own trip time but not the delay their presence adds
-    for everyone else. A toll on route 1 can represent that congestion
-    externality and move some flow toward route 2. In the code, `toll` is the
-    upper variable and `flow` contains the two lower equilibrium flows.
+    \[
+    b=(0,5,5,0,0),\qquad
+    a=(1,0.01,0.01,1,0.01),\qquad \rho=0.1.
+    \]
+
+    The outer links $OA$ and $BD$ become congested quickly. The remaining
+    links approximate the constant-time links of the classical Braess network.
     """)
     return
 
 
 @app.cell
-def _(
-    BilevelProblem,
-    LowerProblem,
-    congestion_slope,
-    cp,
-    demand,
-    free_flow_time,
-):
-    toll = cp.Variable(2, bounds=[0.0, 5.0], name="toll")
-    flow = cp.Variable(2, nonneg=True, name="route_flow")
+def _(BilevelProblem, H, LowerProblem, a, b, cp, q, rho):
+    tau = cp.Variable(1, bounds=[0.0, 5.0], name="tau")
+    x = cp.Variable(3, nonneg=True, name="path_flow")
+    f = H @ x
 
     equilibrium = LowerProblem(
-        cp.Minimize(0.5 * cp.sum(cp.multiply(congestion_slope, cp.square(flow))) + (free_flow_time + toll) @ flow),
-        [cp.sum(flow) == demand],
-        parameters=[toll],
+        cp.Minimize(0.5 * a @ cp.square(f) + b @ f + tau[0] * x[2]),
+        [cp.sum(x) == q],
+        parameters=[tau],
     )
-    total_travel_time = free_flow_time @ flow + cp.sum(cp.multiply(congestion_slope, cp.square(flow)))
+    network_travel_time = b @ f + a @ cp.square(f)
     problem = BilevelProblem(
-        cp.Minimize(total_travel_time + 0.01 * cp.sum_squares(toll)),
+        cp.Minimize(network_travel_time + rho * cp.sum_squares(tau)),
         equilibrium,
     )
-    return flow, problem, toll
+
+    assert problem.is_dblp()
+    return problem, tau, x
 
 
 @app.cell
 def _(problem):
     result = problem.solve(
         epsilon_initial=1e-2,
-        epsilon_target=1e-5,
+        epsilon_target=1e-9,
         verbose=False,
     )
     diagnostics = problem.gap_diagnostics(result)
@@ -185,96 +176,123 @@ def _(problem):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Reference scenarios
+    ## Independent reference problems
 
-    We compute two benchmarks with ordinary convex optimization:
+    Three ordinary convex programs provide checks on the bilevel result. The
+    untolled reference fixes $\tau=0$ in the traveler problem. The fixed-toll
+    reference resolves that problem at the toll selected by BLVPY. Finally, the
+    system optimum minimizes $\sum_e f_eT_e(f_e)$ directly, as if a central
+    controller could assign routes.
 
-    1. The **untolled equilibrium** sets $\tau=0$ and lets travelers choose. Both
-       routes are used, so their travel times become equal. Solving
-       $T_1(f_1)=T_2(f_2)$ with $f_1+f_2=10$ gives $(f_1,f_2)=(6,4)$.
-    2. The **system optimum** imagines a central controller that can assign every
-       traveler directly. It minimizes total travel time
-       $\sum_i f_iT_i(f_i)$ and produces $(f_1,f_2)=(4,6)$.
-
-    Travelers respond to their own route time
-    $T_i(f_i)=b_i+a_if_i$. A central planner instead considers the marginal
-    increase in the time spent by everyone on that route. Because total route
-    time is
-
-    \[
-    f_iT_i(f_i)=b_if_i+a_if_i^2,
-    \]
-
-    its derivative with respect to flow is
-
-    \[
-    \frac{d}{df_i}\left[f_iT_i(f_i)\right]
-      =T_i(f_i)+f_iT_i'(f_i)
-      =b_i+2a_if_i.
-    \]
-
-    The additional term $a_if_i$ is the congestion delay that new traffic
-    imposes on travelers already using the route. Individual travelers do not
-    account for this external delay, while the system planner does. The system
-    optimum is therefore a benchmark for network performance.
+    The untolled equilibrium is not system optimal: individual travelers see
+    their own travel time but not the congestion delay they impose on others.
+    The central link magnifies this difference (i.e., the Braess effect).
     """)
     return
 
 
 @app.cell
-def _(congestion_slope, cp, demand, free_flow_time, np):
-    untolled_variable = cp.Variable(2, nonneg=True)
-    untolled_problem = cp.Problem(
-        cp.Minimize(
-            0.5 * cp.sum(cp.multiply(congestion_slope, cp.square(untolled_variable)))
-            + free_flow_time @ untolled_variable
-        ),
-        [cp.sum(untolled_variable) == demand],
-    )
-    untolled_problem.solve(solver=cp.CLARABEL)
-    untolled_flow = np.array(untolled_variable.value, copy=True)
+def _(H, a, b, cp, np, q, tau):
+    def _solve_equilibrium(_tau):
+        _path_flow = cp.Variable(3, nonneg=True)
+        _link_flow = H @ _path_flow
+        _problem = cp.Problem(
+            cp.Minimize(0.5 * a @ cp.square(_link_flow) + b @ _link_flow + _tau * _path_flow[2]),
+            [cp.sum(_path_flow) == q],
+        )
+        _problem.solve(
+            solver=cp.CLARABEL,
+            tol_gap_abs=1e-11,
+            tol_gap_rel=1e-11,
+            tol_feas=1e-11,
+        )
+        assert _problem.status == cp.OPTIMAL
+        return np.array(_path_flow.value, copy=True)
 
-    system_variable = cp.Variable(2, nonneg=True)
+    untolled_path_flow = _solve_equilibrium(0.0)
+    fixed_toll_path_flow = _solve_equilibrium(float(tau.value[0]))
+
+    system_path_variable = cp.Variable(3, nonneg=True)
+    system_link_expression = H @ system_path_variable
     system_problem = cp.Problem(
-        cp.Minimize(
-            free_flow_time @ system_variable + cp.sum(cp.multiply(congestion_slope, cp.square(system_variable)))
-        ),
-        [cp.sum(system_variable) == demand],
+        cp.Minimize(b @ system_link_expression + a @ cp.square(system_link_expression)),
+        [cp.sum(system_path_variable) == q],
     )
-    system_problem.solve(solver=cp.CLARABEL)
-    system_flow = np.array(system_variable.value, copy=True)
-    return system_flow, untolled_flow
+    system_problem.solve(
+        solver=cp.CLARABEL,
+        tol_gap_abs=1e-11,
+        tol_gap_rel=1e-11,
+        tol_feas=1e-11,
+    )
+    assert system_problem.status == cp.OPTIMAL
+    system_path_flow = np.array(system_path_variable.value, copy=True)
+
+    untolled_link_flow = H @ untolled_path_flow
+    fixed_toll_link_flow = H @ fixed_toll_path_flow
+    system_link_flow = H @ system_path_flow
+    return (
+        fixed_toll_link_flow,
+        fixed_toll_path_flow,
+        system_link_flow,
+        system_path_flow,
+        untolled_link_flow,
+        untolled_path_flow,
+    )
 
 
 @app.cell(hide_code=True)
 def _(
-    congestion_slope,
+    H,
+    a,
+    b,
     diagnostics,
-    flow,
-    free_flow_time,
+    fixed_toll_link_flow,
+    fixed_toll_path_flow,
     mo,
     np,
+    q,
     result,
-    system_flow,
-    toll,
-    untolled_flow,
+    system_link_flow,
+    system_path_flow,
+    tau,
+    untolled_link_flow,
+    untolled_path_flow,
+    x,
 ):
-    def _travel_time(_flow):
-        return float(free_flow_time @ _flow + congestion_slope @ np.square(_flow))
+    def _network_time(_link_flow):
+        return float(b @ _link_flow + a @ np.square(_link_flow))
 
-    optimized_flow = np.array(flow.value, copy=True)
-    optimized_route_times = free_flow_time + congestion_slope * optimized_flow
-    optimized_perceived_costs = optimized_route_times + toll.value
-    untolled_time = _travel_time(untolled_flow)
-    optimized_time = _travel_time(optimized_flow)
-    system_time = _travel_time(system_flow)
+    selected_tau = float(tau.value[0])
+    optimized_path_flow = np.array(x.value, copy=True)
+    optimized_link_flow = H @ optimized_path_flow
+    untolled_time = _network_time(untolled_link_flow)
+    optimized_time = _network_time(optimized_link_flow)
+    fixed_toll_time = _network_time(fixed_toll_link_flow)
+    system_time = _network_time(system_link_flow)
     improvement_percent = 100.0 * (untolled_time - optimized_time) / untolled_time
 
     assert result.succeeded, result.message
-    assert optimized_time < untolled_time - 1e-3, "Optimized tolls did not improve on the untolled equilibrium."
-    assert optimized_time <= system_time + 1e-3, (
-        "The optimized equilibrium is inconsistent with the direct system optimum."
+    assert np.isfinite(result.objective)
+    assert result.final_epsilon <= 1e-9
+    assert result.residuals.max_violation <= 1e-6
+    assert abs(diagnostics.source_gap) <= 1e-5
+    assert -1e-8 <= selected_tau <= 5.0 + 1e-8
+    assert np.min(optimized_path_flow) >= -1e-8
+    assert abs(np.sum(optimized_path_flow) - q) <= 1e-7
+    assert np.allclose(optimized_link_flow, H @ optimized_path_flow, atol=1e-8)
+    assert np.allclose(
+        fixed_toll_path_flow,
+        optimized_path_flow,
+        atol=1e-4,
     )
+    assert np.allclose(
+        fixed_toll_link_flow,
+        optimized_link_flow,
+        atol=1e-4,
+    )
+    assert abs(fixed_toll_time - optimized_time) <= 1e-4
+    assert optimized_time < untolled_time - 1.0
+    assert optimized_time >= system_time - 1e-5
 
     mo.md(rf"""
     ## Result
@@ -282,15 +300,13 @@ def _(
     | quantity | value |
     | --- | ---: |
     | status | `{result.status}` |
-    | untolled route flows | {np.array2string(untolled_flow, precision=3)} |
-    | system-optimal route flows | {np.array2string(system_flow, precision=3)} |
-    | optimized tolls | {np.array2string(toll.value, precision=3)} |
-    | optimized route flows | {np.array2string(optimized_flow, precision=3)} |
-    | optimized route travel times | {np.array2string(optimized_route_times, precision=3)} |
-    | optimized perceived costs | {np.array2string(optimized_perceived_costs, precision=3)} |
-    | untolled total travel time | {untolled_time:.6f} |
-    | optimized total travel time | {optimized_time:.6f} |
-    | system-optimal travel time | {system_time:.6f} |
+    | selected toll $\tau^\star$ | {selected_tau:.6f} |
+    | untolled path flow $x$ | {np.array2string(untolled_path_flow, precision=3)} |
+    | optimized path flow $x^\star$ | {np.array2string(optimized_path_flow, precision=3)} |
+    | system-optimal path flow | {np.array2string(system_path_flow, precision=3)} |
+    | untolled network travel time | {untolled_time:.6f} |
+    | optimized network travel time | {optimized_time:.6f} |
+    | system-optimal network travel time | {system_time:.6f} |
     | travel-time improvement | {improvement_percent:.2f}% |
     | upper objective | {float(result.objective):.6f} |
     | final epsilon | {result.final_epsilon:.3e} |
@@ -298,199 +314,298 @@ def _(
     | complementarity | {result.complementarity:.3e} |
     | signed source gap | {diagnostics.source_gap:.3e} |
 
-    At the untolled equilibrium, six flow units choose route 1 and four choose
-    route 2; both routes then take time $2.2$. The optimized toll of about $0.5$
-    on route 1 shifts roughly two units toward route 2. Physical travel times no
-    longer match, but travel time plus toll is almost equal across the two used
-    routes, as Wardrop equilibrium requires. The resulting allocation nearly
-    reproduces the system optimum and lowers aggregate travel time from $22$ to
-    $21$, an improvement of about $4.5\%$.
-
-    The toll is a coordination signal, not proof that every traveler is better
-    off individually. Distributional effects and toll revenues are outside this
-    educational model.
+    With no toll, approximately $3.94$ flow units use the central path $OABD$,
+    raising network travel time to {untolled_time:.2f}. The selected toll
+    $\tau^\star={selected_tau:.2f}$ removes almost all flow from $AB$ and divides
+    demand between $OAD$ and $OBD$. Network travel time falls by
+    {improvement_percent:.1f}% to {optimized_time:.2f}, essentially matching
+    the direct system optimum. The fixed-toll reference independently
+    reproduces this response.
     """)
-    return optimized_flow, optimized_time, system_time, untolled_time
+    return optimized_link_flow, optimized_path_flow
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Equilibrium comparison
+    ## Policy and outcome comparison
 
-    The two network diagrams use line thickness to represent route flow. Without
-    tolls, more traffic chooses the initially faster first route. Under the
-    optimized toll, approximately two flow units move to the less
-    congestion-sensitive second route. Each route is annotated with its flow,
-    physical travel time, and toll.
+    The left panels compare the untolled and optimized networks. Arrow width
+    represents edge flow, and each edge is labeled with its numerical flow.
+    The central edge $AB$ is highlighted because it is the tolled link.
 
-    The equilibrium-cost panel uses route-1 flow $f_1$ on its horizontal axis;
-    route-2 flow is then $D-f_1$. With no toll, the two physical travel-time
-    curves intersect at $f_1=6$. Adding the route-1 toll shifts its perceived
-    cost upward, moving the Wardrop intersection to approximately $f_1=4$.
+    The right panel shows every feasible path-flow allocation
 
-    Finally, the network-time curve evaluates total time spent by all travelers
-    for every possible split. Its minimum is the system optimum. The optimized
-    equilibrium lies almost exactly at this minimum, while the untolled
-    equilibrium lies higher on the curve. This shows both how the toll changes
-    voluntary route choice and why that change improves network performance.
+    \[
+    x_1+x_2+x_3=q,\qquad x\succeq0,
+    \]
+
+    and contours report its total network travel time. The vertices assign all
+    demand to one path. The markers locate the untolled equilibrium, optimized
+    equilibrium, and system optimum in the complete feasible set. The latter
+    two lie together at the minimum, whereas the untolled equilibrium uses the
+    central path heavily and has greater total travel time.
     """)
     return
 
 
 @app.cell(hide_code=True)
-def _(
-    Path,
-    congestion_slope,
-    demand,
-    free_flow_time,
-    np,
-    optimized_flow,
-    optimized_time,
-    plt,
-    route_names,
-    system_flow,
-    system_time,
-    toll,
-    untolled_flow,
-    untolled_time,
-):
-    figure_dir = Path(__file__).resolve().parent / "figures"
-    figure_dir.mkdir(parents=True, exist_ok=True)
+def _(np, optimized_link_flow, plt, untolled_link_flow):
+    node_positions = {
+        "O": np.array([0.0, 0.0]),
+        "A": np.array([0.5, 0.42]),
+        "B": np.array([0.5, -0.42]),
+        "D": np.array([1.0, 0.0]),
+    }
+    edge_nodes = (("O", "A"), ("O", "B"), ("A", "D"), ("B", "D"), ("A", "B"))
+    label_offsets = (
+        np.array([-0.03, 0.08]),
+        np.array([-0.03, -0.08]),
+        np.array([0.03, 0.08]),
+        np.array([0.03, -0.08]),
+        np.array([0.08, 0.0]),
+    )
 
-    route_colors = ("#377eb8", "#ff7f00")
-
-    def _draw_network(axis, flows, tolls, title):
-        path_position = np.linspace(0.0, 1.0, 200)
-        route_paths = (
-            0.27 * np.sin(np.pi * path_position),
-            -0.27 * np.sin(np.pi * path_position),
-        )
-        route_times = free_flow_time + congestion_slope * flows
-        for index, (path, color) in enumerate(zip(route_paths, route_colors)):
-            axis.plot(
-                path_position,
-                path,
-                color=color,
-                linewidth=1.8 + 0.75 * flows[index],
-                solid_capstyle="round",
-                alpha=0.85,
+    def _draw_network(_axis, _flows, _title):
+        for _index, ((_tail, _head), _label_offset) in enumerate(zip(edge_nodes, label_offsets)):
+            _start = node_positions[_tail]
+            _end = node_positions[_head]
+            _is_central = _index == 4
+            _axis.annotate(
+                "",
+                xy=_end,
+                xytext=_start,
+                arrowprops={
+                    "arrowstyle": "-|>",
+                    "color": "C3" if _is_central else "0.35",
+                    "linewidth": 0.9 + 0.55 * _flows[_index],
+                    "mutation_scale": 10,
+                    "shrinkA": 9,
+                    "shrinkB": 9,
+                },
+                zorder=2,
             )
-            label_height = 0.39 if index == 0 else -0.39
-            axis.text(
-                0.5,
-                label_height,
-                (
-                    f"{route_names[index]}: flow={flows[index]:.2f}, "
-                    f"time={route_times[index]:.2f}, toll={tolls[index]:.2f}"
-                ),
+            _midpoint = 0.5 * (_start + _end) + _label_offset
+            _axis.text(
+                *_midpoint,
+                rf"${_flows[_index]:.2f}$",
                 ha="center",
                 va="center",
-                fontsize=8,
+                fontsize=10,
             )
-        axis.scatter([0.0, 1.0], [0.0, 0.0], s=90, color="#333333", zorder=5)
-        axis.text(0.0, -0.1, "origin", ha="center", va="top", fontsize=8)
-        axis.text(1.0, -0.1, "destination", ha="center", va="top", fontsize=8)
-        axis.set(xlim=(-0.12, 1.12), ylim=(-0.52, 0.52), title=title)
-        axis.axis("off")
 
-    fig = plt.figure(figsize=(10.0, 7.6), layout="constrained")
-    grid = fig.add_gridspec(2, 2, height_ratios=[0.85, 1.15], hspace=0.28, wspace=0.25)
-    untolled_axis = fig.add_subplot(grid[0, 0])
-    optimized_axis = fig.add_subplot(grid[0, 1])
-    equilibrium_axis = fig.add_subplot(grid[1, 0])
-    network_time_axis = fig.add_subplot(grid[1, 1])
+        for _node, _position in node_positions.items():
+            _axis.scatter(*_position, s=55, color="black", zorder=4)
+            _axis.text(
+                _position[0],
+                _position[1] + (0.09 if _node in {"A", "D"} else -0.09),
+                rf"${_node}$",
+                ha="center",
+                va="center",
+                fontsize=10,
+            )
 
-    _draw_network(untolled_axis, untolled_flow, np.zeros(2), "Untolled equilibrium")
-    _draw_network(optimized_axis, optimized_flow, toll.value, "Optimized-toll equilibrium")
+        _axis.set(
+            xlim=(-0.08, 1.08),
+            ylim=(-0.62, 0.62),
+            aspect="equal",
+        )
+        _axis.set_title(_title, fontsize=15, pad=0)
+        _axis.axis("off")
 
-    route_1_flow = np.linspace(0.0, demand, 401)
-    route_2_flow = demand - route_1_flow
-    route_1_time = free_flow_time[0] + congestion_slope[0] * route_1_flow
-    route_2_time = free_flow_time[1] + congestion_slope[1] * route_2_flow
-    route_1_tolled_cost = route_1_time + toll.value[0]
+    def make_network_figure():
+        _figure = plt.figure(figsize=(7.5, 5), layout="constrained")
+        _grid = _figure.add_gridspec(2, 2, width_ratios=[1, 1.5])
+        _untolled_axis = _figure.add_subplot(_grid[0, 0])
+        _optimized_axis = _figure.add_subplot(_grid[1, 0])
+        _outcome_axis = _figure.add_subplot(_grid[:, 1])
 
-    equilibrium_axis.plot(route_1_flow, route_1_time, color=route_colors[0], label=r"$T_1(f_1)$")
-    equilibrium_axis.plot(
-        route_1_flow,
-        route_2_time,
-        color=route_colors[1],
-        label=r"$T_2(D-f_1)$",
+        _draw_network(_untolled_axis, untolled_link_flow, r"$\tau=0$")
+        _draw_network(
+            _optimized_axis,
+            optimized_link_flow,
+            rf"$\tau=\tau^\star$",
+        )
+        return _figure, _outcome_axis
+
+    return (make_network_figure,)
+
+
+@app.cell(hide_code=True)
+def _(
+    H,
+    Path,
+    a,
+    b,
+    make_network_figure,
+    np,
+    optimized_path_flow,
+    plt,
+    q,
+    system_path_flow,
+    untolled_path_flow,
+):
+    simplex_figure, simplex_axis = make_network_figure()
+
+    simplex_resolution = 40
+    simplex_path_flow = []
+    for _index_1 in range(simplex_resolution + 1):
+        for _index_2 in range(simplex_resolution + 1 - _index_1):
+            _x_1 = q * _index_1 / simplex_resolution
+            _x_2 = q * _index_2 / simplex_resolution
+            _x_3 = q - _x_1 - _x_2
+            simplex_path_flow.append((_x_1, _x_2, _x_3))
+    simplex_path_flow = np.asarray(simplex_path_flow)
+
+    simplex_vertices = np.array(
+        [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.5, np.sqrt(3.0) / 2.0],
+        ]
     )
-    equilibrium_axis.plot(
-        route_1_flow,
-        route_1_tolled_cost,
-        color=route_colors[0],
-        linestyle="--",
-        label=r"$T_1(f_1)+\tau_1$",
+    simplex_coordinates = (simplex_path_flow / q) @ simplex_vertices
+    simplex_link_flow = simplex_path_flow @ H.T
+    simplex_network_time = simplex_link_flow @ b + np.sum(
+        a * np.square(simplex_link_flow),
+        axis=1,
     )
-    equilibrium_axis.scatter(
-        untolled_flow[0],
-        free_flow_time[0] + congestion_slope[0] * untolled_flow[0],
-        color="#333333",
+
+    filled_contours = simplex_axis.tricontourf(
+        simplex_coordinates[:, 0],
+        simplex_coordinates[:, 1],
+        simplex_network_time,
+        levels=10,
+        cmap="Greys",
+        alpha=0.75,
+    )
+    contour_lines = simplex_axis.tricontour(
+        simplex_coordinates[:, 0],
+        simplex_coordinates[:, 1],
+        simplex_network_time,
+        levels=filled_contours.levels,
+        colors="black",
+        linewidths=0.45,
+        alpha=0.55,
+    )
+    simplex_axis.clabel(contour_lines, inline=True, fontsize=7, fmt="%.0f")
+
+    closed_vertices = np.vstack([simplex_vertices, simplex_vertices[0]])
+    simplex_axis.plot(
+        closed_vertices[:, 0],
+        closed_vertices[:, 1],
+        color="black",
+        linewidth=1.0,
+    )
+
+    def _simplex_position(_path_flow):
+        return (_path_flow / q) @ simplex_vertices
+
+    untolled_position = _simplex_position(untolled_path_flow)
+    optimized_position = _simplex_position(optimized_path_flow)
+    system_position = _simplex_position(system_path_flow)
+
+    simplex_axis.scatter(
+        *untolled_position,
+        color="C0",
+        edgecolor="white",
+        linewidth=0.6,
         marker="o",
         s=55,
         zorder=5,
-        label="untolled equilibrium",
+        label=r"$x^{\tau=0}$",
     )
-    equilibrium_axis.scatter(
-        optimized_flow[0],
-        free_flow_time[0] + congestion_slope[0] * optimized_flow[0] + toll.value[0],
-        color="#e41a1c",
-        marker="X",
-        s=75,
-        zorder=6,
-        label="optimized equilibrium",
-    )
-    equilibrium_axis.set(
-        xlabel=r"route-1 flow $f_1$",
-        ylabel="travel time plus toll",
-        title="Generalized Costs and Wardrop Equilibria",
-        xlim=(0.0, demand),
-    )
-    equilibrium_axis.legend(frameon=False, fontsize=8)
-
-    total_time_curve = route_1_flow * route_1_time + route_2_flow * route_2_time
-    network_time_axis.plot(route_1_flow, total_time_curve, color="#4daf4a", linewidth=2.2)
-    network_time_axis.scatter(
-        untolled_flow[0],
-        untolled_time,
-        color="#333333",
-        marker="o",
-        s=65,
-        zorder=5,
-        label="untolled equilibrium",
-    )
-    network_time_axis.scatter(
-        system_flow[0],
-        system_time,
+    simplex_axis.scatter(
+        *system_position,
         facecolors="none",
-        edgecolors="#377eb8",
+        edgecolors="C2",
         marker="*",
         linewidths=1.8,
         s=210,
         zorder=6,
-        label="system optimum",
+        label=r"$x^{\rm sys}$",
     )
-    network_time_axis.scatter(
-        optimized_flow[0],
-        optimized_time,
-        color="#e41a1c",
+    simplex_axis.scatter(
+        *optimized_position,
+        color="C3",
         marker="X",
-        s=75,
+        s=70,
         zorder=7,
-        label="optimized equilibrium",
+        label=r"$x^{\tau=\tau^\star}$",
     )
-    network_time_axis.set(
-        xlabel=r"route-1 flow $f_1$",
-        ylabel="total network travel time",
-        title="Network Travel Time by Flow Allocation",
-        xlim=(0.0, demand),
-    )
-    network_time_axis.legend(frameon=False, fontsize=8)
 
+    simplex_axis.text(
+        0,
+        -0.045,
+        r"$x_1=q$",
+        ha="right",
+        va="top",
+        fontsize=12,
+    )
+    simplex_axis.text(
+        0,
+        -0.115,
+        r"$OAD$",
+        ha="right",
+        va="top",
+        fontsize=12,
+    )
+    simplex_axis.text(
+        1,
+        -0.045,
+        r"$x_2=q$",
+        ha="left",
+        va="top",
+        fontsize=12,
+    )
+    simplex_axis.text(
+        1,
+        -0.115,
+        r"$OBD$",
+        ha="left",
+        va="top",
+        fontsize=12,
+    )
+    simplex_axis.text(
+        0.5,
+        simplex_vertices[2, 1] + 0.13,
+        r"$x_3=q$",
+        ha="center",
+        va="bottom",
+        fontsize=12,
+    )
+    simplex_axis.text(
+        0.5,
+        simplex_vertices[2, 1] + 0.055,
+        r"$OABD$",
+        ha="center",
+        va="bottom",
+        fontsize=12,
+    )
+    simplex_axis.set(
+        xlim=(-0.15, 1.15),
+        ylim=(-0.18, 1.05),
+        aspect="equal",
+    )
+    simplex_axis.axis("off")
+    simplex_axis.legend(
+        loc="upper right",
+        frameon=False,
+        fontsize=15,
+    )
+    simplex_colorbar = simplex_figure.colorbar(
+        filled_contours,
+        ax=simplex_axis,
+        fraction=0.04,
+        pad=0.03,
+    )
+    simplex_colorbar.set_label(r"$\sum_{e\in E} f_eT_e(f_e)$", fontsize=12)
+    simplex_colorbar.ax.tick_params(labelsize=12)
+
+    figure_dir = Path(__file__).resolve().parent / "figures"
+    figure_dir.mkdir(parents=True, exist_ok=True)
     figure_path = figure_dir / "traffic_tolling.pdf"
-    fig.savefig(figure_path, bbox_inches="tight")
+    simplex_figure.savefig(figure_path, bbox_inches="tight")
     plt.show()
     return
 
