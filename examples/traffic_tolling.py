@@ -119,7 +119,6 @@ def _(np):
         ]
     )
     rho = 0.1
-    edge_labels = ("OA", "OB", "AD", "BD", "AB")
     return H, a, b, q, rho
 
 
@@ -424,7 +423,7 @@ def _(np, optimized_link_flow, plt, untolled_link_flow):
         _draw_network(
             _optimized_axis,
             optimized_link_flow,
-            rf"$\tau=\tau^\star$",
+            r"$\tau=\tau^\star$",
         )
         return _figure, _outcome_axis
 
