@@ -7,13 +7,12 @@ app = marimo.App(width="medium")
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    # Stackelberg Patrol Allocation
+    # Stackelberg Security Allocation
 
-    A port authority allocates limited patrol coverage across several maritime
-    targets. An attacker observes the long-run coverage policy and selects the
-    most attractive target. The authority therefore acts as a Stackelberg
-    leader: it must anticipate the attacker's best response when assigning its
-    patrol resources.
+    A defender allocates limited security resources across a set of targets. An
+    attacker observes the protection policy and selects the most attractive
+    target. The defender therefore acts as a Stackelberg leader and anticipates
+    the attacker's best response when allocating protection.
     """)
     return
 
@@ -26,11 +25,12 @@ def _():
     import marimo as mo
     import matplotlib.pyplot as plt
     import numpy as np
+    from matplotlib.patches import Patch
 
     from blvpy import BilevelProblem, LowerProblem
 
     plt.style.use(Path(__file__).resolve().parent / "zhlatex.mplstyle")
-    return BilevelProblem, LowerProblem, Path, cp, mo, np, plt
+    return BilevelProblem, LowerProblem, Patch, Path, cp, mo, np, plt
 
 
 @app.cell(hide_code=True)
@@ -38,97 +38,80 @@ def _(mo):
     mo.md(r"""
     ## Bilevel formulation
 
-    Let $c_i\in[0,1]$ be the probability that the port authority covers target
-    $i$, and let $a_i$ be the probability that the attacker selects it. For a
-    fixed coverage policy $c$, the lower problem computes
+    Suppose there are $n$ targets. Let $p\in\mathbf{R}^n$, with
+    $0\preceq p\preceq\mathbf{1}$, denote their protection probabilities, and
+    let $q\in\mathbf{R}^n$, with $0\preceq q\preceq\mathbf{1}$, denote their
+    attack probabilities. For a fixed defender allocation $p$, the attacker
+    solves
 
     \[
     \begin{array}{rl}
-        a(c) = \mathop{\mathrm{argmin}}_{a} &
-          -\sum_i(r_i-e_ic_i)a_i\\
-          \text{subject to} &
-          a\succeq0,\quad\mathbf{1}^T a=1.
+        S(p) = \mathop{\mathrm{argmin}}_{q} &
+          -\displaystyle\sum_{i=1}^n(r_i-c_ip_i)q_i\\
+        \text{subject to} &
+          q\succeq0,\quad\mathbf{1}^Tq=1,
     \end{array}
     \]
 
-    Here $r_i-e_ic_i$ is the attacker's payoff for target $i$ after observing
-    coverage. The negative sign expresses the attacker's payoff maximization in
-    BLVPY's lower-level minimization form.
+    where $r,c\in\mathbf{R}^n$ are the attacker reward and defender coverage
+    effectiveness vectors. Thus $r_i-c_ip_i$ is the attacker's payoff for
+    target $i$ after observing defender coverage.
 
-    The upper problem then solves
+    The defender adapts its protection strategy by solving
 
     \[
     \begin{array}{ll}
-    \mathop{\mathrm{minimize}}_{c,a} &
-      \displaystyle\sum_i L_i(1-c_i)a_i
-      +\rho\lVert c\rVert_2^2\\
+    \mathop{\mathrm{minimize}}_{p,q} &
+      \displaystyle\sum_{i=1}^n L_i(1-p_i)q_i
+      +\gamma\lVert p\rVert_2^2\\
     \mathop{\mathrm{subject\ to}} &
-      0 \preceq c \preceq \mathbf{1},\quad\mathbf{1}^T c \leq B\\
-      &a\in a(c).
+      0\preceq p\preceq\mathbf{1},\quad\mathbf{1}^Tp\leq B,\\
+      &q\in S(p).
     \end{array}
     \]
 
     The first upper-level term is the expected defender loss: $L_i$ is the
-    uncovered loss at target $i$, and $(1-c_i)a_i$ is its attack probability
-    without coverage. The quadratic term discourages concentrated patrol
-    policies. This instance uses patrol budget $B=2.5$ and penalty
-    $\rho=0.03$.
+    uncovered loss at target $i$, and $(1-p_i)q_i$ is its probability of being
+    attacked without protection. The quadratic term discourages concentrated
+    policies. The vectors $r,c,L$, penalty $\gamma>0$, and resource budget
+    $B>0$ are given. This instance uses $B=2.5$ and $\gamma=0.03$.
 
     The lower linear program can have multiple optimal attack targets. BLVPY's
     optimistic semantics implement the strong-Stackelberg convention: among
-    tied values in $a(c)$, the response most favorable to the authority may be
+    tied responses in $S(p)$, the one most favorable to the defender may be
     selected.
     """)
     return
 
 
 @app.cell(hide_code=True)
-def _(attacker_reward, defender_loss, mo, patrol_budget, target_count):
-    mo.md(f"""
-    ## Synthetic port instance
+def _(B, L, mo, n, r):
+    mo.md(rf"""
+    ## Synthetic security instance
 
-    The instance contains {target_count} heterogeneous synthetic targets.
+    The instance contains {n} synthetic targets.
     Uncovered attacker rewards range from
-    `{attacker_reward.min():.1f}` to `{attacker_reward.max():.1f}`, while defender
-    losses range from `{defender_loss.min():.1f}` to
-    `{defender_loss.max():.1f}`. The patrol budget of `{patrol_budget:.1f}` is
-    insufficient to cover every target fully. The payoff figure below stacks
-    $r_i$, $e_i$, and $L_i$ vertically against the target index and uses a common
-    payoff scale for direct comparison.
+    `{r.min():.1f}` to `{r.max():.1f}`, while defender losses range from
+    `{L.min():.1f}` to `{L.max():.1f}`. The security budget of `{B:.1f}` is
+    insufficient to cover every target fully.
     """)
     return
 
 
 @app.cell
 def _(np):
-    attacker_reward = np.array([4.0, 3.2, 5.0, 2.6, 4.4, 3.8, 5.5, 3.0])
-    protection_effect = np.array([3.0, 3.5, 2.2, 2.0, 4.4, 2.8, 3.2, 4.0])
-    defender_loss = np.array([8.0, 5.0, 10.0, 4.0, 7.0, 6.0, 12.0, 5.0])
-    patrol_budget = 2.5
-    coverage_penalty = 0.03
-    target_count = attacker_reward.size
-    target_indices = np.arange(1, target_count + 1)
-    return (
-        attacker_reward,
-        coverage_penalty,
-        defender_loss,
-        patrol_budget,
-        protection_effect,
-        target_count,
-        target_indices,
-    )
+    r = np.array([4.0, 3.2, 5.0, 2.6, 4.4, 3.8, 5.5, 3.0])
+    c = np.array([3.0, 3.5, 2.2, 2.0, 4.4, 2.8, 3.2, 4.0])
+    L = np.array([8.0, 5.0, 10.0, 4.0, 7.0, 6.0, 12.0, 5.0])
+    B = 2.5
+    gamma = 0.03
+    n = r.size
+    target_indices = np.arange(1, n + 1)
+    return B, L, c, gamma, n, r, target_indices
 
 
 @app.cell(hide_code=True)
-def _(
-    Path,
-    attacker_reward,
-    defender_loss,
-    np,
-    plt,
-    protection_effect,
-    target_indices,
-):
+def _(L, Path, c, np, plt, r, target_indices):
     payoff_figure_dir = Path(__file__).resolve().parent / "figures"
     payoff_figure_dir.mkdir(parents=True, exist_ok=True)
     payoff_figure, payoff_axes = plt.subplots(
@@ -139,8 +122,8 @@ def _(
         sharey=True,
         layout="constrained",
     )
-    payoff_values = (attacker_reward, protection_effect, defender_loss)
-    payoff_labels = (r"$r$", r"$e$", r"$L$")
+    payoff_values = (r, c, L)
+    payoff_labels = (r"$r$", r"$c$", r"$L$")
     maximum_payoff = max(np.max(values) for values in payoff_values)
     for payoff_axis, values, label in zip(
         payoff_axes,
@@ -160,43 +143,32 @@ def _(
 
 
 @app.cell
-def _(
-    BilevelProblem,
-    LowerProblem,
-    attacker_reward,
-    coverage_penalty,
-    cp,
-    defender_loss,
-    np,
-    patrol_budget,
-    protection_effect,
-    target_count,
-):
-    coverage = cp.Variable(target_count, bounds=[0.0, 1.0], name="patrol_coverage")
-    coverage.value = np.full(target_count, patrol_budget / target_count)
-    attack_probability = cp.Variable(target_count, nonneg=True, name="attack_probability")
+def _(B, BilevelProblem, L, LowerProblem, c, cp, gamma, n, np, r):
+    p = cp.Variable(n, bounds=[0.0, 1.0], name="p")
+    p.value = np.full(n, B / n)
+    q = cp.Variable(n, nonneg=True, name="q")
 
-    attacker_utility = attacker_reward - cp.multiply(protection_effect, coverage)
+    attacker_payoff = r - cp.multiply(c, p)
     attacker_problem = LowerProblem(
-        cp.Minimize(-attacker_utility @ attack_probability),
-        [cp.sum(attack_probability) == 1.0],
-        parameters=[coverage],
+        cp.Minimize(-attacker_payoff @ q),
+        [cp.sum(q) == 1.0],
+        parameters=[p],
     )
-    loss_if_attacked = cp.multiply(defender_loss, 1.0 - coverage)
-    expected_defender_loss = loss_if_attacked @ attack_probability
+    uncovered_loss = cp.multiply(L, 1.0 - p)
+    expected_defender_loss = uncovered_loss @ q
     problem = BilevelProblem(
-        cp.Minimize(expected_defender_loss + coverage_penalty * cp.sum_squares(coverage)),
+        cp.Minimize(expected_defender_loss + gamma * cp.sum_squares(p)),
         attacker_problem,
-        upper_constraints=[cp.sum(coverage) <= patrol_budget],
+        upper_constraints=[cp.sum(p) <= B],
     )
     assert problem.is_dblp()
     problem.validate()
-    return attack_probability, coverage, problem
+    return p, problem, q
 
 
 @app.cell
 def _(problem):
-    epsilon_target = 1e-5
+    epsilon_target = 1e-9
     result = problem.solve(
         epsilon_initial=1e-2,
         epsilon_target=epsilon_target,
@@ -210,92 +182,83 @@ def _(problem):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Baseline patrol policies
+    ## Baseline protection policies
 
     We compare the optimized policy with two transparent baselines. The
-    no-patrol policy leaves every target uncovered. The uniform policy divides
-    the complete resource budget equally. For each fixed policy, the reference
-    attacker selects a utility-maximizing target, with defender-favorable
-    tie-breaking matching the strong-Stackelberg convention.
+    no-protection policy leaves every target uncovered. The uniform policy
+    divides the complete resource budget equally.
     """)
     return
 
 
 @app.cell
-def _(
-    attacker_reward,
-    defender_loss,
-    np,
-    patrol_budget,
-    protection_effect,
-    target_count,
-):
-    def _reference_response(coverage_value):
-        utility_value = attacker_reward - protection_effect * coverage_value
-        best_utility = float(np.max(utility_value))
-        tied_targets = np.flatnonzero(np.isclose(utility_value, best_utility, atol=1e-10, rtol=0.0))
-        tied_losses = defender_loss[tied_targets] * (1.0 - coverage_value[tied_targets])
+def _(B, L, c, n, np, r):
+    def _reference_response(p_value):
+        payoff_value = r - c * p_value
+        best_payoff = float(np.max(payoff_value))
+        tied_targets = np.flatnonzero(np.isclose(payoff_value, best_payoff, atol=1e-10, rtol=0.0))
+        tied_losses = L[tied_targets] * (1.0 - p_value[tied_targets])
         selected_target = int(tied_targets[np.argmin(tied_losses)])
-        response = np.zeros(target_count)
-        response[selected_target] = 1.0
-        defender_outcome = float((defender_loss * (1.0 - coverage_value)) @ response)
-        attacker_outcome = float(utility_value @ response)
-        return response, attacker_outcome, defender_outcome
+        q_value = np.zeros(n)
+        q_value[selected_target] = 1.0
+        defender_outcome = float((L * (1.0 - p_value)) @ q_value)
+        attacker_outcome = float(payoff_value @ q_value)
+        return q_value, attacker_outcome, defender_outcome
 
-    baseline_coverage = np.vstack(
+    baseline_p = np.vstack(
         (
-            np.zeros(target_count),
-            np.full(target_count, patrol_budget / target_count),
+            np.zeros(n),
+            np.full(n, B / n),
         )
     )
-    baseline_attack = np.empty_like(baseline_coverage)
-    baseline_attacker_utility = np.empty(baseline_coverage.shape[0])
-    baseline_defender_loss = np.empty(baseline_coverage.shape[0])
-    for baseline_index, fixed_coverage in enumerate(baseline_coverage):
+    baseline_q = np.empty_like(baseline_p)
+    baseline_attacker_utility = np.empty(baseline_p.shape[0])
+    baseline_defender_loss = np.empty(baseline_p.shape[0])
+    for baseline_index, fixed_p in enumerate(baseline_p):
         (
-            baseline_attack[baseline_index],
+            baseline_q[baseline_index],
             baseline_attacker_utility[baseline_index],
             baseline_defender_loss[baseline_index],
-        ) = _reference_response(fixed_coverage)
+        ) = _reference_response(fixed_p)
     return (
-        baseline_attack,
         baseline_attacker_utility,
-        baseline_coverage,
         baseline_defender_loss,
+        baseline_p,
+        baseline_q,
     )
 
 
 @app.cell(hide_code=True)
 def _(
-    attack_probability,
-    attacker_reward,
+    B,
+    L,
     baseline_defender_loss,
-    coverage,
-    coverage_penalty,
-    defender_loss,
+    c,
     diagnostics,
     epsilon_target,
+    gamma,
     mo,
     np,
-    patrol_budget,
-    protection_effect,
+    p,
+    q,
+    r,
     result,
     target_indices,
 ):
-    optimized_coverage = np.array(coverage.value, copy=True)
-    optimized_attack = np.array(attack_probability.value, copy=True)
-    attacker_utility_by_target = attacker_reward - protection_effect * optimized_coverage
-    optimized_defender_loss = float(np.sum(defender_loss * (1.0 - optimized_coverage) * optimized_attack))
-    patrol_regularizer = float(coverage_penalty * np.sum(np.square(optimized_coverage)))
-    attacked_target_index = int(np.argmax(optimized_attack))
+    optimized_p = np.array(p.value, copy=True)
+    optimized_q = np.array(q.value, copy=True)
+    attacker_payoff_by_target = r - c * optimized_p
+    optimized_defender_loss = float(np.sum(L * (1.0 - optimized_p) * optimized_q))
+    protection_regularizer = float(gamma * np.sum(np.square(optimized_p)))
+    attacked_target_index = int(np.argmax(optimized_q))
     attacked_target_number = int(target_indices[attacked_target_index])
-    maximum_attacker_utility = float(np.max(attacker_utility_by_target))
-    optimized_attacker_utility = float(attacker_utility_by_target @ optimized_attack)
-    active_attack_targets = np.flatnonzero(optimized_attack > 1e-6)
+    maximum_attacker_utility = float(np.max(attacker_payoff_by_target))
+    optimized_attacker_utility = float(attacker_payoff_by_target @ optimized_q)
+    active_attack_targets = np.flatnonzero(optimized_q > 1e-6)
     near_optimal_target_count = int(
-        np.count_nonzero(attacker_utility_by_target >= maximum_attacker_utility - 1.1 * epsilon_target)
+        np.count_nonzero(attacker_payoff_by_target >= maximum_attacker_utility - 1.1 * epsilon_target)
     )
-    used_coverage = float(np.sum(optimized_coverage))
+    used_budget = float(np.sum(optimized_p))
     uniform_loss_reduction = 100.0 * (baseline_defender_loss[1] - optimized_defender_loss) / baseline_defender_loss[1]
 
     assert result.succeeded, result.message
@@ -303,14 +266,14 @@ def _(
     assert np.isclose(result.final_epsilon, epsilon_target)
     assert result.residuals.max_violation <= 1e-7
     assert abs(diagnostics.source_gap) <= 1.1 * epsilon_target
-    assert np.all((optimized_coverage >= -1e-8) & (optimized_coverage <= 1.0 + 1e-8))
-    assert used_coverage <= patrol_budget + 1e-7
-    assert np.isclose(np.sum(optimized_attack), 1.0, atol=1e-7)
-    assert np.all(optimized_attack >= -1e-8)
-    assert np.all(attacker_utility_by_target[active_attack_targets] >= maximum_attacker_utility - 1.1 * epsilon_target)
+    assert np.all((optimized_p >= -1e-8) & (optimized_p <= 1.0 + 1e-8))
+    assert used_budget <= B + 1e-7
+    assert np.isclose(np.sum(optimized_q), 1.0, atol=1e-7)
+    assert np.all(optimized_q >= -1e-8)
+    assert np.all(attacker_payoff_by_target[active_attack_targets] >= maximum_attacker_utility - 1.1 * epsilon_target)
     assert optimized_defender_loss < np.min(baseline_defender_loss) - 1.0
 
-    mo.md(f"""
+    mo.md(rf"""
     ## Result
 
     | quantity | value |
@@ -319,11 +282,11 @@ def _(
     | most likely attack target | $i={attacked_target_number}$ |
     | maximum attacker utility | {maximum_attacker_utility:.6f} |
     | optimized expected attacker utility | {optimized_attacker_utility:.6f} |
-    | no-patrol defender loss | {baseline_defender_loss[0]:.6f} |
-    | uniform-patrol defender loss | {baseline_defender_loss[1]:.6f} |
+    | no-protection defender loss | {baseline_defender_loss[0]:.6f} |
+    | uniform-protection defender loss | {baseline_defender_loss[1]:.6f} |
     | optimized expected defender loss | {optimized_defender_loss:.6f} |
-    | patrol regularizer | {patrol_regularizer:.6f} |
-    | coverage used | {used_coverage:.6f} / {patrol_budget:.1f} |
+    | $\gamma\lVert p^\star\rVert_2^2$ | {protection_regularizer:.6f} |
+    | $\mathbf{{1}}^Tp^\star$ | {used_budget:.6f} / {B:.1f} |
     | final epsilon | {result.final_epsilon:.3e} |
     | maximum lifted residual | {result.residuals.max_violation:.3e} |
     | signed source gap | {diagnostics.source_gap:.3e} |
@@ -332,13 +295,13 @@ def _(
     responses. Under optimistic strong-Stackelberg semantics, the most likely
     attack is target {attacked_target_number}, the leader-favorable choice among
     those responses. The optimized policy reduces defender loss by
-    `{uniform_loss_reduction:.1f}%` relative to uniform patrol.
+    `{uniform_loss_reduction:.1f}%` relative to uniform protection.
     """)
     return (
-        optimized_attack,
         optimized_attacker_utility,
-        optimized_coverage,
         optimized_defender_loss,
+        optimized_p,
+        optimized_q,
     )
 
 
@@ -347,27 +310,28 @@ def _(mo):
     mo.md(r"""
     ## Policy and outcome comparisons
 
-    The mirrored policy chart compares both sides of the game under no patrol,
-    uniform patrol, and optimized patrol. Coverage probabilities extend right,
-    while attack probabilities extend left on the same scale. The outcome panel
-    compares expected defender loss and expected attacker utility across the
-    same three setups.
+    The mirrored policy chart compares both sides of the game under no
+    protection, uniform protection, and optimized protection. The defender
+    probabilities $p$ extend right, while the attacker probabilities $q$ extend
+    left on the same scale. The outcome panel compares expected defender loss
+    and expected attacker utility across the same three setups.
     """)
     return
 
 
 @app.cell(hide_code=True)
 def _(
+    Patch,
     Path,
-    baseline_attack,
     baseline_attacker_utility,
-    baseline_coverage,
     baseline_defender_loss,
+    baseline_p,
+    baseline_q,
     np,
-    optimized_attack,
     optimized_attacker_utility,
-    optimized_coverage,
     optimized_defender_loss,
+    optimized_p,
+    optimized_q,
     plt,
     target_indices,
 ):
@@ -375,9 +339,9 @@ def _(
     figure_dir.mkdir(parents=True, exist_ok=True)
 
     target_axis = np.arange(target_indices.size)
-    setup_names = ("No patrol", "Uniform", "Optimized")
-    coverage_policies = np.vstack((baseline_coverage, optimized_coverage))
-    attack_policies = np.vstack((baseline_attack, optimized_attack))
+    setup_names = ("None", "Uniform", "Optimized")
+    p_policies = np.vstack((baseline_p, optimized_p))
+    q_policies = np.vstack((baseline_q, optimized_q))
 
     figure = plt.figure(figsize=(7.5, 4), layout="constrained")
     figure_grid = figure.add_gridspec(1, 2, width_ratios=(1.25, 0.75))
@@ -386,22 +350,22 @@ def _(
 
     policy_height = 0.25
     setup_colors = ("gray", "C0", "C3")
-    for setup_index, (setup_name, setup_color) in enumerate(zip(setup_names, setup_colors, strict=True)):
+    for setup_index, setup_color in enumerate(setup_colors):
         policy_offset = (setup_index - 1) * policy_height
         policy_axis.barh(
             target_axis + policy_offset,
-            coverage_policies[setup_index],
+            p_policies[setup_index],
             height=policy_height,
             color=setup_color,
-            label=setup_name,
+            hatch="......",
         )
         policy_axis.barh(
             target_axis + policy_offset,
-            -attack_policies[setup_index],
+            -q_policies[setup_index],
             height=policy_height,
             color=setup_color,
             alpha=0.72,
-            hatch="////",
+            hatch="//////",
         )
     policy_axis.axvline(0.0, color="k", linewidth=0.8)
     policy_axis.set_yticks(target_axis, target_indices)
@@ -412,12 +376,32 @@ def _(
         xlim=(-1.08, 1.08),
     )
     policy_axis.invert_yaxis()
-    policy_axis.legend(frameon=False, fontsize=13, ncols=1, loc="upper left")
-    policy_axis.text(
-        0.98, 0.02, "Patrol coverage", transform=policy_axis.transAxes, ha="right", va="bottom", fontsize=13
+    policy_legend_handles = [
+        Patch(facecolor=color, edgecolor="none", label=name)
+        for name, color in zip(setup_names, setup_colors, strict=True)
+    ]
+    policy_axis.legend(
+        handles=policy_legend_handles,
+        frameon=False,
+        fontsize=13,
+        ncols=1,
+        loc="upper left",
     )
     policy_axis.text(
-        0.02, 0.02, "Attacker response", transform=policy_axis.transAxes, ha="left", va="bottom", fontsize=13
+        0.95,
+        0.05,
+        r"$p$",
+        transform=policy_axis.transAxes,
+        ha="right",
+        va="bottom",
+    )
+    policy_axis.text(
+        0.05,
+        0.05,
+        r"$q$",
+        transform=policy_axis.transAxes,
+        ha="left",
+        va="bottom",
     )
 
     outcome_positions = np.arange(len(setup_names))
@@ -428,26 +412,44 @@ def _(
         outcome_positions - outcome_width / 2,
         defender_outcomes,
         width=outcome_width,
-        facecolor="w",
+        color=setup_colors,
         edgecolor="k",
         linewidth=1.1,
-        label=r"$\sum_i L_i(1-c_i)a_i$",
+        hatch="....",
     )
     attacker_bars = outcome_axis.bar(
         outcome_positions + outcome_width / 2,
         attacker_outcomes,
         width=outcome_width,
-        facecolor="w",
+        color=setup_colors,
         edgecolor="k",
         linewidth=1.1,
         hatch="////",
-        label=r"$\sum_i(r_i-e_i c_i)a_i$",
     )
     outcome_axis.bar_label(defender_bars, fmt="%.2f", padding=3, fontsize=11)
     outcome_axis.bar_label(attacker_bars, fmt="%.2f", padding=3, fontsize=11)
     outcome_axis.set_xticks(outcome_positions, setup_names, fontsize=13)
     outcome_axis.set(ylim=(0.0, 1.16 * np.max(defender_outcomes)), ylabel="Loss/Utility")
-    outcome_axis.legend(frameon=False, fontsize=12, ncols=1)
+    outcome_legend_handles = (
+        Patch(
+            facecolor="white",
+            edgecolor="black",
+            hatch="....",
+            label=r"$\sum_{i=1}^n L_i(1-p_i)q_i$",
+        ),
+        Patch(
+            facecolor="white",
+            edgecolor="black",
+            hatch="////",
+            label=r"$\sum_{i=1}^n(r_i-c_i p_i)q_i$",
+        ),
+    )
+    outcome_axis.legend(
+        handles=outcome_legend_handles,
+        frameon=False,
+        fontsize=12,
+        ncols=1,
+    )
 
     figure_path = figure_dir / "stackelberg_port_security.pdf"
     figure.savefig(figure_path, bbox_inches="tight")
