@@ -14,7 +14,23 @@ import pytest
 from scripts.verify_release import canonical_stable_version, verify_distributions, write_checksums
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-ACTION_PATTERN = re.compile(r"^\s*uses:\s+([^\s#]+)", re.MULTILINE)
+WORKFLOWS_DIRECTORY = REPOSITORY_ROOT / ".github" / "workflows"
+ACTION_PATTERN = re.compile(r"^\s*(?:-\s*)?uses:\s+([^\s#]+)", re.MULTILINE)
+# JavaScript actions use Node.js 24; composite actions transitively use Node.js 24 or Docker.
+REVIEWED_ACTION_PINS = frozenset(
+    {
+        "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+        "actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d",
+        "actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128",
+        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9",
+        "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b",
+        "conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5",
+        "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33",
+    }
+)
 
 
 def _source_tree(root: Path) -> Path:
@@ -141,9 +157,9 @@ def test_runtime_version_comes_from_distribution_metadata() -> None:
     assert blvpy.__version__ == importlib.metadata.version("blvpy")
 
 
-def test_release_workflows_are_ordered_and_action_pins_are_immutable() -> None:
-    release = (REPOSITORY_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-    documentation = (REPOSITORY_ROOT / ".github" / "workflows" / "docs.yml").read_text(encoding="utf-8")
+def test_release_workflows_are_ordered() -> None:
+    release = (WORKFLOWS_DIRECTORY / "release.yml").read_text(encoding="utf-8")
+    documentation = (WORKFLOWS_DIRECTORY / "docs.yml").read_text(encoding="utf-8")
 
     assert "release:" in release and "- published" in release
     assert "needs: verify" in release
@@ -153,9 +169,19 @@ def test_release_workflows_are_ordered_and_action_pins_are_immutable() -> None:
     assert "Publish latest and versioned documentation" in release
     assert "workflow_call:" in documentation
     assert "scripts/stage_docs.py stage-release" in documentation
+    pages_upload = documentation.split("      - name: Upload Pages artifact\n", 1)[1].split("\n\n", 1)[0]
+    assert "include-hidden-files: true" in pages_upload
 
+
+def test_external_workflow_action_pins_are_immutable() -> None:
+    workflows = sorted([*WORKFLOWS_DIRECTORY.glob("*.yml"), *WORKFLOWS_DIRECTORY.glob("*.yaml")])
+    assert workflows
     external_actions = [
-        action for action in ACTION_PATTERN.findall(release + "\n" + documentation) if not action.startswith("./")
+        action
+        for workflow in workflows
+        for action in ACTION_PATTERN.findall(workflow.read_text(encoding="utf-8"))
+        if not action.startswith("./")
     ]
     assert external_actions
     assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", action) for action in external_actions)
+    assert set(external_actions) == REVIEWED_ACTION_PINS
