@@ -105,6 +105,10 @@ variable recovery maps. Obtain them by calling
 {meth}`blvpy.BilevelProblem.canonicalize` and use their documented inspection
 methods.
 
+For a lower `cp.Maximize(f)` objective, these objects expose the normalized
+`cp.Minimize(-f)` conic form. Their canonical objective values therefore have
+the opposite sign from the original lower objective.
+
 They are not intended to be constructed or modified by users. In particular,
 do not instantiate these classes directly, mutate arrays or CVXPY expressions
 stored inside them, or rely on their exact field organization remaining

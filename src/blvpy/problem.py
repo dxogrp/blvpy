@@ -55,7 +55,7 @@ class _LiftedProblem:
 
 
 class BilevelProblem:
-    """An optimistic bilevel minimization problem.
+    """An optimistic bilevel optimization problem.
 
     The upper expressions reuse the lower decision-variable objects from
     ``lower_problem``. BLVPY therefore optimizes over all lower-optimal
@@ -65,7 +65,7 @@ class BilevelProblem:
     ----------
     upper_objective : cvxpy.Objective
         Objective of the upper problem. Validation requires a real-valued
-        scalar :class:`cvxpy.Minimize` objective.
+        scalar :class:`cvxpy.Minimize` or :class:`cvxpy.Maximize` objective.
     lower_problem : LowerProblem
         Convex lower problem and its linked upper variables.
     upper_constraints : sequence of cvxpy.Constraint, optional
@@ -226,7 +226,8 @@ class BilevelProblem:
         Raises
         ------
         ValidationError
-            If the lower problem is not a supported DCP/DPP minimization.
+            If the lower problem is not a supported DCP/DPP optimization
+            problem.
         UnsupportedConeError
             If canonicalization contains PSD, exponential, or power cones.
         CanonicalizationError
@@ -279,7 +280,7 @@ class BilevelProblem:
             ``None`` performs one deterministic continuation. A positive
             integer performs that many independently initialized complete
             continuations and selects the acceptable target-epsilon result
-            with the smallest upper objective.
+            with the best upper objective in its modeled sense.
         feasibility_tolerance : float, default=1e-7
             Nonnegative threshold applied to independently computed lifted
             feasibility and relaxed-gap residuals.
@@ -385,8 +386,8 @@ class BilevelProblem:
         Returns
         -------
         GapDiagnostics
-            Canonical inexact-gap terms and the signed difference between the
-            returned lower objective and the reference optimum.
+            Canonical inexact-gap terms and sense-normalized lower
+            suboptimality against the reference optimum.
 
         Raises
         ------
@@ -419,8 +420,8 @@ class BilevelProblem:
         )
 
     def _validate_upper(self) -> None:
-        if not isinstance(self.upper_objective, cp.Minimize):
-            raise UnsupportedModelError("The upper problem must be a minimization problem.")
+        if not isinstance(self.upper_objective, (cp.Minimize, cp.Maximize)):
+            raise UnsupportedModelError("The upper objective must use cp.Minimize or cp.Maximize.")
         if not self.upper_objective.expr.is_scalar() or not self.upper_objective.expr.is_real():
             raise ValidationError("The upper objective must be a real-valued scalar expression.")
 

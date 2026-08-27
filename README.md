@@ -38,6 +38,9 @@ When that lower problem satisfies DPP, BLVPY uses the CVXPY canonicalization bac
 BLVPY expresses optimality of the canonicalized lower problem through primal feasibility, dual feasibility, and the relaxed conic gap condition $s^T \lambda \leq \epsilon$.
 This produces a single-level problem, which BLVPY solves through CVXPY's nonlinear interface while warm-starting a sequence of problems with progressively smaller values of $\epsilon \to 0$.
 
+Note that BLVPY also supports `cp.Maximize` objectives in the upper and lower problems.
+These are internally converted to `cp.Minimize` objectives by negating the objective function before canonicalization, so that the lower problem remains convex.
+
 ## Installation
 
 BLVPY requires:

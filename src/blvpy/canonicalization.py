@@ -695,9 +695,11 @@ def _validate_lower(
 
     if not isinstance(lower_problem, cp.Problem):
         raise ValidationError("lower_problem must be a cvxpy.Problem.")
-    if not isinstance(lower_problem.objective, cp.Minimize):
-        raise ValidationError("The lower problem must be a minimization problem.")
-    if lower_problem.objective.expr.is_complex():
+    if not isinstance(lower_problem.objective, (cp.Minimize, cp.Maximize)):
+        raise ValidationError("The lower objective must use cp.Minimize or cp.Maximize.")
+    if not lower_problem.objective.expr.is_scalar():
+        raise ValidationError("The lower objective must be a scalar expression.")
+    if not lower_problem.objective.expr.is_real():
         raise UnsupportedModelError("The lower objective must be real-valued.")
     if lower_problem.is_mixed_integer():
         raise UnsupportedModelError("Mixed-integer lower problems are not supported.")
@@ -757,6 +759,11 @@ def _canonicalize_lower(
     _validate_lower(lower_problem, parameter_links)
     mapping = dict(parameter_links)
     canonical_problem = _freeze_unmapped_parameters(lower_problem, {parameter.id for parameter in mapping})
+    if isinstance(canonical_problem.objective, cp.Maximize):
+        canonical_problem = cp.Problem(
+            cp.Minimize(-canonical_problem.objective.expr),
+            canonical_problem.constraints,
+        )
     try:
         data, chain, inverse_data = canonical_problem.get_problem_data(
             cp.CLARABEL,

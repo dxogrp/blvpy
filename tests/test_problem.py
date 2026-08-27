@@ -153,30 +153,44 @@ def test_mapped_parameter_domain_is_carried_into_lifted_problem() -> None:
 
 
 @pytest.mark.parametrize(
-    ("factory", "message"),
+    ("upper_sense", "lower_sense"),
     [
-        (
-            lambda: (
-                cp.Maximize(cp.Variable(name="upper_x")),
-                LowerProblem(cp.Minimize(cp.Variable(name="lower_y"))),
-            ),
-            "upper problem must be a minimization",
-        ),
-        (
-            lambda: (
-                cp.Minimize(cp.Variable(name="upper_x")),
-                LowerProblem(cp.Maximize(cp.Variable(name="lower_y"))),
-            ),
-            "lower problem must be a minimization",
-        ),
+        (cp.Minimize, cp.Minimize),
+        (cp.Minimize, cp.Maximize),
+        (cp.Maximize, cp.Minimize),
+        (cp.Maximize, cp.Maximize),
     ],
+    ids=("min-min", "min-max", "max-min", "max-max"),
 )
-def test_rejects_maximization_levels(factory, message: str) -> None:
-    objective, lower = factory()
-    problem = BilevelProblem(objective, lower)
+def test_accepts_all_upper_and_lower_objective_sense_combinations(
+    upper_sense,
+    lower_sense,
+) -> None:
+    x = cp.Variable(name="x", bounds=[-2.0, 2.0])
+    y = cp.Variable(name="y")
+    lower_expression = cp.square(y - x)
+    lower_objective = lower_sense(lower_expression) if lower_sense is cp.Minimize else lower_sense(-lower_expression)
+    upper_expression = cp.square(x) + cp.square(y)
+    upper_objective = upper_sense(upper_expression) if upper_sense is cp.Minimize else upper_sense(-upper_expression)
+    lower = LowerProblem(lower_objective, parameters=[x])
+    problem = BilevelProblem(upper_objective, lower)
+
+    assert problem.is_dblp()
+    assert problem.validate() is None
+    assert problem.upper_objective is upper_objective
+    assert problem.lower_problem.objective is lower_objective
+    assert problem._lifted_problem.problem.objective is upper_objective
+    assert isinstance(problem._cvxpy_lower_problem.objective, lower_sense)
+
+
+def test_rejects_convex_lower_maximization_as_non_dcp() -> None:
+    x = cp.Variable(name="x", bounds=[-2.0, 2.0])
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Maximize(cp.square(y - x)), parameters=[x])
+    problem = BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), lower)
 
     assert not problem.is_dblp()
-    with pytest.raises(ValidationError, match=message):
+    with pytest.raises(ValidationError, match="DCP"):
         problem.validate()
 
 

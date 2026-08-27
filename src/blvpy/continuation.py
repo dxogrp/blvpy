@@ -282,7 +282,7 @@ def _solve_bilevel(
         selected = min(
             successful,
             key=lambda outcome: (
-                float(outcome.record.objective),
+                _upper_objective_merit(model, float(outcome.record.objective)),
                 outcome.record.index,
             ),
         )
@@ -290,7 +290,7 @@ def _solve_bilevel(
         result_message = selected.record.message
     else:
         partial = [outcome for outcome in outcomes if outcome.accepted_initial and outcome.state is not None]
-        selected = min(partial, key=_partial_run_key)
+        selected = min(partial, key=lambda outcome: _partial_run_key(model, outcome))
         result_status = "continuation_failed"
         result_message = "No run reached the requested target epsilon with acceptable residuals."
 
@@ -611,15 +611,26 @@ def _partial_run_outcome(
 
 
 def _partial_run_key(
+    model: BilevelProblem,
     outcome: _RunOutcome,
 ) -> tuple[float, float, int]:
     epsilon = outcome.record.final_epsilon
     objective = outcome.record.objective
     return (
         float("inf") if epsilon is None else float(epsilon),
-        float("inf") if objective is None or not np.isfinite(objective) else float(objective),
+        (
+            float("inf")
+            if objective is None or not np.isfinite(objective)
+            else _upper_objective_merit(model, float(objective))
+        ),
         outcome.record.index,
     )
+
+
+def _upper_objective_merit(model: BilevelProblem, objective: float) -> float:
+    """Return a minimization-oriented key for an original-sense objective."""
+
+    return -objective if isinstance(model.upper_objective, cp.Maximize) else objective
 
 
 def _checked_record(
@@ -989,9 +1000,13 @@ def _compile_probe(lifted: _LiftedProblem) -> None:
 
     try:
         from cvxpy.reductions.dnlp2smooth.dnlp2smooth import Dnlp2Smooth
+        from cvxpy.reductions.flip_objective import FlipObjective
         from cvxpy.reductions.solvers.nlp_solvers.nlp_solver import Bounds, Oracles
 
-        smooth, _ = Dnlp2Smooth().apply(lifted.problem)
+        problem = lifted.problem
+        if isinstance(problem.objective, cp.Maximize):
+            problem, _ = FlipObjective().apply(problem)
+        smooth, _ = Dnlp2Smooth().apply(problem)
         bounds = Bounds(smooth)
         oracles = Oracles(
             bounds.new_problem,

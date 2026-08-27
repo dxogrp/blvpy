@@ -25,7 +25,9 @@ class LowerProblem:
     ----------
     objective : cvxpy.Objective
         Objective of the lower problem. A supported bilevel model must use
-        :class:`cvxpy.Minimize` and satisfy DCP and DPP when validated.
+        :class:`cvxpy.Minimize` or :class:`cvxpy.Maximize` and satisfy DCP and
+        DPP when validated. Maximization objectives are normalized internally
+        to equivalent minimization objectives during canonicalization.
     constraints : sequence of cvxpy.Constraint or None, optional
         Lower constraints. ``None`` and the default empty sequence both mean
         that the lower problem has no explicit constraints.

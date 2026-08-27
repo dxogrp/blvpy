@@ -245,6 +245,39 @@ def test_hand_derived_scalar_lp_data_solution_and_recovery() -> None:
         assert canonical_objective == pytest.approx(direct_objective, abs=5e-8)
 
 
+def test_maximization_is_canonicalized_with_negated_objective_offset_and_recovery() -> None:
+    parameter = cp.Parameter(name="parameter", value=0.0)
+    source = cp.Variable(name="source")
+    problem = cp.Problem(
+        cp.Maximize(source + 3.0 * parameter - 2.0),
+        [source <= parameter],
+    )
+    canonical = _canonicalize_lower(problem, {parameter: cp.Variable(name="upper")})
+
+    assert canonical._source_problem is problem
+    assert isinstance(canonical._canonical_problem.objective, cp.Minimize)
+    assert canonical.canonical_size == 1
+    assert canonical.constraint_size == 1
+
+    for value in (-0.7, 0.4, 1.2):
+        parameter.value = value
+        data, primal, canonical_objective = _solve_canonical(canonical, {parameter: value})
+
+        np.testing.assert_array_equal(data.A.toarray(), [[1.0]])
+        np.testing.assert_array_equal(data.b, [value])
+        np.testing.assert_array_equal(data.c, [-1.0])
+        assert data.d == pytest.approx(-3.0 * value + 2.0)
+
+        recovered = canonical.recover_numeric(primal)[source.id]
+        np.testing.assert_allclose(recovered, value, atol=5e-8)
+
+        original_objective = problem.solve(solver=cp.CLARABEL)
+        assert problem.status in cp.settings.SOLUTION_PRESENT
+        assert source.value == pytest.approx(value, abs=5e-8)
+        assert canonical_objective == pytest.approx(-original_objective, abs=5e-8)
+        assert canonical_objective == pytest.approx(-4.0 * value + 2.0, abs=5e-8)
+
+
 @pytest.mark.parametrize(
     ("seed", "dimension"),
     [(3, 2), (17, 3), (41, 4)],
@@ -723,8 +756,8 @@ def test_invalid_source_models_are_rejected() -> None:
     fixed_missing = cp.Problem(cp.Minimize(cp.sum_squares(x - parameter[0])))
     with pytest.raises(ParameterMappingError, match="fixed value"):
         _canonicalize_lower(fixed_missing, {})
-    with pytest.raises(ValidationError, match="minimization"):
-        _canonicalize_lower(cp.Problem(cp.Maximize(x)), {})
+    with pytest.raises(ValidationError, match="DCP"):
+        _canonicalize_lower(cp.Problem(cp.Maximize(cp.square(x))), {})
 
     integer = cp.Variable(integer=True)
     with pytest.raises(UnsupportedModelError, match="Mixed-integer"):

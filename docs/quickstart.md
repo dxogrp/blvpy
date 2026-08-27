@@ -53,5 +53,5 @@ print("maximum violation =", result.residuals.max_violation)
 
 # This optional call performs one additional fixed-upper lower solve.
 diagnostics = problem.gap_diagnostics(result)
-print("signed source gap =", diagnostics.source_gap)
+print("source gap =", diagnostics.source_gap)
 ```

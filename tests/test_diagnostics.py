@@ -165,6 +165,30 @@ def test_gap_diagnostics_computes_complete_hand_derived_lp_terms_and_restores_st
         np.testing.assert_array_equal(result.variable_values[variable], value)
 
 
+def test_maximize_lower_source_gap_is_optimum_minus_returned_value() -> None:
+    x = cp.Variable(name="x")
+    y = cp.Variable(name="y")
+    lower_objective = cp.Maximize(y + 3.0 * x - 2.0)
+    lower = LowerProblem(lower_objective, [y <= x], parameters=[x])
+    model = BilevelProblem(cp.Minimize(cp.square(x) + cp.square(y)), lower)
+    result = BilevelResult(
+        status="optimal",
+        objective=0.4**2 + 0.15**2,
+        variable_values={x: np.array(0.4), y: np.array(0.15)},
+        canonical_primal=(0.15,),
+        slack=(0.25,),
+        dual=(1.0,),
+    )
+
+    diagnostics = model.gap_diagnostics(result)
+
+    assert model.lower_problem.objective is lower_objective
+    assert diagnostics.primal_objective == pytest.approx(-0.15, abs=1e-12)
+    assert diagnostics.dual_objective == pytest.approx(-0.4, abs=1e-12)
+    assert diagnostics.normalized_gap == pytest.approx(0.25, abs=1e-12)
+    assert diagnostics.source_gap == pytest.approx(0.25, abs=1e-8)
+
+
 def test_gap_diagnostics_invokes_exactly_one_additional_quiet_clarabel_solve(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

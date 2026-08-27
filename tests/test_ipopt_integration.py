@@ -195,7 +195,10 @@ def _fresh_fixed_lower_reference(
         tol_feas=1e-10,
     )
     assert canonical_reference.status in cp.settings.SOLUTION_PRESENT
-    assert canonical_reference.value == pytest.approx(direct_lower_value, abs=1e-8)
+    normalized_direct_value = (
+        -direct_lower_value if isinstance(model.lower_problem.objective, cp.Maximize) else direct_lower_value
+    )
+    assert canonical_reference.value == pytest.approx(normalized_direct_value, abs=1e-8)
 
     if check_recovery:
         canonical_primal = np.asarray(primal.value, dtype=float).reshape(-1)
@@ -267,7 +270,10 @@ def _check_against_numerical_oracles(
     data = model.canonicalize().apply_numeric(parameter_values)
     canonical_primal = np.asarray(result.canonical_primal, dtype=float).reshape(-1)
     returned_canonical_value = float(data.c @ canonical_primal + data.d)
-    assert returned_canonical_value == pytest.approx(returned_lower_value, abs=canonical_source_atol)
+    normalized_returned_value = (
+        -returned_lower_value if isinstance(model.lower_problem.objective, cp.Maximize) else returned_lower_value
+    )
+    assert returned_canonical_value == pytest.approx(normalized_returned_value, abs=canonical_source_atol)
 
     independent_residuals, gap_diagnostics = _independent_residuals(
         model,
@@ -286,7 +292,11 @@ def _check_against_numerical_oracles(
     finally:
         _assign_source_values(source_values)
 
-    source_gap = returned_lower_value - direct_lower_value
+    source_gap = (
+        direct_lower_value - returned_lower_value
+        if isinstance(model.lower_problem.objective, cp.Maximize)
+        else returned_lower_value - direct_lower_value
+    )
     assert source_gap >= -_SOURCE_GAP_LOWER_TOL
     assert source_gap <= result.final_epsilon + _SOURCE_GAP_UPPER_TOL
 
@@ -363,6 +373,37 @@ def test_analytic_quadratic_reaches_target_and_is_epsilon_lower_optimal() -> Non
         result,
         check_gap_convenience=True,
     )
+    assert oracle.source_gap == pytest.approx(result.final_epsilon, abs=3e-6)
+
+
+def test_analytic_max_max_preserves_original_objective_values() -> None:
+    x = cp.Variable(name="x", bounds=[-2.0, 2.0])
+    y = cp.Variable(name="y")
+    lower_objective = cp.Maximize(-cp.square(y - x))
+    lower = LowerProblem(lower_objective, parameters=[x])
+    upper_objective = cp.Maximize(-cp.square(x - 1.0) - cp.square(y + 1.0))
+    model = BilevelProblem(upper_objective, lower)
+
+    result = _solve(model, seed=5)
+
+    assert result.final_epsilon == pytest.approx(1e-5)
+    displacement = sqrt(result.final_epsilon) / 2.0
+    np.testing.assert_allclose([x.value, y.value], [displacement, -displacement], atol=1e-3)
+    expected_upper_value = -2.0 + 2.0 * sqrt(result.final_epsilon) - result.final_epsilon / 2.0
+    expected_lower_value = -result.final_epsilon
+    assert result.objective == pytest.approx(expected_upper_value, abs=2e-3)
+    assert result.selected_run is not None
+    assert result.selected_run.objective == pytest.approx(result.objective, abs=1e-9)
+    assert result.final_iteration is not None
+    assert result.final_iteration.objective == pytest.approx(result.objective, abs=1e-9)
+    assert lower_objective.value == pytest.approx(expected_lower_value, abs=3e-6)
+
+    oracle = _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+    )
+    assert oracle.direct_lower_value == pytest.approx(0.0, abs=1e-8)
     assert oracle.source_gap == pytest.approx(result.final_epsilon, abs=3e-6)
 
 

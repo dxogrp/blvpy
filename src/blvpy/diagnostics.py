@@ -65,7 +65,10 @@ def _gap_diagnostics(
             solve_options,
             bool(solver_verbose),
         )
-        source_gap = returned_value - reference_value
+        if isinstance(model.lower_problem.objective, cp.Maximize):
+            source_gap = reference_value - returned_value
+        else:
+            source_gap = returned_value - reference_value
     finally:
         for variable, state in variable_states.items():
             _restore_leaf(variable, state)

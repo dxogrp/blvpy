@@ -2,7 +2,18 @@
 
 ## Epsilon continuation
 
-The canonicalized lower problem is a convex conic program in the form
+Let $f_0(x,y)$ denote the modeled lower objective expression. BLVPY first
+defines the minimization-oriented expression
+
+$$
+\widehat f_0(x,y)=
+\begin{cases}
+f_0(x,y),&\text{for }\texttt{cp.Minimize},\\
+-f_0(x,y),&\text{for }\texttt{cp.Maximize}.
+\end{cases}
+$$
+
+The canonicalized lower problem is then a convex conic program in the form
 
 $$
 \begin{array}{ll}
@@ -15,6 +26,8 @@ $$
 where $u,s$ are the lower primal and slack variables; $c(x),d(x),A(x),b(x)$
 are upper-dependent canonical data; and $\mathcal{K}$ is a Cartesian product
 of cones.
+$c(x)^Tu+d(x)$ represents $\widehat f_0$, so for a modeled lower
+maximization its value is the negative of the original lower objective value.
 BLVPY solves the bilevel problem by continuation on a small relaxation of the lower KKT complementarity condition.
 
 BLVPY introduces a dual vector $\lambda\in \mathcal{K}^*$ and imposes
@@ -122,7 +135,14 @@ initializations and runs a complete, independent continuation for every viable
 one. Eligible components are sampled; components controlled by an existing
 `.value` remain fixed unless `sample_bounds` overrides that value. Only runs
 that reach the target epsilon with acceptable residuals compete, and BLVPY
-selects the lowest final upper objective, breaking ties by run index.
+selects the best final upper objective in its modeled sense: the lowest value
+for `cp.Minimize` and the highest value for `cp.Maximize`. Ties are broken by
+run index.
+
+If no run reaches the target epsilon, BLVPY returns the best partial run. It
+first prefers the smallest attained epsilon, then the best finite upper
+objective in the modeled sense, and finally the lowest run index. A missing or
+nonfinite objective ranks after any finite objective at the same epsilon.
 
 ```python
 x.sample_bounds = (-2.0, 2.0)  # sampling metadata (not a constraint)

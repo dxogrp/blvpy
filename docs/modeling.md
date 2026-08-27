@@ -35,9 +35,12 @@ Unlisted variables remain the original lower variables.
 
 The complete model must satisfy **all** of the following:
 
-- The upper problem is a real-valued continuous minimization problem.
+- The upper problem is a real-valued continuous optimization problem with a
+  scalar `cp.Minimize` or `cp.Maximize` objective.
 - The assembled upper objective and upper constraints are compatible with CVXPY's DNLP rules.
-- The lower problem is a real-valued continuous convex minimization problem.
+- The lower problem is a real-valued continuous convex optimization problem:
+  either `cp.Minimize` with a convex objective expression or `cp.Maximize`
+  with a concave objective expression.
 - The lower problem contains at least one canonical optimization variable;
   constant-only lower problems are not supported.
 - The lower problem is DCP and DPP with respect to every linked upper variable.
@@ -54,6 +57,19 @@ See {doc}`troubleshooting` for the exception categories.
 BLVPY also audits every nonlinear node in the lower source expression tree.
 See {doc}`supported-atoms` for the complete allowlist, exactness conditions,
 and unsupported atom families.
+
+## Objective senses and canonicalization
+
+BLVPY preserves the objective objects supplied by the model. In particular,
+{attr}`~blvpy.LowerProblem.objective` returns the original `cp.Minimize` or
+`cp.Maximize` object.
+
+Internally, a lower `cp.Maximize(f)` objective is changed to the equivalent
+`cp.Minimize(-f)` objective immediately before conic canonicalization. The
+canonical vectors and offsets, KKT conditions, and residuals therefore always
+use a minimization convention. For lower maximization, the canonical objective
+$c(x)^T u+d(x)$ equals the negative of the modeled lower objective $f(x,y)$.
+This sign convention also applies to advanced canonical inspection.
 
 ## Parameters and fixed data
 

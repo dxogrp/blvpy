@@ -15,13 +15,15 @@ from blvpy.result import IterationRecord, Residuals
 _ZERO_RESIDUALS = Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 
-def _quadratic_bilevel(*, bounded: bool = True):
+def _quadratic_bilevel(*, bounded: bool = True, maximize: bool = False):
     attributes = {"bounds": [-2.0, 2.0]} if bounded else {}
     x = cp.Variable(name="x", **attributes)
     y = cp.Variable(name="y")
     lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    upper_expression = cp.square(x - 1.0) + cp.square(y + 1.0)
+    upper_objective = cp.Maximize(-upper_expression) if maximize else cp.Minimize(upper_expression)
     model = BilevelProblem(
-        cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0)),
+        upper_objective,
         lower,
         upper_constraints=[x + y <= 3.0],
     )
@@ -335,12 +337,14 @@ def test_solve_argument_validation_precedes_numerical_backends() -> None:
         model.solve(contraction=1.0)
 
 
+@pytest.mark.parametrize("maximize", [False, True], ids=("minimize", "maximize"))
 def test_compile_probe_evaluates_solver_neutral_first_order_oracles(
     monkeypatch: pytest.MonkeyPatch,
+    maximize: bool,
 ) -> None:
     from cvxpy.reductions.solvers.nlp_solvers.nlp_solver import Oracles
 
-    model, x, _, _ = _quadratic_bilevel()
+    model, x, _, _ = _quadratic_bilevel(maximize=maximize)
     x.value = 0.25
     continuation._initialize_lower(model, cp.CLARABEL, {}, False)
 
@@ -488,11 +492,14 @@ def test_public_best_of_one_uses_one_random_run(monkeypatch) -> None:
     assert float(result.runs[0].initial_values[x]) != pytest.approx(0.75)
 
 
-def test_equal_final_objectives_select_lowest_run_index(monkeypatch) -> None:
+@pytest.mark.parametrize("maximize", [False, True], ids=("minimize", "maximize"))
+def test_equal_final_objectives_select_lowest_run_index(monkeypatch, maximize: bool) -> None:
     x = cp.Variable(name="x", bounds=[-2.0, 2.0])
     y = cp.Variable(name="y")
     lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
-    model = BilevelProblem(cp.Minimize(0.0 * x + 0.0 * y), lower)
+    upper_expression = 0.0 * x + 0.0 * y
+    upper_objective = cp.Maximize(upper_expression) if maximize else cp.Minimize(upper_expression)
+    model = BilevelProblem(upper_objective, lower)
 
     monkeypatch.setattr(
         continuation,
@@ -529,6 +536,63 @@ def test_equal_final_objectives_select_lowest_run_index(monkeypatch) -> None:
     assert result.all_objectives == pytest.approx((0.0, 0.0))
     assert result.selected_run_index == 0
     assert float(x.value) == pytest.approx(-1.0)
+
+
+def test_maximize_best_of_prefers_largest_finite_objective_then_lowest_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    x = cp.Variable(name="x", bounds=[-1.0, 2.0])
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    model = BilevelProblem(cp.Maximize(cp.log(x + 1.0) + 0.0 * y), lower)
+
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: (
+            {x: np.array(-1.0)},
+            {x: np.array(0.0)},
+            {x: np.array(1.0)},
+            {x: np.array(1.0)},
+        ),
+    )
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(continuation, "compute_residuals", lambda *args, **kwargs: _ZERO_RESIDUALS)
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda current, *args, **kwargs: _mock_compatible_state(current, x, y),
+    )
+
+    def fake_solve(current, epsilon, solver, options, solver_verbose):
+        value = current.upper_objective.value
+        return IterationRecord(
+            epsilon,
+            cp.OPTIMAL,
+            None if value is None else float(value),
+            _ZERO_RESIDUALS,
+        )
+
+    monkeypatch.setattr(continuation, "_solve_one", fake_solve)
+
+    with np.errstate(divide="ignore"):
+        result = model.solve(
+            epsilon_initial=1e-2,
+            epsilon_target=1e-2,
+            best_of=4,
+            solver="MOCK_NLP",
+            restoration=False,
+            verbose=False,
+        )
+
+    assert result.runs[0].objective is None
+    assert [run.objective for run in result.runs[1:]] == pytest.approx(
+        [0.0, np.log(2.0), np.log(2.0)],
+    )
+    assert result.runs[0].status == "objective_unavailable"
+    assert result.selected_run_index == 2
+    assert float(x.value) == pytest.approx(1.0)
+    assert result.objective == pytest.approx(np.log(2.0))
 
 
 def test_best_of_completes_every_run_and_selects_by_target_objective(
@@ -787,6 +851,56 @@ def test_partial_best_of_selects_smallest_attained_epsilon(monkeypatch) -> None:
     assert result.selected_run_index == 0
     assert result.final_epsilon == pytest.approx(1e-2)
     assert float(x.value) == pytest.approx(-1.0)
+
+
+def test_partial_maximize_best_of_prefers_largest_objective_at_equal_epsilon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    x = cp.Variable(name="x", bounds=[-2.0, 2.0])
+    y = cp.Variable(name="y")
+    lower = LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
+    model = BilevelProblem(cp.Maximize(x + 0.0 * y), lower)
+
+    monkeypatch.setattr(
+        continuation,
+        "_generate_upper_initializations",
+        lambda *args, **kwargs: ({x: np.array(-1.0)}, {x: np.array(1.0)}),
+    )
+    monkeypatch.setattr(continuation, "_compile_probe", lambda *args, **kwargs: None)
+    monkeypatch.setattr(continuation, "compute_residuals", lambda *args, **kwargs: _ZERO_RESIDUALS)
+    monkeypatch.setattr(
+        continuation,
+        "_initialize_lower",
+        lambda current, *args, **kwargs: _mock_compatible_state(current, x, y),
+    )
+
+    def fake_solve(current, epsilon, solver, options, solver_verbose):
+        accepted = np.isclose(epsilon, 1e-1)
+        return IterationRecord(
+            epsilon,
+            cp.OPTIMAL if accepted else "solver_error",
+            float(current.upper_objective.value) if accepted else None,
+            _ZERO_RESIDUALS,
+        )
+
+    monkeypatch.setattr(continuation, "_solve_one", fake_solve)
+
+    result = model.solve(
+        epsilon_initial=1e-1,
+        epsilon_target=1e-2,
+        best_of=2,
+        solver="MOCK_NLP",
+        restoration=False,
+        max_retries=0,
+        verbose=False,
+    )
+
+    assert result.status == "continuation_failed"
+    assert [run.final_epsilon for run in result.runs] == pytest.approx([1e-1, 1e-1])
+    assert [run.objective for run in result.runs] == pytest.approx([-1.0, 1.0])
+    assert result.selected_run_index == 1
+    assert float(x.value) == pytest.approx(1.0)
+    assert result.objective == pytest.approx(1.0)
 
 
 def test_best_of_retry_schedule_is_local_to_each_run(monkeypatch) -> None:

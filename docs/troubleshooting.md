@@ -4,9 +4,10 @@
 
 Call `problem.validate()` directly instead of relying only on
 `problem.is_dblp()`. The former preserves the detailed exception. Common causes
-are a non-DPP lower expression, a lower maximization problem, an unsupported
-cone, an approximate or unaudited atom, an unset ordinary CVXPY parameter, or
-a lifted expression that CVXPY does not recognize as DNLP.
+are a non-DPP lower expression, an objective with curvature incompatible with
+its sense (such as maximizing a convex expression), an unsupported cone, an
+approximate or unaudited atom, an unset ordinary CVXPY parameter, or a lifted
+expression that CVXPY does not recognize as DNLP.
 
 {class}`blvpy.ValidationError` and its subclasses identify structural model
 issues. {class}`blvpy.CanonicalizationError` indicates that CVXPY did not expose
@@ -60,10 +61,13 @@ conic status or restoration reason.
 ## Continuation does not reach the target
 
 A returned `continuation_failed` result contains the best partial run: smallest
-attained epsilon, then lowest finite objective, then lowest run index. Inspect
-`result.runs`, `attempted_epsilon_history`, and each iteration's message and
-residuals. Possible responses include a looser target, gentler contraction,
-more retries, better scaling, explicit initialization, or a best-of search.
+attained epsilon, then best finite objective in the modeled sense (lowest for
+`cp.Minimize`, highest for `cp.Maximize`), then lowest run index. A missing or
+nonfinite objective ranks after a finite objective at the same epsilon.
+Inspect `result.runs`, `attempted_epsilon_history`, and each iteration's
+message and residuals. Possible responses include a looser target, gentler
+contraction, more retries, better scaling, explicit initialization, or a
+best-of search.
 
 ## Diagnostics fail
 

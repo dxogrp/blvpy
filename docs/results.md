@@ -13,6 +13,12 @@ Use `result.succeeded` as the main success check. Important fields include:
 - accepted and attempted epsilon histories;
 - all {class}`blvpy.RunRecord` objects and `selected_run` for a best-of search.
 
+Every upper `objective` stored in an {class}`~blvpy.IterationRecord`,
+{class}`~blvpy.RunRecord`, or {class}`~blvpy.BilevelResult` is evaluated in the
+modeled sense. Thus a `cp.Maximize` value is not negated in the records,
+`all_objectives`, or progress output. The original lower objective object is
+likewise available unchanged as {attr}`blvpy.LowerProblem.objective`.
+
 The following statuses can be produced by {meth}`blvpy.BilevelProblem.solve`.
 The **scope** column distinguishes the top-level result from a best-of run and
 an individual epsilon attempt.
@@ -114,6 +120,8 @@ $$
 
 where $u$ is the canonical lower primal vector, $s$ is the conic slack
 variable, and $\mathcal{K}$ is the product of cones.
+For a lower `cp.Minimize(f)`, the canonical objective represents $f$. For a
+lower `cp.Maximize(f)`, it represents $-f$.
 The numerical arrays
 $A(x)$, $b(x)$, $c(x)$, and $d(x)$ are evaluated at the returned upper point.
 Let $\lambda$ be the equality dual vector
@@ -228,9 +236,20 @@ c^Tu+b^T\lambda
 $$
 
 where $r_p=Au+s-b$ and $r_d=A^T\lambda+c$. It then performs one additional
-fixed-upper conic solve and reports the signed **source gap**: the returned
-source-level lower objective minus that reference optimum. Small negative
-values can occur from numerical tolerances and are not clamped.
+fixed-upper conic solve and reports the sense-normalized **source gap**
+
+$$
+\operatorname{source\_gap}=
+\begin{cases}
+f_0(x,y_{\rm returned})-f_0^*(x),&\text{for }\texttt{cp.Minimize},\\
+f_0^*(x)-f_0(x,y_{\rm returned}),&\text{for }\texttt{cp.Maximize}.
+\end{cases}
+$$
+
+Both definitions measure suboptimality and are nonnegative in exact
+arithmetic. Small negative values can occur from numerical tolerances and are
+not clamped. The other objective terms in {class}`blvpy.GapDiagnostics` use
+the normalized canonical minimization convention.
 
 The diagnostic solve defaults to silent Clarabel, but it is configurable:
 
