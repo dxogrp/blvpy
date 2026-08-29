@@ -26,15 +26,15 @@ $$
 
 ## Disciplined bilevel programming
 
-A model is **disciplined bilevel programming (DBLP)** compatible when:
+A model is **disciplined bilevel programming (DBLP)** compliant when:
 
 * The upper objective and constraint functions $F_i \colon \mathbf{R}^n
   \times \mathbf{R}^k \to \mathbf{R}$, for $i=0,1,\ldots,m$, are
-  [DNLP](https://www.cvxpy.org/tutorial/dnlp/index.html)-compatible with upper
+  [DNLP](https://www.cvxpy.org/tutorial/dnlp/index.html)-compliant with upper
   variables $x \in \mathbf{R}^n$ and lower variables $y \in \mathbf{R}^k$.
 * The lower objective and constraint functions $f_i \colon \mathbf{R}^n
   \times \mathbf{R}^k \to \mathbf{R}$, for $i=0,1,\ldots,p$, are
-  [DPP](https://www.cvxpy.org/tutorial/dpp/index.html)-compatible with lower
+  [DPP](https://www.cvxpy.org/tutorial/dpp/index.html)-compliant with lower
   variable $z \in \mathbf{R}^k$ (or $y \in \mathbf{R}^k$). Thus the lower
   problem is a disciplined convex program parameterized by $x \in
   \mathbf{R}^n$.

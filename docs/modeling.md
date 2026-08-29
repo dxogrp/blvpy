@@ -37,7 +37,7 @@ The complete model must satisfy **all** of the following:
 
 - The upper problem is a real-valued continuous optimization problem with a
   scalar `cp.Minimize` or `cp.Maximize` objective.
-- The assembled upper objective and upper constraints are compatible with CVXPY's DNLP rules.
+- The assembled upper objective and upper constraints are compliant with CVXPY's DNLP rules.
 - The lower problem is a real-valued continuous convex optimization problem:
   either `cp.Minimize` with a convex objective expression or `cp.Maximize`
   with a concave objective expression.

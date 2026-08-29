@@ -411,7 +411,7 @@ def soc_distance(value: ArrayLike) -> float:
 
 
 def _soc_constraint(vector: cp.Expression, block: slice) -> cp.Constraint:
-    # Keep this in DNLP-compatible scalar form.  CVXPY's native SOC
+    # Keep this in DNLP-compliant scalar form.  CVXPY's native SOC
     # Constraint does not itself implement ``is_dnlp`` in CVXPY 1.9.
     return cp.norm(vector[block.start + 1 : block.stop], 2) <= vector[block.start]
 

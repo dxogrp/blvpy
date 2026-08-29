@@ -35,7 +35,7 @@ class UnsupportedModelError(ValidationError):
     """Raised when a model uses a feature outside BLVPY's supported subset.
 
     Unsupported variable domains, source atoms, and lifted expressions that
-    are not DNLP-compatible are reported through this exception.
+    are not DNLP-compliant are reported through this exception.
     """
 
 
