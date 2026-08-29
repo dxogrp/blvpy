@@ -26,6 +26,8 @@ The gallery consists of standalone [Marimo](https://marimo.io/) notebooks for ex
   selects tolls while anticipating a congestion equilibrium.
 - {example}`Stackelberg port security <stackelberg_port_security.py>`
   allocates limited patrol coverage against a best-responding attacker.
+- {example}`Planar truss sizing <planar_truss_sizing.py>`
+  allocates member areas while anticipating elastic equilibrium.
 
 Install and open the gallery from a repository checkout:
 
