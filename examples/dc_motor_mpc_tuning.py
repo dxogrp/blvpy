@@ -405,12 +405,8 @@ def _(
 ):
     x_learned = np.asarray(x.value, dtype=float)
     u_learned = np.asarray(u.value, dtype=float)
-    baseline_imitation_loss = float(
-        np.sum(np.square(x_baseline - x_hat)) + 0.1 * np.sum(np.square(u_baseline - u_hat))
-    )
-    learned_imitation_loss = float(
-        np.sum(np.square(x_learned - x_hat)) + 0.1 * np.sum(np.square(u_learned - u_hat))
-    )
+    baseline_imitation_loss = float(np.sum(np.square(x_baseline - x_hat)) + 0.1 * np.sum(np.square(u_baseline - u_hat)))
+    learned_imitation_loss = float(np.sum(np.square(x_learned - x_hat)) + 0.1 * np.sum(np.square(u_learned - u_hat)))
     x_learned_next = A @ x_learned[:, :-1] + B.reshape(2, 1) * u_learned.reshape(1, -1)
     dynamics_residual = x_learned[:, 1:] - x_learned_next
 
