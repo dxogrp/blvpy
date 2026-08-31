@@ -28,6 +28,8 @@ The gallery consists of standalone [Marimo](https://marimo.io/) notebooks for ex
   allocates limited patrol coverage against a best-responding attacker.
 - {example}`Planar truss sizing <planar_truss_sizing.py>`
   allocates member areas while anticipating elastic equilibrium.
+- {example}`DC motor MPC tuning <dc_motor_mpc_tuning.py>`
+  learns control-cost weights while anticipating a constrained MPC response.
 
 Install and open the gallery from a repository checkout:
 
