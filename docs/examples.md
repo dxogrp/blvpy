@@ -2,6 +2,8 @@
 
 The gallery consists of standalone [Marimo](https://marimo.io/) notebooks for example applications.
 Each link opens an executed, non-interactive HTML snapshot containing the notebook code and outputs.
+Published snapshots use $\epsilon_{\mathrm{target}}=10^{-5}$ to balance numerical validation and export time;
+live sessions can request tighter continuation targets.
 
 ## Modeling primers
 

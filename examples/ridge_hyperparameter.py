@@ -144,7 +144,7 @@ def _(
 
 @app.cell
 def _(problem):
-    epsilon_target = 1e-9
+    epsilon_target = 1e-5
     result = problem.solve(
         epsilon_initial=1e-2,
         epsilon_target=epsilon_target,

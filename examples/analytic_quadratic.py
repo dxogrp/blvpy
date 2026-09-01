@@ -104,7 +104,7 @@ def _(mo):
             1e-2,
             1e-1,
         ],
-        value=1e-6,
+        value=1e-5,
         debounce=True,
         show_value=True,
         label=r"Target relaxation $\epsilon_{\mathrm{target}}$",
@@ -115,7 +115,7 @@ def _(mo):
             ## Explore the relaxation
 
             The published documentation shows a non-interactive snapshot at
-            the default value $\epsilon_{\mathrm{target}}=10^{-6}$. In a live
+            the default value $\epsilon_{\mathrm{target}}=10^{-5}$. In a live
             Marimo session, drag the slider and release it to solve again. Its
             logarithmically spaced values show how the relaxed point approaches
             the exact bilevel solution as $\epsilon_{\mathrm{target}}$ decreases.

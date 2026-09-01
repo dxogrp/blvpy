@@ -196,7 +196,7 @@ def _(np, problem, x):
 
 @app.cell
 def _(np, problem, t, x, y):
-    epsilon_target = 1e-6
+    epsilon_target = 1e-5
     result = problem.solve(epsilon_target=epsilon_target, verbose=True)
     diagnostics = problem.gap_diagnostics(result)
 

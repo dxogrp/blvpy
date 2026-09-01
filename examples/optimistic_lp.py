@@ -82,7 +82,7 @@ def _(BilevelProblem, LowerProblem, cp):
 
 @app.cell
 def _(np, problem, x, y):
-    epsilon_target = 1e-9
+    epsilon_target = 1e-5
     result = problem.solve(epsilon_target=epsilon_target)
     diagnostics = problem.gap_diagnostics(result)
 

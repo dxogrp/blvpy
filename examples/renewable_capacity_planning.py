@@ -189,7 +189,7 @@ def _(
 def _(problem):
     result = problem.solve(
         epsilon_initial=1e-2,
-        epsilon_target=1e-9,
+        epsilon_target=1e-5,
         verbose=False,
     )
     diagnostics = problem.gap_diagnostics(result)

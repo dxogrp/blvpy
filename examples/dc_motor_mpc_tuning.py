@@ -329,7 +329,7 @@ def _(
 
 @app.cell
 def _(problem):
-    epsilon_target = 1e-9
+    epsilon_target = 1e-5
     result = problem.solve(
         epsilon_initial=1e-2,
         epsilon_target=epsilon_target,
@@ -414,8 +414,8 @@ def _(
     assert np.isfinite(result.objective)
     assert np.isclose(result.final_epsilon, epsilon_target, rtol=0.0, atol=1e-15)
     assert result.residuals.max_violation <= 2e-7
-    assert result.complementarity <= 2e-9
-    assert abs(diagnostics.source_gap) <= 2e-9
+    assert result.complementarity <= 1.1 * epsilon_target
+    assert abs(diagnostics.source_gap) <= 1.1 * epsilon_target
     assert delta_bounds[0] <= learned_delta <= delta_bounds[1]
     assert eta_bounds[0] <= learned_eta <= eta_bounds[1]
     assert abs(learned_delta - expert_delta) <= 1e-5
