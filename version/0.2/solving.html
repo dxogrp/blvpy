@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Solving &#8212; BLVPY 0.2</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=91272d87" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=8f59a566" />
+    <script src="_static/documentation_options.js?v=10f1778b"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script defer="defer" src="_static/version-switcher.js?v=a3984577"></script>
+    <link rel="canonical" href="https://dxogrp.github.io/blvpy/version/0.2/solving.html" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Results and diagnostics" href="results.html" />
+    <link rel="prev" title="Supported atoms" href="supported-atoms.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">BLVPY</a></h1>
+
+
+
+<p class="blurb">Disciplined bilevel programming in Python</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=dxogrp&repo=blvpy&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modeling.html">Problem modeling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="supported-atoms.html">Supported atoms</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Solving</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#epsilon-continuation">Epsilon continuation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#deterministic-initialization-and-restoration">Deterministic initialization and restoration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#best-of-search-for-local-solutions">Best-of search for local solutions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#solvers-and-options">Solvers and options</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="results.html">Results and diagnostics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release notes</a></li>
+</ul>
+
+
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><div class="version-switcher" role="navigation" aria-label="Documentation version">
+  <h3>Version</h3>
+  <select
+    id="blvpy-version-select"
+    data-current-version="0.2"
+    data-switcher-url="https://dxogrp.github.io/blvpy/switcher.json"
+    aria-label="Documentation version"
+    hidden
+  >
+    <option value="" selected>0.2</option>
+  </select>
+  <p class="version-switcher-fallback">
+    Release 0.2
+  </p>
+</div>
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section class="tex2jax_ignore mathjax_ignore" id="solving">
+<h1>Solving<a class="headerlink" href="#solving" title="Link to this heading">¶</a></h1>
+<section id="epsilon-continuation">
+<h2>Epsilon continuation<a class="headerlink" href="#epsilon-continuation" title="Link to this heading">¶</a></h2>
+<p>The canonicalized lower problem is a convex conic program in the form</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+\begin{array}{ll}
+\text{minimize} &amp; c(x)^T u + d(x)\\
+\text{subject to} &amp; A(x)u + s = b(x)\\
+&amp; s\in \mathcal{K},
+\end{array}
+\end{split}\]</div>
+<p>where <span class="math notranslate nohighlight">\(u,s\)</span> are the lower primal and slack variables; <span class="math notranslate nohighlight">\(c(x),d(x),A(x),b(x)\)</span>
+are upper-dependent canonical data; and <span class="math notranslate nohighlight">\(\mathcal{K}\)</span> is a Cartesian product
+of cones.
+BLVPY solves the bilevel problem by continuation on a small relaxation of the lower KKT complementarity condition.</p>
+<p>BLVPY introduces a dual vector <span class="math notranslate nohighlight">\(\lambda\in \mathcal{K}^*\)</span> and imposes</p>
+<div class="math notranslate nohighlight">
+\[
+A(x)^T\lambda+c(x)=0,
+\qquad s^T\lambda\leq\epsilon.
+\]</div>
+<p>The default solve begins at <span class="math notranslate nohighlight">\(\epsilon=10^{-1}\)</span> and contracts it by <span class="math notranslate nohighlight">\(0.1\)</span> until <span class="math notranslate nohighlight">\(10^{-6}\)</span>.
+Each accepted point warm-starts the next DNLP solve.
+If a scheduled step fails, BLVPY can retry from an intermediate epsilon, subject to <code class="docutils literal notranslate"><span class="pre">max_retries</span></code>.</p>
+<p>An example of a solve call is</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">result</span> <span class="o">=</span> <span class="n">problem</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span>
+    <span class="n">epsilon_initial</span><span class="o">=</span><span class="mf">1e-1</span><span class="p">,</span>
+    <span class="n">epsilon_target</span><span class="o">=</span><span class="mf">1e-7</span><span class="p">,</span>
+    <span class="n">contraction</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+    <span class="n">feasibility_tolerance</span><span class="o">=</span><span class="mf">1e-7</span><span class="p">,</span>
+    <span class="n">max_retries</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="deterministic-initialization-and-restoration">
+<h2>Deterministic initialization and restoration<a class="headerlink" href="#deterministic-initialization-and-restoration" title="Link to this heading">¶</a></h2>
+<p>The ordinary <code class="docutils literal notranslate"><span class="pre">solve()</span></code> path uses one deterministic upper point.
+If an upper variable already has a <code class="docutils literal notranslate"><span class="pre">.value</span></code>, BLVPY preserves it. Otherwise,
+for each scalar component <span class="math notranslate nohighlight">\(x_i\)</span> with native lower and upper bounds
+<span class="math notranslate nohighlight">\(l_i\)</span> and <span class="math notranslate nohighlight">\(u_i\)</span>, it constructs</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+\widetilde{x}_i=
+\begin{cases}
+(l_i+u_i)/2,
+  &amp; l_i,u_i\text{ are finite},\\
+l_i+1,
+  &amp; l_i\text{ is finite and }u_i=+\infty,\\
+u_i-1,
+  &amp; l_i=-\infty\text{ and }u_i\text{ is finite},\\
+0,
+  &amp; l_i=-\infty\text{ and }u_i=+\infty.
+\end{cases}
+\end{split}\]</div>
+<p>BLVPY first projects <span class="math notranslate nohighlight">\(\widetilde{x}\)</span> through the variable’s CVXPY attributes,
+such as nonnegativity or symmetry, to obtain <span class="math notranslate nohighlight">\(\widehat{x}\)</span>. When the upper and
+generated linked-variable domain constraints define a DCP set <span class="math notranslate nohighlight">\(\mathcal{U}\)</span>,
+BLVPY then attempts the least-distance projection</p>
+<div class="math notranslate nohighlight">
+\[
+x^{(0)}\in\mathop{\mathrm{argmin}}_{x\in\mathcal{U}}
+  \sum_v\left\|x_v-\widehat{x}_v\right\|_F^2,
+\]</div>
+<p>where the sum is over the upper variables. This projection is best effort: if
+it cannot be compiled or solved, BLVPY retains the attribute-projected point.</p>
+<p>At <span class="math notranslate nohighlight">\(x^{(0)}\)</span>, the selected conic backend solves the fixed-upper canonical
+lower problem</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+\begin{array}{ll}
+\text{minimize} &amp; c(x^{(0)})^T u \\
+\text{subject to} &amp; A(x^{(0)})u+s=b(x^{(0)})\\
+  &amp; s\in\mathcal{K}
+\end{array}
+\end{split}\]</div>
+<p>with variables <span class="math notranslate nohighlight">\(u, s\)</span>.
+(Here the objective offset <span class="math notranslate nohighlight">\(d(x^{(0)})\)</span> is irrelevant to the lower solution
+and is therefore omitted.)
+The conic solution supplies the initial canonical primal <span class="math notranslate nohighlight">\(u^{(0)}\)</span>, slack
+<span class="math notranslate nohighlight">\(s^{(0)}\)</span>, and equality dual <span class="math notranslate nohighlight">\(\lambda^{(0)}\)</span>; BLVPY recovers the corresponding
+source lower variables from its affine recovery map.</p>
+<p>If every automatic path fails, BLVPY raises an <code class="docutils literal notranslate"><span class="pre">InitializationError</span></code> naming
+variables for which an explicit <code class="docutils literal notranslate"><span class="pre">.value</span></code> may help.</p>
+<p>When <code class="docutils literal notranslate"><span class="pre">restoration=True</span></code> (the default) and this initial point fails BLVPY’s
+independent residual check, BLVPY introduces a nonnegative restoration radius
+<span class="math notranslate nohighlight">\(\rho\)</span> and schematically solves</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+\begin{array}{ll}
+\mathop{\mathrm{minimize}} &amp; \rho\\
+\mathop{\mathrm{subject\ to}}
+  &amp; \text{each lifted constraint is relaxed by }\rho,\\
+  &amp; s^T\lambda\leq\epsilon+\rho,\\
+  &amp; \rho\geq0.
+\end{array}
+\end{split}\]</div>
+<p>Restoration seeks a compatible feasible starting point; it does not optimize
+the upper objective. BLVPY proceeds only if the recomputed feasibility and
+relaxed-gap residuals are within <code class="docutils literal notranslate"><span class="pre">feasibility_tolerance</span></code>.</p>
+</section>
+<section id="best-of-search-for-local-solutions">
+<span id="best-of-search"></span><h2>Best-of search for local solutions<a class="headerlink" href="#best-of-search-for-local-solutions" title="Link to this heading">¶</a></h2>
+<p>With <code class="docutils literal notranslate"><span class="pre">best_of=None</span></code>, BLVPY follows one deterministic path.
+Explicit <code class="docutils literal notranslate"><span class="pre">best_of=N</span></code>, including <code class="docutils literal notranslate"><span class="pre">N=1</span></code>, generates exactly <span class="math notranslate nohighlight">\(N\)</span> upper
+initializations and runs a complete, independent continuation for every viable
+one. Eligible components are sampled; components controlled by an existing
+<code class="docutils literal notranslate"><span class="pre">.value</span></code> remain fixed unless <code class="docutils literal notranslate"><span class="pre">sample_bounds</span></code> overrides that value. Only runs
+that reach the target epsilon with acceptable residuals compete, and BLVPY
+selects the lowest final upper objective, breaking ties by run index.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">x</span><span class="o">.</span><span class="n">sample_bounds</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">)</span>  <span class="c1"># sampling metadata (not a constraint)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">problem</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">best_of</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">selected_run_index</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">all_objectives</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">run</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">runs</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">run</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">run</span><span class="o">.</span><span class="n">initial_values</span><span class="p">[</span><span class="n">x</span><span class="p">],</span> <span class="n">run</span><span class="o">.</span><span class="n">epsilon_history</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Sampling precedence is:</p>
+<ol class="arabic simple">
+<li><p>finite <code class="docutils literal notranslate"><span class="pre">sample_bounds</span></code>, which override <code class="docutils literal notranslate"><span class="pre">.value</span></code> for that variable;</p></li>
+<li><p>an existing <code class="docutils literal notranslate"><span class="pre">.value</span></code>, reused in every run;</p></li>
+<li><p>finite two-sided native CVXPY bounds; otherwise</p></li>
+<li><p><a class="reference internal" href="api.html#blvpy.InitializationError" title="blvpy.InitializationError"><code class="xref py py-class docutils literal notranslate"><span class="pre">blvpy.InitializationError</span></code></a>, naming the variables that need sampling information.</p></li>
+</ol>
+<p><code class="docutils literal notranslate"><span class="pre">sample_bounds</span></code> must be a finite <code class="docutils literal notranslate"><span class="pre">(lower,</span> <span class="pre">upper)</span></code> pair broadcastable to the variable shape.</p>
+</section>
+<section id="solvers-and-options">
+<h2>Solvers and options<a class="headerlink" href="#solvers-and-options" title="Link to this heading">¶</a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">result</span> <span class="o">=</span> <span class="n">problem</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span>
+    <span class="n">solver</span><span class="o">=</span><span class="n">cp</span><span class="o">.</span><span class="n">IPOPT</span><span class="p">,</span>
+    <span class="n">conic_solver</span><span class="o">=</span><span class="n">cp</span><span class="o">.</span><span class="n">CLARABEL</span><span class="p">,</span>
+    <span class="n">solver_options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;max_iter&quot;</span><span class="p">:</span> <span class="mi">500</span><span class="p">},</span>
+    <span class="n">conic_solver_options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;max_iter&quot;</span><span class="p">:</span> <span class="mi">200</span><span class="p">},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>BLVPY copies the option mappings and forwards them to the corresponding CVXPY solve.
+It uses the selected DNLP backend consistently for restoration and continuation.
+It uses the selected conic backend for initialization and upper projection.
+Availability is checked when CVXPY actually invokes the backend.</p>
+<p><code class="docutils literal notranslate"><span class="pre">verbose=True</span></code> (the default) prints concise BLVPY progress to standard error.
+<code class="docutils literal notranslate"><span class="pre">solver_verbose=False</span></code> (the default) suppresses CVXPY and native solver output on a best-effort basis.
+The flags are independent.
+For quiet IPOPT calls, BLVPY supplies <code class="docutils literal notranslate"><span class="pre">print_level=0</span></code> and <code class="docutils literal notranslate"><span class="pre">sb=&quot;yes&quot;</span></code> only when the user did not provide those options.</p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, Hao Zhu and BLVPY contributors.
+      
+      |
+      <a href="_sources/solving.md.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -1,26 +1,26 @@
 [
   {
     "name": "latest",
-    "version": "0.3.0",
+    "version": "0.3",
     "url": "https://dxogrp.github.io/blvpy/",
     "preferred": true
   },
   {
-    "name": "0.3.0",
-    "version": "0.3.0",
-    "url": "https://dxogrp.github.io/blvpy/version/0.3.0/",
+    "name": "0.3",
+    "version": "0.3",
+    "url": "https://dxogrp.github.io/blvpy/version/0.3/",
     "preferred": false
   },
   {
-    "name": "0.2.0",
-    "version": "0.2.0",
-    "url": "https://dxogrp.github.io/blvpy/version/0.2.0/",
+    "name": "0.2",
+    "version": "0.2",
+    "url": "https://dxogrp.github.io/blvpy/version/0.2/",
     "preferred": false
   },
   {
-    "name": "0.1.0",
-    "version": "0.1.0",
-    "url": "https://dxogrp.github.io/blvpy/version/0.1.0/",
+    "name": "0.1",
+    "version": "0.1",
+    "url": "https://dxogrp.github.io/blvpy/version/0.1/",
     "preferred": false
   }
 ]

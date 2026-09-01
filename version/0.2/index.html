@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>BLVPY: Disciplined Bilevel Programming in Python &#8212; BLVPY 0.2</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=91272d87" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=8f59a566" />
+    <script src="_static/documentation_options.js?v=10f1778b"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script defer="defer" src="_static/version-switcher.js?v=a3984577"></script>
+    <link rel="canonical" href="https://dxogrp.github.io/blvpy/version/0.2/index.html" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Installation" href="installation.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">BLVPY</a></h1>
+
+
+
+<p class="blurb">Disciplined bilevel programming in Python</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=dxogrp&repo=blvpy&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modeling.html">Problem modeling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="supported-atoms.html">Supported atoms</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solving.html">Solving</a></li>
+<li class="toctree-l1"><a class="reference internal" href="results.html">Results and diagnostics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release notes</a></li>
+</ul>
+
+
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><div class="version-switcher" role="navigation" aria-label="Documentation version">
+  <h3>Version</h3>
+  <select
+    id="blvpy-version-select"
+    data-current-version="0.2"
+    data-switcher-url="https://dxogrp.github.io/blvpy/switcher.json"
+    aria-label="Documentation version"
+    hidden
+  >
+    <option value="" selected>0.2</option>
+  </select>
+  <p class="version-switcher-fallback">
+    Release 0.2
+  </p>
+</div>
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section class="tex2jax_ignore mathjax_ignore" id="blvpy-disciplined-bilevel-programming-in-python">
+<h1>BLVPY: Disciplined Bilevel Programming in Python<a class="headerlink" href="#blvpy-disciplined-bilevel-programming-in-python" title="Link to this heading">¶</a></h1>
+<p>BLVPY is a <a class="reference external" href="https://www.cvxpy.org/">CVXPY</a> extension for modeling and
+(approximately) solving optimistic bilevel optimization problems.
+A bilevel problem contains an optimization problem inside another optimization problem, i.e.,</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+    \begin{array}{ll}
+        \text{minimize} &amp; F_0(x, y)\\
+        \text{subject to} &amp; F_i(x, y) \leq 0, \quad i = 1, \ldots, m\\
+        &amp; y \in S(x),
+    \end{array}
+\end{split}\]</div>
+<p>where <span class="math notranslate nohighlight">\(x \in \mathbf{R}^n\)</span> contains the upper variables and <span class="math notranslate nohighlight">\(y \in
+\mathbf{R}^k\)</span> contains lower variables constrained to belong to the set
+<span class="math notranslate nohighlight">\(S(x)\)</span>. For a fixed <span class="math notranslate nohighlight">\(x \in \mathbf{R}^n\)</span>, the constraint set <span class="math notranslate nohighlight">\(S(x)\)</span> is the
+solution set of the following lower problem:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+    \begin{array}{rl}
+      S(x) = \mathop{\rm argmin}_z &amp; f_0(x, z)\\
+      \text{subject to} &amp; f_i(x, z) \leq 0, \quad i = 1, \ldots, p.
+    \end{array}
+\end{split}\]</div>
+<section id="disciplined-bilevel-programming">
+<h2>Disciplined bilevel programming<a class="headerlink" href="#disciplined-bilevel-programming" title="Link to this heading">¶</a></h2>
+<p>A model is <strong>disciplined bilevel programming (DBLP)</strong> compatible when:</p>
+<ul class="simple">
+<li><p>The upper objective and constraint functions <span class="math notranslate nohighlight">\(F_i \colon \mathbf{R}^n
+\times \mathbf{R}^k \to \mathbf{R}\)</span>, for <span class="math notranslate nohighlight">\(i=0,1,\ldots,m\)</span>, are
+<a class="reference external" href="https://www.cvxpy.org/tutorial/dnlp/index.html">DNLP</a>-compatible with upper
+variables <span class="math notranslate nohighlight">\(x \in \mathbf{R}^n\)</span> and lower variables <span class="math notranslate nohighlight">\(y \in \mathbf{R}^k\)</span>.</p></li>
+<li><p>The lower objective and constraint functions <span class="math notranslate nohighlight">\(f_i \colon \mathbf{R}^n
+\times \mathbf{R}^k \to \mathbf{R}\)</span>, for <span class="math notranslate nohighlight">\(i=0,1,\ldots,p\)</span>, are
+<a class="reference external" href="https://www.cvxpy.org/tutorial/dpp/index.html">DPP</a>-compatible with lower
+variable <span class="math notranslate nohighlight">\(z \in \mathbf{R}^k\)</span> (or <span class="math notranslate nohighlight">\(y \in \mathbf{R}^k\)</span>). Thus the lower
+problem is a disciplined convex program parameterized by <span class="math notranslate nohighlight">\(x \in
+\mathbf{R}^n\)</span>.</p></li>
+</ul>
+<p>BLVPY models and solves this supported DBLP subset with <em>optimistic
+semantics</em>. When the lower problem has multiple minimizers, the upper problem
+may select the one most favorable to its objective.</p>
+<div class="toctree-wrapper compound">
+</div>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, Hao Zhu and BLVPY contributors.
+      
+      |
+      <a href="_sources/index.md.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

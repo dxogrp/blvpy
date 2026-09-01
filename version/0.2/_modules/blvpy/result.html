@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>blvpy.result &#8212; BLVPY 0.2</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=91272d87" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=8f59a566" />
+    <script src="../../_static/documentation_options.js?v=10f1778b"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script defer="defer" src="../../_static/version-switcher.js?v=a3984577"></script>
+    <link rel="canonical" href="https://dxogrp.github.io/blvpy/version/0.2/_modules/blvpy/result.html" />
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">BLVPY</a></h1>
+
+
+
+<p class="blurb">Disciplined bilevel programming in Python</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=dxogrp&repo=blvpy&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quick start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modeling.html">Problem modeling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../supported-atoms.html">Supported atoms</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../solving.html">Solving</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../results.html">Results and diagnostics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../release-notes.html">Release notes</a></li>
+</ul>
+
+
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><div class="version-switcher" role="navigation" aria-label="Documentation version">
+  <h3>Version</h3>
+  <select
+    id="blvpy-version-select"
+    data-current-version="0.2"
+    data-switcher-url="https://dxogrp.github.io/blvpy/switcher.json"
+    aria-label="Documentation version"
+    hidden
+  >
+    <option value="" selected>0.2</option>
+  </select>
+  <p class="version-switcher-fallback">
+    Release 0.2
+  </p>
+</div>
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for blvpy.result</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Immutable solve records and numerical diagnostics.&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">MappingProxyType</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">numpy.typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">NDArray</span>
+
+<span class="n">_SUCCESS_STATUSES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;optimal&quot;</span><span class="p">,</span> <span class="s2">&quot;optimal_inaccurate&quot;</span><span class="p">,</span> <span class="s2">&quot;success&quot;</span><span class="p">,</span> <span class="s2">&quot;succeeded&quot;</span><span class="p">}</span>
+
+
+<div class="viewcode-block" id="Residuals">
+<a class="viewcode-back" href="../../api.html#blvpy.Residuals">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Residuals</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Independent residual summary for one lifted bilevel iterate.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    primal_equality : float</span>
+<span class="sd">        Euclidean norm of ``A @ u + s - b``.</span>
+<span class="sd">    dual_equality : float</span>
+<span class="sd">        Euclidean norm of ``A.T @ lambda + c``.</span>
+<span class="sd">    recovery : float</span>
+<span class="sd">        Largest Euclidean mismatch between a source lower variable and its</span>
+<span class="sd">        value recovered from the canonical primal vector.</span>
+<span class="sd">    upper_constraints : float</span>
+<span class="sd">        Largest CVXPY violation norm among the upper and generated</span>
+<span class="sd">        linked-variable domain constraints.</span>
+<span class="sd">    primal_cone : float</span>
+<span class="sd">        Euclidean distance from ``s`` to the primal product cone.</span>
+<span class="sd">    dual_cone : float</span>
+<span class="sd">        Euclidean distance from ``lambda`` to the dual product cone.</span>
+<span class="sd">    complementarity : float</span>
+<span class="sd">        Raw canonical pairing ``s.T @ lambda``. It may be slightly negative at</span>
+<span class="sd">        a numerically infeasible point.</span>
+<span class="sd">    gap_violation : float</span>
+<span class="sd">        Violation ``max(complementarity - epsilon, 0)`` of the relaxed gap</span>
+<span class="sd">        constraint.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If a field is not real-valued, or if a residual other than</span>
+<span class="sd">        ``complementarity`` is negative or NaN.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    All fields except ``complementarity`` are nonnegative. Infinite residuals</span>
+<span class="sd">    are retained to represent missing or nonfinite numerical solver output.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">primal_equality</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">dual_equality</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">recovery</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">upper_constraints</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">primal_cone</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">dual_cone</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">complementarity</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">gap_violation</span><span class="p">:</span> <span class="nb">float</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="s2">&quot;primal_equality&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;dual_equality&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;recovery&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;upper_constraints&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;primal_cone&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;dual_cone&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;gap_violation&quot;</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">_nonnegative_float</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">),</span> <span class="n">name</span><span class="p">))</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span>
+            <span class="s2">&quot;complementarity&quot;</span><span class="p">,</span>
+            <span class="n">_real_float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">complementarity</span><span class="p">,</span> <span class="s2">&quot;complementarity&quot;</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">max_feasibility</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;float: Largest lifted-feasibility residual, excluding the gap constraint.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">primal_equality</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dual_equality</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">recovery</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">upper_constraints</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">primal_cone</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dual_cone</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">max_violation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;float: Largest feasibility or relaxed-gap violation.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">max_feasibility</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">gap_violation</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Residuals.is_feasible">
+<a class="viewcode-back" href="../../api.html#blvpy.Residuals.is_feasible">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_feasible</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">gap_tolerance</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Test the lifted feasibility and relaxed-gap residuals.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        tolerance : float</span>
+<span class="sd">            Finite nonnegative bound for ``max_feasibility``.</span>
+<span class="sd">        gap_tolerance : float or None, optional</span>
+<span class="sd">            Finite nonnegative bound for ``gap_violation``. ``None`` uses</span>
+<span class="sd">            ``tolerance``.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            Whether both residual bounds are satisfied.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If either tolerance is negative, nonfinite, or not real-valued.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">tolerance</span> <span class="o">=</span> <span class="n">_finite_nonnegative_float</span><span class="p">(</span><span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;tolerance&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">gap_tolerance</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">gap_tolerance</span> <span class="o">=</span> <span class="n">tolerance</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">gap_tolerance</span> <span class="o">=</span> <span class="n">_finite_nonnegative_float</span><span class="p">(</span><span class="n">gap_tolerance</span><span class="p">,</span> <span class="s2">&quot;gap_tolerance&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_feasibility</span> <span class="o">&lt;=</span> <span class="n">tolerance</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">gap_violation</span> <span class="o">&lt;=</span> <span class="n">gap_tolerance</span></div>
+
+
+<div class="viewcode-block" id="Residuals.as_dict">
+<a class="viewcode-back" href="../../api.html#blvpy.Residuals.as_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return all primitive residual fields as a new dictionary.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict[str, float]</span>
+<span class="sd">            Field names mapped to their stored numerical values. Derived</span>
+<span class="sd">            properties such as ``max_violation`` are not included.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;primal_equality&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">primal_equality</span><span class="p">,</span>
+            <span class="s2">&quot;dual_equality&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">dual_equality</span><span class="p">,</span>
+            <span class="s2">&quot;recovery&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">recovery</span><span class="p">,</span>
+            <span class="s2">&quot;upper_constraints&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">upper_constraints</span><span class="p">,</span>
+            <span class="s2">&quot;primal_cone&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">primal_cone</span><span class="p">,</span>
+            <span class="s2">&quot;dual_cone&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">dual_cone</span><span class="p">,</span>
+            <span class="s2">&quot;complementarity&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">complementarity</span><span class="p">,</span>
+            <span class="s2">&quot;gap_violation&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">gap_violation</span><span class="p">,</span>
+        <span class="p">}</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="GapDiagnostics">
+<a class="viewcode-back" href="../../api.html#blvpy.GapDiagnostics">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GapDiagnostics</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Terms in the inexact canonical primal-dual gap identity.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    primal_objective : float</span>
+<span class="sd">        Canonical linear objective ``c.T @ u``, without the common offset.</span>
+<span class="sd">    dual_objective : float</span>
+<span class="sd">        Canonical dual objective ``-b.T @ lambda``, without the common offset.</span>
+<span class="sd">    complementarity : float</span>
+<span class="sd">        Canonical cone pairing ``s.T @ lambda``.</span>
+<span class="sd">    dual_residual_term : float</span>
+<span class="sd">        Correction ``u.T @ r_d``, where ``r_d = A.T @ lambda + c``.</span>
+<span class="sd">    primal_residual_term : float</span>
+<span class="sd">        Correction ``lambda.T @ r_p``, where ``r_p = A @ u + s - b``.</span>
+<span class="sd">    source_gap : float or None, optional</span>
+<span class="sd">        Signed returned lower objective minus the optimum of a fresh</span>
+<span class="sd">        fixed-upper reference solve.</span>
+<span class="sd">        :meth:`blvpy.BilevelProblem.gap_diagnostics` populates this field.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If any supplied diagnostic term is not real-valued.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    The identity is</span>
+
+<span class="sd">    ``primal_objective - dual_objective = complementarity +``</span>
+<span class="sd">    ``dual_residual_term - primal_residual_term``.</span>
+
+<span class="sd">    Small nonzero identity errors and slightly negative source gaps can arise</span>
+<span class="sd">    from floating-point solver tolerances.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">primal_objective</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">dual_objective</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">complementarity</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">dual_residual_term</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">primal_residual_term</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">source_gap</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="s2">&quot;primal_objective&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;dual_objective&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;complementarity&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;dual_residual_term&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;primal_residual_term&quot;</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">_real_float</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">),</span> <span class="n">name</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">source_gap</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;source_gap&quot;</span><span class="p">,</span> <span class="n">_real_float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">source_gap</span><span class="p">,</span> <span class="s2">&quot;source_gap&quot;</span><span class="p">))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">normalized_gap</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;float: Canonical primal objective minus canonical dual objective.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">primal_objective</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">dual_objective</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">inexact_identity_rhs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;float: Complementarity plus the two signed residual corrections.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">complementarity</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">dual_residual_term</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">primal_residual_term</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">identity_error</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;float: Left-hand side minus right-hand side of the inexact identity.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalized_gap</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">inexact_identity_rhs</span></div>
+
+
+
+<div class="viewcode-block" id="IterationRecord">
+<a class="viewcode-back" href="../../api.html#blvpy.IterationRecord">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">IterationRecord</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Numerical record for one epsilon-continuation attempt.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    epsilon : float</span>
+<span class="sd">        Finite nonnegative relaxation requested for this attempt.</span>
+<span class="sd">    status : str</span>
+<span class="sd">        Nonempty CVXPY solver status or BLVPY diagnostic status.</span>
+<span class="sd">    objective : float or None</span>
+<span class="sd">        Upper objective reported for the attempt, or ``None`` when unavailable.</span>
+<span class="sd">    residuals : Residuals</span>
+<span class="sd">        Independently computed lifted residuals.</span>
+<span class="sd">    solver_name : str or None, optional</span>
+<span class="sd">        Name of the selected nonlinear backend.</span>
+<span class="sd">    solve_time : float or None, optional</span>
+<span class="sd">        Finite nonnegative solver-reported time in seconds, when available.</span>
+<span class="sd">    num_iters : int or None, optional</span>
+<span class="sd">        Nonnegative solver-reported iteration count, when available.</span>
+<span class="sd">    message : str or None, optional</span>
+<span class="sd">        Additional failure or diagnostic detail.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If epsilon, status, objective, residuals, solver time, or iteration</span>
+<span class="sd">        count has an invalid value or type.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    A solver success status does not by itself make an attempt acceptable;</span>
+<span class="sd">    BLVPY also applies its independent residual checks.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">epsilon</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">objective</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">residuals</span><span class="p">:</span> <span class="n">Residuals</span>
+    <span class="n">solver_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">solve_time</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">num_iters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">message</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;epsilon&quot;</span><span class="p">,</span> <span class="n">_finite_nonnegative_float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">epsilon</span><span class="p">,</span> <span class="s2">&quot;epsilon&quot;</span><span class="p">))</span>
+        <span class="n">_status</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">objective</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;objective&quot;</span><span class="p">,</span> <span class="n">_real_float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">objective</span><span class="p">,</span> <span class="s2">&quot;objective&quot;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">residuals</span><span class="p">,</span> <span class="n">Residuals</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;residuals must be a Residuals instance.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve_time</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span>
+                <span class="bp">self</span><span class="p">,</span>
+                <span class="s2">&quot;solve_time&quot;</span><span class="p">,</span>
+                <span class="n">_finite_nonnegative_float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">solve_time</span><span class="p">,</span> <span class="s2">&quot;solve_time&quot;</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_iters</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_iters</span><span class="p">,</span> <span class="p">(</span><span class="nb">bool</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">))</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_iters</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;num_iters must be a nonnegative integer or None.&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_iters</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;num_iters must be a nonnegative integer or None.&quot;</span><span class="p">)</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;num_iters&quot;</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_iters</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="RunRecord">
+<a class="viewcode-back" href="../../api.html#blvpy.RunRecord">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">RunRecord</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Outcome and complete history of one independently initialized run.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    index : int</span>
+<span class="sd">        Zero-based nonnegative run index.</span>
+<span class="sd">    initial_values : mapping</span>
+<span class="sd">        Upper-variable initialization recorded for the run. These are the</span>
+<span class="sd">        post-projection values when projection succeeds and the original</span>
+<span class="sd">        candidate if initialization fails earlier. Keys are normally CVXPY</span>
+<span class="sd">        variables; values are copied into read-only NumPy arrays.</span>
+<span class="sd">    status : str</span>
+<span class="sd">        Nonempty terminal solver or BLVPY status.</span>
+<span class="sd">    objective : float or None, optional</span>
+<span class="sd">        Terminal upper objective, or ``None`` when unavailable.</span>
+<span class="sd">    iterations : tuple of IterationRecord, optional</span>
+<span class="sd">        All epsilon-continuation attempts in execution order, including</span>
+<span class="sd">        rejected and inserted-epsilon attempts.</span>
+<span class="sd">    final_iteration : IterationRecord or None, optional</span>
+<span class="sd">        Record representing the state returned for this run. If omitted while</span>
+<span class="sd">        ``iterations`` is nonempty, the last attempted record is used.</span>
+<span class="sd">    message : str or None, optional</span>
+<span class="sd">        Terminal failure or diagnostic detail.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If the index, status, objective, initial-value mapping, iteration</span>
+<span class="sd">        records, or final iteration is invalid.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Each explicit ``best_of`` candidate receives its own continuation and</span>
+<span class="sd">    retry budget. A run can retain a useful partial point even when it does not</span>
+<span class="sd">    reach the requested target epsilon.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">index</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">initial_values</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">ArrayLike</span><span class="p">]</span>
+    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">objective</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">iterations</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">IterationRecord</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">final_iteration</span><span class="p">:</span> <span class="n">IterationRecord</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">message</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="p">(</span><span class="nb">bool</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">))</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;index must be a nonnegative integer.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;index must be a nonnegative integer.&quot;</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;index&quot;</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">))</span>
+        <span class="n">_status</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">objective</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;objective&quot;</span><span class="p">,</span> <span class="n">_real_float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">objective</span><span class="p">,</span> <span class="s2">&quot;objective&quot;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_values</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;initial_values must be a mapping.&quot;</span><span class="p">)</span>
+        <span class="n">initial_values</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">key</span><span class="p">:</span> <span class="n">_snapshot</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;initial_values[</span><span class="si">{</span><span class="n">key</span><span class="si">!r}</span><span class="s2">]&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_values</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;initial_values&quot;</span><span class="p">,</span> <span class="n">MappingProxyType</span><span class="p">(</span><span class="n">initial_values</span><span class="p">))</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">iterations</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iterations</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">TypeError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;iterations must be iterable.&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">error</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="n">IterationRecord</span><span class="p">)</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">iterations</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Every iteration must be an IterationRecord.&quot;</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;iterations&quot;</span><span class="p">,</span> <span class="n">iterations</span><span class="p">)</span>
+        <span class="n">final_iteration</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span>
+        <span class="k">if</span> <span class="n">final_iteration</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">final_iteration</span><span class="p">,</span> <span class="n">IterationRecord</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;final_iteration must be an IterationRecord or None.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">final_iteration</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">iterations</span><span class="p">:</span>
+            <span class="n">final_iteration</span> <span class="o">=</span> <span class="n">iterations</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;final_iteration&quot;</span><span class="p">,</span> <span class="n">final_iteration</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">epsilon_history</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;tuple of float: Successful tolerances in decreasing accepted order.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="n">_accepted_epsilon_history</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iterations</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">attempted_epsilon_history</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;tuple of float: All attempted tolerances, including failures and retries.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">epsilon</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterations</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">solver_statuses</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;tuple of str: Status of every attempt in continuation order.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">status</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterations</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">residuals</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Residuals</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Residuals or None: Residuals at this run&#39;s returned point.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span><span class="o">.</span><span class="n">residuals</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">complementarity</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;float or None: Canonical complementarity at the returned point.&quot;&quot;&quot;</span>
+
+        <span class="n">residuals</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">residuals</span>
+        <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">residuals</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">residuals</span><span class="o">.</span><span class="n">complementarity</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">final_epsilon</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;float or None: Continuation tolerance at the returned point.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span><span class="o">.</span><span class="n">epsilon</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">succeeded</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;bool: Whether the terminal status is one of BLVPY&#39;s success statuses.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">_SUCCESS_STATUSES</span></div>
+
+
+
+<div class="viewcode-block" id="BilevelResult">
+<a class="viewcode-back" href="../../api.html#blvpy.BilevelResult">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BilevelResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Immutable result returned by :meth:`blvpy.BilevelProblem.solve`.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    status : str</span>
+<span class="sd">        Nonempty terminal status. Use :attr:`succeeded` instead of depending</span>
+<span class="sd">        on backend-specific success spellings.</span>
+<span class="sd">    objective : float or None, optional</span>
+<span class="sd">        Upper objective at the returned point, or ``None`` when unavailable.</span>
+<span class="sd">    variable_values : mapping, optional</span>
+<span class="sd">        Snapshots keyed by the original upper and lower CVXPY variable objects.</span>
+<span class="sd">    canonical_primal : array-like or None, optional</span>
+<span class="sd">        Returned canonical lower primal vector ``u``.</span>
+<span class="sd">    slack : array-like or None, optional</span>
+<span class="sd">        Returned canonical primal cone vector ``s``.</span>
+<span class="sd">    dual : array-like or None, optional</span>
+<span class="sd">        Returned canonical dual cone vector ``lambda``.</span>
+<span class="sd">    iterations : tuple of IterationRecord, optional</span>
+<span class="sd">        Continuation attempts belonging to the selected run.</span>
+<span class="sd">    runs : tuple of RunRecord, optional</span>
+<span class="sd">        Every deterministic or explicit ``best_of`` run in index order.</span>
+<span class="sd">    selected_run_index : int or None, optional</span>
+<span class="sd">        Zero-based index of the run whose state is exposed by the top-level</span>
+<span class="sd">        fields.</span>
+<span class="sd">    final_iteration : IterationRecord or None, optional</span>
+<span class="sd">        Record representing the returned selected-run state. If omitted while</span>
+<span class="sd">        ``iterations`` is nonempty, the last attempted record is used.</span>
+<span class="sd">    message : str or None, optional</span>
+<span class="sd">        Terminal failure or diagnostic detail.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If a scalar field, numerical snapshot, iteration or run collection,</span>
+<span class="sd">        selected-run index, or final iteration is invalid or inconsistent.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Numeric values are copied into read-only NumPy arrays, and mappings are</span>
+<span class="sd">    read-only views. A ``&quot;continuation_failed&quot;`` result exposes the best</span>
+<span class="sd">    available partial run but is not successful.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">objective</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">variable_values</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">ArrayLike</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">canonical_primal</span><span class="p">:</span> <span class="n">ArrayLike</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">slack</span><span class="p">:</span> <span class="n">ArrayLike</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">dual</span><span class="p">:</span> <span class="n">ArrayLike</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">iterations</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">IterationRecord</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">runs</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">RunRecord</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">selected_run_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">final_iteration</span><span class="p">:</span> <span class="n">IterationRecord</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">message</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">_status</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">objective</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;objective&quot;</span><span class="p">,</span> <span class="n">_real_float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">objective</span><span class="p">,</span> <span class="s2">&quot;objective&quot;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">variable_values</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;variable_values must be a mapping.&quot;</span><span class="p">)</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">_snapshot</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;variable_values[</span><span class="si">{</span><span class="n">key</span><span class="si">!r}</span><span class="s2">]&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">variable_values</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;variable_values&quot;</span><span class="p">,</span> <span class="n">MappingProxyType</span><span class="p">(</span><span class="n">values</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;canonical_primal&quot;</span><span class="p">,</span> <span class="s2">&quot;slack&quot;</span><span class="p">,</span> <span class="s2">&quot;dual&quot;</span><span class="p">):</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">_snapshot</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">iterations</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iterations</span><span class="p">)</span>
+            <span class="n">runs</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">runs</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">TypeError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;iterations and runs must be iterable.&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">error</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="n">IterationRecord</span><span class="p">)</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">iterations</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Every iteration must be an IterationRecord.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="n">RunRecord</span><span class="p">)</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">runs</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Every run must be a RunRecord.&quot;</span><span class="p">)</span>
+        <span class="n">run_indices</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">index</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">runs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">run_indices</span><span class="p">))</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">run_indices</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Run indices must be unique.&quot;</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;iterations&quot;</span><span class="p">,</span> <span class="n">iterations</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;runs&quot;</span><span class="p">,</span> <span class="n">runs</span><span class="p">)</span>
+        <span class="n">selected_run_index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">selected_run_index</span>
+        <span class="k">if</span> <span class="n">selected_run_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">selected_run_index</span><span class="p">,</span> <span class="p">(</span><span class="nb">bool</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">))</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
+                <span class="n">selected_run_index</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;selected_run_index must be a nonnegative integer or None.&quot;</span><span class="p">)</span>
+            <span class="n">selected_run_index</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">selected_run_index</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">selected_run_index</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;selected_run_index must be a nonnegative integer or None.&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">selected_run_index</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">run_indices</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;selected_run_index must identify one of the recorded runs.&quot;</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;selected_run_index&quot;</span><span class="p">,</span> <span class="n">selected_run_index</span><span class="p">)</span>
+        <span class="n">final_iteration</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span>
+        <span class="k">if</span> <span class="n">final_iteration</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">final_iteration</span><span class="p">,</span> <span class="n">IterationRecord</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;final_iteration must be an IterationRecord or None.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">final_iteration</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">iterations</span><span class="p">:</span>
+            <span class="n">final_iteration</span> <span class="o">=</span> <span class="n">iterations</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;final_iteration&quot;</span><span class="p">,</span> <span class="n">final_iteration</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">epsilon_history</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;tuple of float: Selected-run tolerances accepted in decreasing order.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="n">_accepted_epsilon_history</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iterations</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">attempted_epsilon_history</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;tuple of float: All selected-run attempts, including failures and retries.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">epsilon</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterations</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">solver_statuses</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;tuple of str: Status of every selected-run continuation attempt.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">status</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterations</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">residuals</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Residuals</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Residuals or None: Independent residuals at the returned point.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span><span class="o">.</span><span class="n">residuals</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">complementarity</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;float or None: Canonical complementarity at the returned point.&quot;&quot;&quot;</span>
+
+        <span class="n">residuals</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">residuals</span>
+        <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">residuals</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">residuals</span><span class="o">.</span><span class="n">complementarity</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">final_epsilon</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;float or None: Epsilon associated with the returned point.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span><span class="o">.</span><span class="n">epsilon</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_iteration</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">succeeded</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;bool: Whether the top-level status is a BLVPY success status.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">_SUCCESS_STATUSES</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">selected_run</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RunRecord</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;RunRecord or None: Run exposed by the top-level result fields.&quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">selected_run_index</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="nb">next</span><span class="p">(</span><span class="n">record</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">runs</span> <span class="k">if</span> <span class="n">record</span><span class="o">.</span><span class="n">index</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">selected_run_index</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">all_objectives</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;tuple: Terminal objective of every run in recorded order.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">objective</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">runs</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_accepted_epsilon_history</span><span class="p">(</span><span class="n">iterations</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">IterationRecord</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+    <span class="n">accepted</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">iterations</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">record</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_SUCCESS_STATUSES</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">accepted</span> <span class="ow">or</span> <span class="n">record</span><span class="o">.</span><span class="n">epsilon</span> <span class="o">&lt;</span> <span class="n">accepted</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">accepted</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">epsilon</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">accepted</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_status</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;status must be a nonempty string.&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_real_float</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">bool</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be a real number.&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>  <span class="c1"># type: ignore[arg-type]</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">OverflowError</span><span class="p">)</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be a real number.&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">error</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_nonnegative_float</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">_real_float</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="ow">or</span> <span class="n">result</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be nonnegative and not NaN.&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_finite_nonnegative_float</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">_nonnegative_float</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">result</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be finite.&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_snapshot</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
+    <span class="n">array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iscomplexobj</span><span class="p">(</span><span class="n">array</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be real-valued.&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">snapshot</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must contain numeric values.&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">error</span>
+    <span class="n">snapshot</span><span class="o">.</span><span class="n">setflags</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">snapshot</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, Hao Zhu and BLVPY contributors.
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
