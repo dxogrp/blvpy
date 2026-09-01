@@ -177,6 +177,8 @@ def test_release_and_manual_documentation_workflows_are_separated() -> None:
     assert "artifact_name: blvpy-pages-series-" in documentation
     assert "scripts/stage_docs.py stage-series" in documentation
     assert '--package-version "$PACKAGE_VERSION"' in documentation
+    assert 'rsync --archive --checksum --delete --exclude=.git "$SITE_DIR/" "$PAGES_DIR/"' in documentation
+    assert 'diff --recursive --brief --exclude=.git "$SITE_DIR" "$PAGES_DIR"' in documentation
     assert "stage-release" not in documentation
     assert "checkout --orphan" not in documentation
     assert "git push --force" not in documentation
@@ -219,7 +221,8 @@ def test_one_time_documentation_rebuild_workflow_contract() -> None:
     pages_upload = rebuild.index("      - name: Upload Pages artifact before changing gh-pages")
     replacement = rebuild.index("      - name: Replace the existing gh-pages tree in a normal worktree")
     assert diagnostic_upload < replacement and pages_upload < replacement
-    assert "rsync --archive --delete --exclude=.git" in rebuild
+    assert 'rsync --archive --checksum --delete --exclude=.git "$SITE_DIR/" "$PAGES_DIR/"' in rebuild
+    assert 'diff --recursive --brief --exclude=.git "$SITE_DIR" "$PAGES_DIR"' in rebuild
     assert "Previous gh-pages tip" in rebuild
     assert "Replacement commit" in rebuild
     assert "Main source SHA" in rebuild

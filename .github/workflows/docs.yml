@@ -155,7 +155,8 @@ jobs:
             exit 1
           fi
           git worktree add --detach "$PAGES_DIR" "$EXPECTED_TIP"
-          rsync --archive --delete --exclude=.git "$SITE_DIR/" "$PAGES_DIR/"
+          rsync --archive --checksum --delete --exclude=.git "$SITE_DIR/" "$PAGES_DIR/"
+          diff --recursive --brief --exclude=.git "$SITE_DIR" "$PAGES_DIR"
 
       - name: Commit the series update without rewriting history
         env:
