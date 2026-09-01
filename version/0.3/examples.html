@@ -13,6 +13,8 @@
     <script src="_static/documentation_options.js?v=b489f392"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script defer="defer" src="_static/version-switcher.js?v=a3984577"></script>
     <link rel="canonical" href="https://dxogrp.github.io/blvpy/version/0.3/examples.html" />
     <link rel="index" title="Index" href="genindex.html" />
@@ -103,39 +105,42 @@
             
   <section class="tex2jax_ignore mathjax_ignore" id="examples">
 <h1>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h1>
-<p>The gallery consists of standalone <a class="reference external" href="https://marimo.io/">Marimo</a> notebooks for example applications.</p>
+<p>The gallery consists of standalone <a class="reference external" href="https://marimo.io/">Marimo</a> notebooks for example applications.
+Each link opens an executed, non-interactive HTML snapshot containing the notebook code and outputs.
+Published snapshots use <span class="math notranslate nohighlight">\(\epsilon_{\mathrm{target}}=10^{-5}\)</span> to balance numerical validation and export time;
+live sessions can request tighter continuation targets.</p>
 <section id="modeling-primers">
 <h2>Modeling primers<a class="headerlink" href="#modeling-primers" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/analytic_quadratic.py">Analytic quadratic</a>
+<li><p><a class="extlink-example reference external" href="examples/analytic_quadratic.html" rel="noopener" target="_blank">Analytic quadratic</a>
 compares epsilon-relaxed solutions with a closed-form lower response.</p></li>
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/optimistic_lp.py">Optimistic linear program</a>
+<li><p><a class="extlink-example reference external" href="examples/optimistic_lp.html" rel="noopener" target="_blank">Optimistic linear program</a>
 shows how the upper problem selects among tied lower optimizers.</p></li>
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/parameter_dependent_socp.py">Parameter-dependent SOCP</a>
+<li><p><a class="extlink-example reference external" href="examples/parameter_dependent_socp.html" rel="noopener" target="_blank">Parameter-dependent SOCP</a>
 derives a geometric response and inspects parameter-dependent canonical data.</p></li>
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/best_of_local_optima.py">Best-of local optima</a>
+<li><p><a class="extlink-example reference external" href="examples/best_of_local_optima.html" rel="noopener" target="_blank">Best-of local optima</a>
 compares a deterministic local solve with several complete randomized runs.</p></li>
 </ul>
 </section>
 <section id="applications">
 <h2>Applications<a class="headerlink" href="#applications" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/ridge_hyperparameter.py">Ridge hyperparameter selection</a>
+<li><p><a class="extlink-example reference external" href="examples/ridge_hyperparameter.html" rel="noopener" target="_blank">Ridge hyperparameter selection</a>
 selects a training penalty using validation loss.</p></li>
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/demand_response_pricing.py">Demand-response pricing</a>
+<li><p><a class="extlink-example reference external" href="examples/demand_response_pricing.html" rel="noopener" target="_blank">Demand-response pricing</a>
 designs a time-of-use price while anticipating flexible energy use.</p></li>
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/renewable_capacity_planning.py">Renewable-capacity planning</a>
+<li><p><a class="extlink-example reference external" href="examples/renewable_capacity_planning.html" rel="noopener" target="_blank">Renewable-capacity planning</a>
 trades capacity investment against lower-level electricity dispatch.</p></li>
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/traffic_tolling.py">Traffic tolling</a>
+<li><p><a class="extlink-example reference external" href="examples/traffic_tolling.html" rel="noopener" target="_blank">Traffic tolling</a>
 selects tolls while anticipating a congestion equilibrium.</p></li>
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/stackelberg_port_security.py">Stackelberg port security</a>
+<li><p><a class="extlink-example reference external" href="examples/stackelberg_port_security.html" rel="noopener" target="_blank">Stackelberg port security</a>
 allocates limited patrol coverage against a best-responding attacker.</p></li>
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/planar_truss_sizing.py">Planar truss sizing</a>
+<li><p><a class="extlink-example reference external" href="examples/planar_truss_sizing.html" rel="noopener" target="_blank">Planar truss sizing</a>
 allocates member areas while anticipating elastic equilibrium.</p></li>
-<li><p><a class="extlink-example reference external" href="https://github.com/dxogrp/blvpy/blob/d15d964583b4f56144e498862266c316cd920195/examples/dc_motor_mpc_tuning.py">DC motor MPC tuning</a>
+<li><p><a class="extlink-example reference external" href="examples/dc_motor_mpc_tuning.html" rel="noopener" target="_blank">DC motor MPC tuning</a>
 learns control-cost weights while anticipating a constrained MPC response.</p></li>
 </ul>
-<p>Install and open the gallery from a repository checkout:</p>
+<p>For live interaction, install and open the gallery from a repository checkout:</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>sync-examples
 make<span class="w"> </span>marimo
 </pre></div>
