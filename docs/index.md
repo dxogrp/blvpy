@@ -57,4 +57,5 @@ examples
 troubleshooting
 api
 release-notes
+cite
 ```

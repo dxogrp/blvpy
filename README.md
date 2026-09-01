@@ -11,6 +11,7 @@
   - [Examples](#examples)
   - [Documentation](#documentation)
   - [License](#license)
+  - [Citing](#citing)
 
 BLVPY is a [CVXPY](https://www.cvxpy.org/) extension for modeling and locally solving optimistic bilevel optimization problems.
 A bilevel problem contains an optimization problem inside another optimization problem, i.e.,
@@ -168,3 +169,7 @@ make docs
 ## License
 
 BLVPY is licensed under the [Apache License 2.0](LICENSE).
+
+## Citing
+
+If you find BLVPY useful in your research, please consider [citing our paper](https://dxogrp.github.io/blvpy/cite).
