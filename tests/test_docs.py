@@ -119,7 +119,10 @@ def test_only_example_links_open_in_a_new_tab() -> None:
     assert "target" not in ordinary.attributes
 
 
-def test_export_examples_isolated_and_replaces_stale_tree(tmp_path: Path) -> None:
+def test_export_examples_isolated_and_replaces_stale_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = tmp_path / "source"
     _write_notebook(source, "b.py")
     _write_notebook(source, "a.py")
@@ -132,6 +135,7 @@ def test_export_examples_isolated_and_replaces_stale_tree(tmp_path: Path) -> Non
     output.mkdir()
     (output / "retired.html").write_text("stale", encoding="utf-8")
     calls: list[list[str]] = []
+    monkeypatch.setenv("PYTHONOPTIMIZE", "1")
 
     def fake_runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(command)
@@ -148,6 +152,7 @@ def test_export_examples_isolated_and_replaces_stale_tree(tmp_path: Path) -> Non
         assert isinstance(environment, dict)
         assert environment["MPLBACKEND"] == "Agg"
         assert environment["OMP_NUM_THREADS"] == environment["OPENBLAS_NUM_THREADS"] == "1"
+        assert environment["PYTHONOPTIMIZE"] == "0"
         (working_directory / "figures").mkdir(exist_ok=True)
         (working_directory / "__marimo__").mkdir(exist_ok=True)
         return _write_fake_export(command)

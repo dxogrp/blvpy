@@ -186,6 +186,7 @@ def export_examples(
                     "NUMEXPR_NUM_THREADS": "1",
                     "OMP_NUM_THREADS": "1",
                     "OPENBLAS_NUM_THREADS": "1",
+                    "PYTHONOPTIMIZE": "0",
                     "VECLIB_MAXIMUM_THREADS": "1",
                 }
             )
