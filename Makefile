@@ -39,7 +39,7 @@ docs: sync-docs ## build and serve the Sphinx documentation
 .PHONY: check-docs
 check-docs: sync-docs ## strictly validate the Sphinx documentation
 	@printf "$(BLUE)Checking Sphinx documentation...$(RESET)\n"
-	@uv run --frozen --group docs python -m pytest tests/test_documentation.py
+	@uv run --frozen --group docs python -m pytest tests/test_docs.py
 	@uv run --frozen --group docs sphinx-build -M clean docs docs/_build
 	@uv run --frozen --group docs sphinx-build -W --keep-going -n -b html docs docs/_build/html
 

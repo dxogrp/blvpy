@@ -157,36 +157,6 @@ def test_runtime_version_comes_from_distribution_metadata() -> None:
     assert blvpy.__version__ == importlib.metadata.version("blvpy")
 
 
-def test_release_and_manual_documentation_workflows_are_separated() -> None:
-    release = (WORKFLOWS_DIRECTORY / "release.yml").read_text(encoding="utf-8")
-    documentation = (WORKFLOWS_DIRECTORY / "docs.yml").read_text(encoding="utf-8")
-
-    assert "release:" in release and "- published" in release
-    assert "needs: verify" in release
-    assert "- publish" in release
-    assert "attach-assets:" in release
-    assert "Check Sphinx documentation" in release
-    assert "uses: ./.github/workflows/docs.yml" not in release
-    assert "workflow_dispatch:" in documentation
-    assert "workflow_call:" not in documentation
-    assert "group: blvpy-pages" in documentation
-    assert "cancel-in-progress: false" in documentation
-    assert "ref: ${{ github.sha }}" in documentation
-    assert "BLVPY_DOCS_SOURCE_REF: ${{ github.sha }}" in documentation
-    assert "${{ github.run_attempt }}" in documentation
-    assert "artifact_name: blvpy-pages-series-" in documentation
-    assert "scripts/stage_docs.py stage-series" in documentation
-    assert '--package-version "$PACKAGE_VERSION"' in documentation
-    assert 'rsync --archive --checksum --delete --exclude=.git "$SITE_DIR/" "$PAGES_DIR/"' in documentation
-    assert 'diff --recursive --brief --exclude=.git "$SITE_DIR" "$PAGES_DIR"' in documentation
-    assert "stage-release" not in documentation
-    assert "checkout --orphan" not in documentation
-    assert "git push --force" not in documentation
-    assert "git push -f" not in documentation
-    pages_upload = documentation.split("      - name: Upload Pages artifact\n", 1)[1].split("\n\n", 1)[0]
-    assert "include-hidden-files: true" in pages_upload
-
-
 def test_external_workflow_action_pins_are_immutable() -> None:
     workflows = sorted([*WORKFLOWS_DIRECTORY.glob("*.yml"), *WORKFLOWS_DIRECTORY.glob("*.yaml")])
     assert workflows

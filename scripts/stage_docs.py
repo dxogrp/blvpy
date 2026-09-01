@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -75,27 +74,18 @@ def _paths_overlap(first: Path, second: Path) -> bool:
     return first == second or first.is_relative_to(second) or second.is_relative_to(first)
 
 
-def _tree_manifest(root: Path) -> tuple[tuple[str, str, str | None], ...]:
-    """Return a content manifest while rejecting unsafe filesystem entries."""
-    entries: list[tuple[str, str, str | None]] = []
-    for path in sorted(root.rglob("*"), key=lambda candidate: candidate.as_posix()):
-        relative = path.relative_to(root).as_posix()
+def _validate_tree(root: Path) -> None:
+    """Reject symbolic links and unsupported filesystem entries in a tree."""
+    for path in root.rglob("*"):
         if path.is_symlink():
             raise ValueError(f"Documentation trees cannot contain symbolic links: {path}.")
-        if path.is_dir():
-            entries.append(("directory", relative, None))
-        elif path.is_file():
-            with path.open("rb") as stream:
-                digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            entries.append(("file", relative, digest))
-        else:
+        if not path.is_dir() and not path.is_file():
             raise ValueError(f"Unsupported documentation filesystem entry: {path}.")
-    return tuple(entries)
 
 
 def _validate_root_tree(root: Path) -> None:
     """Validate a documentation tree before copying it to the site root."""
-    _tree_manifest(root)
+    _validate_tree(root)
     for path in root.iterdir():
         if path.name in {".git", VERSION_DIRECTORY}:
             raise ValueError(f"Documentation tree contains a reserved site entry: {path}.")
@@ -110,14 +100,11 @@ def _replace_series_tree(source: Path, target: Path) -> None:
     """Replace one mutable series tree with a complete validated build."""
     if target.is_symlink() or (target.exists() and not target.is_dir()):
         raise ValueError(f"Documentation series target is not a safe directory: {target}.")
-    _tree_manifest(source)
-    if target.exists():
-        _tree_manifest(target)
 
     temporary = Path(tempfile.mkdtemp(prefix=f".{target.name}.staging-", dir=target.parent))
     try:
         shutil.copytree(source, temporary, dirs_exist_ok=True)
-        _tree_manifest(temporary)
+        _validate_tree(temporary)
         if target.exists():
             shutil.rmtree(target)
         os.replace(temporary, target)
@@ -149,7 +136,7 @@ def _published_series(site_dir: Path) -> list[tuple[str, tuple[int, int]]]:
             canonical, parsed = _canonical_series(path.name)
         except ValueError as exc:
             raise ValueError(f"Unexpected documentation version directory: {path}.") from exc
-        _tree_manifest(path)
+        _validate_root_tree(path)
         versions.append((canonical, parsed))
     return sorted(versions, key=lambda item: item[1], reverse=True)
 
@@ -165,8 +152,11 @@ def _write_text_atomic(path: Path, content: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _write_site_metadata(site_dir: Path, base_url: str) -> None:
-    versions = _published_series(site_dir)
+def _write_site_metadata(
+    site_dir: Path,
+    base_url: str,
+    versions: list[tuple[str, tuple[int, int]]],
+) -> None:
     if not versions:
         raise ValueError("The staged site does not contain a released documentation version.")
 
@@ -194,19 +184,8 @@ def _write_site_metadata(site_dir: Path, base_url: str) -> None:
 
 def _remove_root_documentation(site_dir: Path) -> None:
     """Remove root documentation while preserving series and Git metadata."""
-    git_metadata = site_dir / ".git"
-    if git_metadata.is_symlink():
-        raise ValueError(f"Documentation sites cannot contain symbolic links: {git_metadata}.")
     preserved_names = {VERSION_DIRECTORY, ".git"}
     root_entries = [path for path in site_dir.iterdir() if path.name not in preserved_names]
-    for path in root_entries:
-        if path.is_symlink():
-            raise ValueError(f"Documentation sites cannot contain symbolic links: {path}.")
-        if path.is_dir():
-            _tree_manifest(path)
-        elif not path.is_file():
-            raise ValueError(f"Unsupported documentation filesystem entry: {path}.")
-
     for path in root_entries:
         if path.is_dir():
             shutil.rmtree(path)
@@ -224,43 +203,43 @@ def _copy_tree_contents(source: Path, destination: Path) -> None:
             shutil.copy2(path, target)
 
 
-def _refresh_documentation_root(site_dir: Path, base_url: str) -> None:
+def _refresh_documentation_root(
+    site_dir: Path,
+    base_url: str,
+    versions: list[tuple[str, tuple[int, int]]],
+) -> None:
     """Serve the greatest published series directly from the Pages root."""
-    versions = _published_series(site_dir)
     if not versions:
         raise ValueError("The staged site does not contain a released documentation version.")
 
     version_root = _version_root(site_dir)
-    for version, _ in versions:
-        _tree_manifest(version_root / version)
-
     preferred = version_root / versions[0][0]
-    _validate_root_tree(preferred)
     _remove_root_documentation(site_dir)
     _copy_tree_contents(preferred, site_dir)
-    _write_site_metadata(site_dir, base_url)
+    _write_site_metadata(site_dir, base_url, versions)
 
 
-def _validate_existing_site(site_dir: Path) -> None:
+def _validate_existing_site(site_dir: Path) -> list[tuple[str, tuple[int, int]]]:
     """Validate mutable site content before changing a series or metadata."""
     if site_dir.is_symlink() or (site_dir.exists() and not site_dir.is_dir()):
         raise ValueError(f"Documentation site is not a safe directory: {site_dir}.")
     if not site_dir.exists():
-        return
+        return []
 
     git_metadata = site_dir / ".git"
     if git_metadata.is_symlink():
         raise ValueError(f"Documentation sites cannot contain symbolic links: {git_metadata}.")
-    _published_series(site_dir)
+    versions = _published_series(site_dir)
     for path in site_dir.iterdir():
         if path.name in {VERSION_DIRECTORY, ".git"}:
             continue
         if path.is_symlink():
             raise ValueError(f"Documentation sites cannot contain symbolic links: {path}.")
         if path.is_dir():
-            _tree_manifest(path)
+            _validate_tree(path)
         elif not path.is_file():
             raise ValueError(f"Unsupported documentation filesystem entry: {path}.")
+    return versions
 
 
 def stage_documentation_series(build_dir: Path, site_dir: Path, package_version: str, base_url: str) -> None:
@@ -281,7 +260,7 @@ def stage_documentation_series(build_dir: Path, site_dir: Path, package_version:
     if _paths_overlap(source, destination):
         raise ValueError("The Sphinx build and GitHub Pages directories must not overlap.")
     _validate_root_tree(source)
-    _validate_existing_site(destination)
+    versions = _validate_existing_site(destination)
 
     destination.mkdir(parents=True, exist_ok=True)
     version_root = _version_root(destination)
@@ -291,16 +270,14 @@ def stage_documentation_series(build_dir: Path, site_dir: Path, package_version:
         raise ValueError(f"Unsafe documentation series target: {target}.")
 
     _replace_series_tree(source, target)
-    versions = _published_series(destination)
+    _, series_key = _canonical_series(series)
+    versions = [(published, key) for published, key in versions if published != series]
+    versions.append((series, series_key))
+    versions.sort(key=lambda item: item[1], reverse=True)
     if versions[0][0] == series:
-        _refresh_documentation_root(destination, normalized_url)
+        _refresh_documentation_root(destination, normalized_url, versions)
     else:
-        _write_site_metadata(destination, normalized_url)
-
-
-# Retain the internal callable name used by downstream scripts while changing its
-# policy from immutable patch releases to mutable major/minor series.
-stage_documentation = stage_documentation_series
+        _write_site_metadata(destination, normalized_url, versions)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -309,7 +286,7 @@ def _parser() -> argparse.ArgumentParser:
 
     stage = commands.add_parser("stage-series", help="replace one mutable major/minor documentation series")
     stage.add_argument("--build-dir", type=Path, required=True, help="completed Sphinx HTML build")
-    stage.add_argument("--site-dir", type=Path, required=True, help="checked-out gh-pages worktree")
+    stage.add_argument("--site-dir", type=Path, required=True, help="staged GitHub Pages site")
     stage.add_argument("--package-version", required=True, help="canonical stable x.y.z package version")
     stage.add_argument(
         "--base-url",

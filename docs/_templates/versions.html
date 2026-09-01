@@ -2,14 +2,14 @@
   <h3>{{ _('Version') }}</h3>
   <select
     id="blvpy-version-select"
-    data-current-version="{{ version }}"
+    data-current-version="{{ release }}"
     data-switcher-url="{{ docs_switcher_url }}"
     aria-label="Documentation version"
     hidden
   >
-    <option value="" selected>{{ version }}</option>
+    <option value="" selected>{{ release }}</option>
   </select>
   <p class="version-switcher-fallback">
-    Release {{ version }}
+    Release {{ release }}
   </p>
 </div>

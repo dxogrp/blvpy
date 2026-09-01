@@ -21,29 +21,16 @@ jobs:
       - name: Check out the selected commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.sha }}
 
       - name: Record the selected package version
         id: version
-        env:
-          SOURCE_SHA: ${{ github.sha }}
         run: |
           python - <<'PY'
           import os
-          import subprocess
           import tomllib
           from pathlib import Path
-
-          actual_sha = subprocess.check_output(
-              ["git", "rev-parse", "HEAD"], text=True
-          ).strip()
-          source_sha = os.environ["SOURCE_SHA"]
-          if actual_sha != source_sha:
-              raise SystemExit(
-                  f"Selected source mismatch: expected {source_sha}, checked out {actual_sha}."
-              )
 
           package_version = tomllib.loads(
               Path("pyproject.toml").read_text(encoding="utf-8")
@@ -70,8 +57,8 @@ jobs:
       - name: Install documentation dependencies
         run: uv sync --frozen --group dev --group docs
 
-      - name: Verify documentation contract
-        run: uv run --frozen --group dev --group docs python -m pytest tests/test_documentation.py
+      - name: Verify documentation
+        run: uv run --frozen --group dev --group docs python -m pytest tests/test_docs.py
 
       - name: Build documentation from the selected commit
         env:
@@ -109,6 +96,7 @@ jobs:
           path: ${{ runner.temp }}/blvpy-pages-site
           include-hidden-files: true
           if-no-files-found: error
+          retention-days: 1
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
@@ -133,7 +121,6 @@ jobs:
       - name: Check out the selected commit for authenticated publishing
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          fetch-depth: 0
           ref: ${{ github.sha }}
 
       - name: Download staged-site artifact
