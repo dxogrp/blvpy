@@ -55,15 +55,19 @@ jobs:
           enable-cache: true
 
       - name: Install documentation dependencies
-        run: uv sync --frozen --group dev --group docs
+        run: uv sync --frozen --group dev --group docs --group examples
 
       - name: Verify documentation
-        run: uv run --frozen --group dev --group docs python -m pytest tests/test_docs.py
+        run: uv run --frozen --group dev --group docs --group examples python -m pytest tests/test_docs.py
 
       - name: Build documentation from the selected commit
-        env:
-          BLVPY_DOCS_SOURCE_REF: ${{ github.sha }}
-        run: uv run --frozen --group docs sphinx-build -W --keep-going -n -b html docs docs/_build/html
+        run: uv run --frozen --group docs --group examples sphinx-build -W --keep-going -n -b html docs docs/_build/html
+
+      - name: Export rendered examples
+        run: |
+          uv run --frozen --group docs --group examples python scripts/export_examples.py \
+            --source-dir examples \
+            --output-dir docs/_build/html/examples
 
       - name: Recover the published series site
         id: history

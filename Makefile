@@ -19,6 +19,11 @@ sync-docs: ## install development and documentation dependencies
 	@printf "$(BLUE)Syncing documentation dependencies...$(RESET)\n"
 	@uv sync --frozen --group dev --group docs
 
+.PHONY: _sync-docs-examples
+_sync-docs-examples:
+	@printf "$(BLUE)Syncing documentation and example dependencies...$(RESET)\n"
+	@uv sync --frozen --group dev --group docs --group examples
+
 .PHONY: marimo
 marimo: sync-examples ## open the Marimo example gallery
 	@printf "$(BLUE)Opening Marimo examples...$(RESET)\n"
@@ -30,11 +35,13 @@ check-examples: sync-examples ## statically check every Marimo example
 	@uv run --frozen --group examples marimo check --strict examples/*.py
 
 .PHONY: docs
-docs: sync-docs ## build and serve the Sphinx documentation
+docs: _sync-docs-examples ## build and serve the Sphinx documentation
 	@printf "$(BLUE)Building Sphinx documentation...$(RESET)\n"
-	@uv run --frozen --group docs sphinx-build -b html docs docs/_build/html
+	@uv run --frozen --group docs --group examples sphinx-build -b html docs docs/_build/html
+	@uv run --frozen --group docs --group examples python scripts/export_examples.py \
+		--source-dir examples --output-dir docs/_build/html/examples
 	@printf "$(BLUE)Serving documentation at http://127.0.0.1:8000...$(RESET)\n"
-	@uv run --frozen --group docs python -m http.server --directory docs/_build/html 8000
+	@uv run --frozen --group docs --group examples python -m http.server --directory docs/_build/html 8000
 
 .PHONY: check-docs
 check-docs: sync-docs ## strictly validate the Sphinx documentation

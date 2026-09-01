@@ -114,9 +114,11 @@ def _(mo):
             mo.md(r"""
             ## Explore the relaxation
 
-            Drag the slider and release it to solve again. Its logarithmically
-            spaced values show how the relaxed point approaches the exact
-            bilevel solution as $\epsilon_{\mathrm{target}}$ decreases.
+            The published documentation shows a non-interactive snapshot at
+            the default value $\epsilon_{\mathrm{target}}=10^{-6}$. In a live
+            Marimo session, drag the slider and release it to solve again. Its
+            logarithmically spaced values show how the relaxed point approaches
+            the exact bilevel solution as $\epsilon_{\mathrm{target}}$ decreases.
 
             The smallest targets also probe numerical precision: once the
             analytic displacement falls below the nonlinear solver's practical
@@ -165,9 +167,9 @@ def _(diagnostics, epsilon_target, mo, relaxed_shift, result, x, y):
     - Complementarity: ${result.complementarity:.3e}$
     - Independently evaluated lower source gap: ${diagnostics.source_gap:.3e}$
 
-    The numerical point agrees with the analytic relaxed solution. Move the
-    slider toward smaller values to see it converge to the exact bilevel point
-    $(0,0)$ and objective value $2$.
+    The numerical point agrees with the analytic relaxed solution. In a live
+    Marimo session, move the slider toward smaller values to see it converge to
+    the exact bilevel point $(0,0)$ and objective value $2$.
     """)
     return
 

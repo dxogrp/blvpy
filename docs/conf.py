@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -29,7 +28,6 @@ package_version = __version__
 documentation_series = _documentation_series(package_version)
 version = documentation_series
 release = documentation_series
-docs_source_ref = os.environ.get("BLVPY_DOCS_SOURCE_REF") or f"v{package_version}"
 
 extensions = [
     "myst_parser",
@@ -42,14 +40,7 @@ extensions = [
     "sphinx.ext.viewcode",
 ]
 
-# Local builds link to the package's exact release tag. Documentation deployment
-# overrides the ref with the exact commit selected by the manual workflow.
-extlinks = {
-    "example": (
-        f"https://github.com/dxogrp/blvpy/blob/{docs_source_ref}/examples/%s",
-        "%s",
-    )
-}
+extlinks = {"example": ("examples/%s.html", "%s")}
 
 source_suffix = {".md": "markdown"}
 root_doc = "index"
@@ -110,7 +101,6 @@ html_sidebars = {
 }
 html_context = {
     "docs_switcher_url": "https://dxogrp.github.io/blvpy/switcher.json",
-    "github_version": docs_source_ref,
 }
 
 
@@ -122,6 +112,19 @@ def _public_signature(app, what, name, obj, options, signature, return_annotatio
     return signature, return_annotation
 
 
+def _open_example_links_in_new_tab(app, doctree, docname):
+    """Open rendered examples separately without affecting other links."""
+    del docname
+    if app.builder.format != "html":
+        return
+    for reference in doctree.findall():
+        attributes = getattr(reference, "attributes", {})
+        if "extlink-example" in attributes.get("classes", ()):
+            attributes["target"] = "_blank"
+            attributes["rel"] = "noopener"
+
+
 def setup(app):
     """Register documentation-only rendering hooks."""
     app.connect("autodoc-process-signature", _public_signature)
+    app.connect("doctree-resolved", _open_example_links_in_new_tab)
