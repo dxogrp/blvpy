@@ -1,4 +1,5 @@
-text.usetex: True
+# Keep headless exports independent of a system LaTeX installation.
+text.usetex: False
 mathtext.fontset: cm
 font.family: ['serif']
 font.size: 15
