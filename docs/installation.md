@@ -1,5 +1,7 @@
 # Installation
 
+## PyPI
+
 BLVPY requires Python 3.12 or newer, CVXPY 1.9 or newer, and a native IPOPT installation.
 IPOPT and its Python binding, `cyipopt`, are mandatory runtime dependencies.
 
