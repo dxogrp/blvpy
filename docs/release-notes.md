@@ -9,6 +9,7 @@
 - Made complete and partial best-of run selection objective-sense aware, and
   defined `GapDiagnostics.source_gap` as sense-normalized lower
   suboptimality.
+- Add examples.
 
 ## 0.2
 
