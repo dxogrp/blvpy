@@ -2,6 +2,16 @@
 
 [![CI](https://github.com/dxogrp/blvpy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dxogrp/blvpy/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/blvpy.svg)](https://pypi.org/project/blvpy/) [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://dxogrp.github.io/blvpy/) [![License](https://img.shields.io/github/license/dxogrp/blvpy.svg)](https://github.com/dxogrp/blvpy/blob/main/LICENSE)
 
+- [BLVPY: Disciplined Bilevel Programming](#blvpy-disciplined-bilevel-programming)
+  - [Basic idea](#basic-idea)
+  - [Installation](#installation)
+    - [PyPI](#pypi)
+    - [Development setup](#development-setup)
+  - [Quick start](#quick-start)
+  - [Examples](#examples)
+  - [Documentation](#documentation)
+  - [License](#license)
+
 BLVPY is a [CVXPY](https://www.cvxpy.org/) extension for modeling and locally solving optimistic bilevel optimization problems.
 A bilevel problem contains an optimization problem inside another optimization problem, i.e.,
 
@@ -25,8 +35,8 @@ $$
 
 We say a bilevel problem is *disciplined bilevel programming* (DBLP) compliant if it satisfies the following conditions:
 
-* The objective and constraint functions $F_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, m$ of the upper problem are [DNLP](https://www.cvxpy.org/tutorial/dnlp/index.html)-compliant with variables $x \in \mathbf{R}^n$ and $y \in \mathbf{R}^k$.
-* The objective and constraint functions $f_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, p$ of the lower problem are [DPP](https://www.cvxpy.org/tutorial/dpp/index.html)-compliant with variable $z \in \mathbf{R}^k$ (or $y \in \mathbf{R}^k$), so that the lower problem is a disciplined convex program, parameterized by $x \in \mathbf{R}^n$.
+- The objective and constraint functions $F_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, m$ of the upper problem are [DNLP](https://www.cvxpy.org/tutorial/dnlp/index.html)-compliant with variables $x \in \mathbf{R}^n$ and $y \in \mathbf{R}^k$.
+- The objective and constraint functions $f_i \colon \mathbf{R}^n \times \mathbf{R}^k \to \mathbf{R}$ for $i = 0, 1, \ldots, p$ of the lower problem are [DPP](https://www.cvxpy.org/tutorial/dpp/index.html)-compliant with variable $z \in \mathbf{R}^k$ (or $y \in \mathbf{R}^k$), so that the lower problem is a disciplined convex program, parameterized by $x \in \mathbf{R}^n$.
 
 BLVPY supports the modeling and solving of DBLP-compliant problems and uses *optimistic semantics*, i.e., when the lower problem has multiple minimizers, the upper problem may select the one most favorable to its objective.
 
@@ -43,11 +53,13 @@ These are internally converted to `cp.Minimize` objectives by negating the objec
 
 ## Installation
 
+### PyPI
+
 BLVPY requires:
 
-* Python 3.12 or newer;
-* CVXPY 1.9 or newer; and
-* a native [IPOPT](https://coin-or.github.io/Ipopt/INSTALL.html) installation.
+- Python 3.12 or newer;
+- CVXPY 1.9 or newer; and
+- a native [IPOPT](https://coin-or.github.io/Ipopt/INSTALL.html) installation.
 
 Install the native IPOPT library first following the [installation guide](https://coin-or.github.io/Ipopt/INSTALL.html).
 Then install BLVPY from PyPI:
