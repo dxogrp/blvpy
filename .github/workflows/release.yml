@@ -184,17 +184,3 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$RELEASE_TAG" assets/*
-
-  documentation:
-    name: Publish latest and versioned documentation
-    needs:
-      - verify
-      - attach-assets
-    permissions:
-      contents: write
-      id-token: write
-      pages: write
-    uses: ./.github/workflows/docs.yml
-    with:
-      tag_name: ${{ github.event.release.tag_name }}
-      package_version: ${{ needs.verify.outputs.package_version }}

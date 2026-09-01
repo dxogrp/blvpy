@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -10,11 +12,24 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from blvpy import __version__  # noqa: E402
 
+
+def _documentation_series(package_version: str) -> str:
+    """Return the ``major.minor`` documentation series for a stable release."""
+    match = re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", package_version)
+    if match is None:
+        message = f"BLVPY package version must be a canonical stable major.minor.patch release: {package_version!r}"
+        raise RuntimeError(message)
+    return f"{match.group(1)}.{match.group(2)}"
+
+
 project = "BLVPY"
 author = "Hao Zhu"
 copyright = "2026, Hao Zhu and BLVPY contributors"
-version = __version__
-release = __version__
+package_version = __version__
+documentation_series = _documentation_series(package_version)
+version = documentation_series
+release = documentation_series
+docs_source_ref = os.environ.get("BLVPY_DOCS_SOURCE_REF") or f"v{package_version}"
 
 extensions = [
     "myst_parser",
@@ -27,11 +42,11 @@ extensions = [
     "sphinx.ext.viewcode",
 ]
 
-# Release-specific links are derived from the package version so a release
-# documentation build always points to examples from its matching Git tag.
+# Local builds link to the package's exact release tag. Documentation deployment
+# overrides the ref with the exact commit selected by the manual workflow.
 extlinks = {
     "example": (
-        f"https://github.com/dxogrp/blvpy/blob/v{release}/examples/%s",
+        f"https://github.com/dxogrp/blvpy/blob/{docs_source_ref}/examples/%s",
         "%s",
     )
 }
@@ -95,7 +110,7 @@ html_sidebars = {
 }
 html_context = {
     "docs_switcher_url": "https://dxogrp.github.io/blvpy/switcher.json",
-    "github_version": f"v{release}",
+    "github_version": docs_source_ref,
 }
 
 

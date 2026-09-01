@@ -1,4 +1,4 @@
-"""Publish latest and immutable BLVPY documentation on GitHub Pages."""
+"""Publish mutable BLVPY documentation series on GitHub Pages."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -14,6 +15,8 @@ from urllib.parse import urlsplit, urlunsplit
 from packaging.version import InvalidVersion, Version
 
 VERSION_DIRECTORY = "version"
+PACKAGE_VERSION_PATTERN = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
+SERIES_PATTERN = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
 
 
 def _canonical_version(value: str) -> tuple[str, Version]:
@@ -29,6 +32,32 @@ def _canonical_version(value: str) -> tuple[str, Version]:
     if Path(canonical).name != canonical or "/" in canonical or "\\" in canonical:
         raise ValueError(f"Unsafe documentation version path: {value!r}.")
     return canonical, parsed
+
+
+def _canonical_package_version(value: str) -> Version:
+    """Return a canonical stable three-component package version."""
+    if PACKAGE_VERSION_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"Package version must be a canonical stable x.y.z version: {value!r}.")
+    canonical, parsed = _canonical_version(value)
+    if canonical != value or len(parsed.release) != 3:
+        raise ValueError(f"Package version must be a canonical stable x.y.z version: {value!r}.")
+    return parsed
+
+
+def _canonical_series(value: str) -> tuple[str, tuple[int, int]]:
+    """Return a canonical major/minor documentation series."""
+    if SERIES_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"Documentation series must be a canonical x.y version: {value!r}.")
+    canonical, parsed = _canonical_version(value)
+    if canonical != value or len(parsed.release) != 2:
+        raise ValueError(f"Documentation series must be a canonical x.y version: {value!r}.")
+    return canonical, (parsed.major, parsed.minor)
+
+
+def documentation_series(package_version: str) -> str:
+    """Derive the mutable documentation series for a stable package version."""
+    parsed = _canonical_package_version(package_version)
+    return f"{parsed.major}.{parsed.minor}"
 
 
 def _canonical_base_url(value: str) -> str:
@@ -77,19 +106,20 @@ def _validate_root_tree(root: Path) -> None:
         raise ValueError(f"Documentation root entry conflicts with a version directory: {path}.")
 
 
-def _install_immutable_tree(source: Path, target: Path) -> None:
-    """Install a new version tree, allowing only identical release reruns."""
+def _replace_series_tree(source: Path, target: Path) -> None:
+    """Replace one mutable series tree with a complete validated build."""
     if target.is_symlink() or (target.exists() and not target.is_dir()):
-        raise ValueError(f"Documentation version target is not a safe directory: {target}.")
-    source_manifest = _tree_manifest(source)
+        raise ValueError(f"Documentation series target is not a safe directory: {target}.")
+    _tree_manifest(source)
     if target.exists():
-        if _tree_manifest(target) == source_manifest:
-            return
-        raise ValueError(f"Documentation version {target.name!r} is already published with different content.")
+        _tree_manifest(target)
 
     temporary = Path(tempfile.mkdtemp(prefix=f".{target.name}.staging-", dir=target.parent))
     try:
         shutil.copytree(source, temporary, dirs_exist_ok=True)
+        _tree_manifest(temporary)
+        if target.exists():
+            shutil.rmtree(target)
         os.replace(temporary, target)
     finally:
         if temporary.exists():
@@ -103,19 +133,23 @@ def _version_root(site_dir: Path) -> Path:
     return root
 
 
-def _published_versions(site_dir: Path) -> list[tuple[str, Version]]:
+def _published_series(site_dir: Path) -> list[tuple[str, tuple[int, int]]]:
+    """Return every published series, rejecting mixed or unsafe layouts."""
     root = _version_root(site_dir)
     if not root.exists():
         return []
 
-    versions: list[tuple[str, Version]] = []
+    versions: list[tuple[str, tuple[int, int]]] = []
     for path in root.iterdir():
-        if not path.is_dir() or path.is_symlink():
-            continue
+        if path.is_symlink():
+            raise ValueError(f"Documentation trees cannot contain symbolic links: {path}.")
+        if not path.is_dir():
+            raise ValueError(f"Unexpected entry in the documentation version directory: {path}.")
         try:
-            canonical, parsed = _canonical_version(path.name)
-        except ValueError:
-            continue
+            canonical, parsed = _canonical_series(path.name)
+        except ValueError as exc:
+            raise ValueError(f"Unexpected documentation version directory: {path}.") from exc
+        _tree_manifest(path)
         versions.append((canonical, parsed))
     return sorted(versions, key=lambda item: item[1], reverse=True)
 
@@ -132,7 +166,7 @@ def _write_text_atomic(path: Path, content: str) -> None:
 
 
 def _write_site_metadata(site_dir: Path, base_url: str) -> None:
-    versions = _published_versions(site_dir)
+    versions = _published_series(site_dir)
     if not versions:
         raise ValueError("The staged site does not contain a released documentation version.")
 
@@ -159,7 +193,7 @@ def _write_site_metadata(site_dir: Path, base_url: str) -> None:
 
 
 def _remove_root_documentation(site_dir: Path) -> None:
-    """Remove mutable root documentation while preserving immutable releases."""
+    """Remove root documentation while preserving series and Git metadata."""
     git_metadata = site_dir / ".git"
     if git_metadata.is_symlink():
         raise ValueError(f"Documentation sites cannot contain symbolic links: {git_metadata}.")
@@ -191,8 +225,8 @@ def _copy_tree_contents(source: Path, destination: Path) -> None:
 
 
 def _refresh_documentation_root(site_dir: Path, base_url: str) -> None:
-    """Serve the greatest published version directly from the Pages root."""
-    versions = _published_versions(site_dir)
+    """Serve the greatest published series directly from the Pages root."""
+    versions = _published_series(site_dir)
     if not versions:
         raise ValueError("The staged site does not contain a released documentation version.")
 
@@ -207,38 +241,76 @@ def _refresh_documentation_root(site_dir: Path, base_url: str) -> None:
     _write_site_metadata(site_dir, base_url)
 
 
-def stage_documentation(build_dir: Path, site_dir: Path, version: str, base_url: str) -> None:
-    """Stage a release and serve the greatest published version at the root."""
-    canonical, _ = _canonical_version(version)
+def _validate_existing_site(site_dir: Path) -> None:
+    """Validate mutable site content before changing a series or metadata."""
+    if site_dir.is_symlink() or (site_dir.exists() and not site_dir.is_dir()):
+        raise ValueError(f"Documentation site is not a safe directory: {site_dir}.")
+    if not site_dir.exists():
+        return
+
+    git_metadata = site_dir / ".git"
+    if git_metadata.is_symlink():
+        raise ValueError(f"Documentation sites cannot contain symbolic links: {git_metadata}.")
+    _published_series(site_dir)
+    for path in site_dir.iterdir():
+        if path.name in {VERSION_DIRECTORY, ".git"}:
+            continue
+        if path.is_symlink():
+            raise ValueError(f"Documentation sites cannot contain symbolic links: {path}.")
+        if path.is_dir():
+            _tree_manifest(path)
+        elif not path.is_file():
+            raise ValueError(f"Unsupported documentation filesystem entry: {path}.")
+
+
+def stage_documentation_series(build_dir: Path, site_dir: Path, package_version: str, base_url: str) -> None:
+    """Replace a mutable documentation series and refresh root when it is latest."""
+    series = documentation_series(package_version)
     normalized_url = _canonical_base_url(base_url)
-    source = build_dir.expanduser().resolve()
-    destination = site_dir.expanduser().resolve()
+    source_input = build_dir.expanduser()
+    destination_input = site_dir.expanduser()
+    if source_input.is_symlink():
+        raise ValueError(f"Sphinx build directory cannot be a symbolic link: {source_input}.")
+    if destination_input.is_symlink():
+        raise ValueError(f"Documentation site cannot be a symbolic link: {destination_input}.")
+    source = source_input.resolve()
+    destination = destination_input.resolve()
 
     if not source.is_dir() or not (source / "index.html").is_file():
         raise ValueError(f"Sphinx build directory has no index.html: {source}.")
     if _paths_overlap(source, destination):
         raise ValueError("The Sphinx build and GitHub Pages directories must not overlap.")
     _validate_root_tree(source)
+    _validate_existing_site(destination)
 
     destination.mkdir(parents=True, exist_ok=True)
     version_root = _version_root(destination)
     version_root.mkdir(exist_ok=True)
-    target = version_root / canonical
+    target = version_root / series
     if target.parent != version_root:
-        raise ValueError(f"Unsafe documentation version target: {target}.")
+        raise ValueError(f"Unsafe documentation series target: {target}.")
 
-    _install_immutable_tree(source, target)
-    _refresh_documentation_root(destination, normalized_url)
+    _replace_series_tree(source, target)
+    versions = _published_series(destination)
+    if versions[0][0] == series:
+        _refresh_documentation_root(destination, normalized_url)
+    else:
+        _write_site_metadata(destination, normalized_url)
+
+
+# Retain the internal callable name used by downstream scripts while changing its
+# policy from immutable patch releases to mutable major/minor series.
+stage_documentation = stage_documentation_series
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
 
-    stage = commands.add_parser("stage-release", help="install one immutable release and refresh the latest root")
+    stage = commands.add_parser("stage-series", help="replace one mutable major/minor documentation series")
     stage.add_argument("--build-dir", type=Path, required=True, help="completed Sphinx HTML build")
     stage.add_argument("--site-dir", type=Path, required=True, help="checked-out gh-pages worktree")
-    stage.add_argument("--version", required=True, help="canonical PEP 440 release version")
+    stage.add_argument("--package-version", required=True, help="canonical stable x.y.z package version")
     stage.add_argument(
         "--base-url",
         default="https://dxogrp.github.io/blvpy/",
@@ -250,7 +322,7 @@ def _parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _parser().parse_args()
     try:
-        stage_documentation(args.build_dir, args.site_dir, args.version, args.base_url)
+        stage_documentation_series(args.build_dir, args.site_dir, args.package_version, args.base_url)
     except (OSError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
     return 0

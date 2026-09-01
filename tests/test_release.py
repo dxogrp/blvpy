@@ -157,20 +157,76 @@ def test_runtime_version_comes_from_distribution_metadata() -> None:
     assert blvpy.__version__ == importlib.metadata.version("blvpy")
 
 
-def test_release_workflows_are_ordered() -> None:
+def test_release_and_manual_documentation_workflows_are_separated() -> None:
     release = (WORKFLOWS_DIRECTORY / "release.yml").read_text(encoding="utf-8")
     documentation = (WORKFLOWS_DIRECTORY / "docs.yml").read_text(encoding="utf-8")
 
     assert "release:" in release and "- published" in release
     assert "needs: verify" in release
     assert "- publish" in release
-    assert "- attach-assets" in release
-    assert "uses: ./.github/workflows/docs.yml" in release
-    assert "Publish latest and versioned documentation" in release
-    assert "workflow_call:" in documentation
-    assert "scripts/stage_docs.py stage-release" in documentation
+    assert "attach-assets:" in release
+    assert "Check Sphinx documentation" in release
+    assert "uses: ./.github/workflows/docs.yml" not in release
+    assert "workflow_dispatch:" in documentation
+    assert "workflow_call:" not in documentation
+    assert "group: blvpy-pages" in documentation
+    assert "cancel-in-progress: false" in documentation
+    assert "ref: ${{ github.sha }}" in documentation
+    assert "BLVPY_DOCS_SOURCE_REF: ${{ github.sha }}" in documentation
+    assert "${{ github.run_attempt }}" in documentation
+    assert "artifact_name: blvpy-pages-series-" in documentation
+    assert "scripts/stage_docs.py stage-series" in documentation
+    assert '--package-version "$PACKAGE_VERSION"' in documentation
+    assert "stage-release" not in documentation
+    assert "checkout --orphan" not in documentation
+    assert "git push --force" not in documentation
+    assert "git push -f" not in documentation
     pages_upload = documentation.split("      - name: Upload Pages artifact\n", 1)[1].split("\n\n", 1)[0]
     assert "include-hidden-files: true" in pages_upload
+
+
+# ONE-TIME MIGRATION CONTRACT: delete this test with rebuild-docs-once.yml after
+# the rebuilt live site and all three documentation series have been verified.
+def test_one_time_documentation_rebuild_workflow_contract() -> None:
+    rebuild = (WORKFLOWS_DIRECTORY / "rebuild-docs-once.yml").read_text(encoding="utf-8")
+
+    assert "ONE-TIME MIGRATION WORKFLOW: DELETE THIS FILE" in rebuild
+    assert "workflow_dispatch:" in rebuild
+    assert "required: true" in rebuild
+    assert '"REBUILD gh-pages"' in rebuild
+    assert '"refs/heads/main"' in rebuild
+    assert "group: blvpy-pages" in rebuild
+    assert "cancel-in-progress: false" in rebuild
+
+    assert "checkout_ref: v0.1.0" in rebuild
+    assert "source_ref: v0.1.0" in rebuild
+    assert "checkout_ref: v0.2.0" in rebuild
+    assert "source_ref: v0.2.0" in rebuild
+    assert "checkout_ref: ${{ github.sha }}" in rebuild
+    assert "source_ref: ${{ github.sha }}" in rebuild
+    assert "${{ github.run_attempt }}" in rebuild
+    assert "artifact_name: blvpy-pages-rebuild-" in rebuild
+    assert "cp policy/docs/conf.py source/docs/conf.py" in rebuild
+    assert "policy/docs/_templates/" in rebuild
+    assert "policy/docs/_static/version-switcher.js" in rebuild
+    assert rebuild.count("uv sync --frozen --group docs") == 1
+    assert rebuild.count("scripts/stage_docs.py stage-series") == 3
+
+    assert 'expected_series = {"0.1", "0.2", "0.3"}' in rebuild
+    assert '"name": "latest"' in rebuild
+    assert "The documentation root does not exactly match series 0.3." in rebuild
+    diagnostic_upload = rebuild.index("      - name: Upload fresh-site diagnostic artifact")
+    pages_upload = rebuild.index("      - name: Upload Pages artifact before changing gh-pages")
+    replacement = rebuild.index("      - name: Replace the existing gh-pages tree in a normal worktree")
+    assert diagnostic_upload < replacement and pages_upload < replacement
+    assert "rsync --archive --delete --exclude=.git" in rebuild
+    assert "Previous gh-pages tip" in rebuild
+    assert "Replacement commit" in rebuild
+    assert "Main source SHA" in rebuild
+    assert "Site manifest SHA-256" in rebuild
+    assert "checkout --orphan" not in rebuild
+    assert "git push --force" not in rebuild
+    assert "git push -f" not in rebuild
 
 
 def test_external_workflow_action_pins_are_immutable() -> None:

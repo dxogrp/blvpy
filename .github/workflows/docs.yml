@@ -1,56 +1,61 @@
 name: Documentation deployment
 
 on:
-  workflow_call:
-    inputs:
-      tag_name:
-        description: Exact Git tag containing the documentation source
-        required: true
-        type: string
-      package_version:
-        description: Canonical package version without the v prefix
-        required: true
-        type: string
+  workflow_dispatch:
+
+concurrency:
+  group: blvpy-pages
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: Build ${{ inputs.tag_name }} documentation
+    name: Build selected documentation series
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
+      previous_tip: ${{ steps.history.outputs.previous_tip }}
 
     steps:
-      - name: Check out release
+      - name: Check out the selected commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.tag_name }}
+          ref: ${{ github.sha }}
+
+      - name: Record the selected package version
+        id: version
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          actual_sha = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], text=True
+          ).strip()
+          source_sha = os.environ["SOURCE_SHA"]
+          if actual_sha != source_sha:
+              raise SystemExit(
+                  f"Selected source mismatch: expected {source_sha}, checked out {actual_sha}."
+              )
+
+          package_version = tomllib.loads(
+              Path("pyproject.toml").read_text(encoding="utf-8")
+          )["project"]["version"]
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"package_version={package_version}\n")
+          PY
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.13"
-
-      - name: Verify documentation version
-        env:
-          PACKAGE_VERSION: ${{ inputs.package_version }}
-          RELEASE_TAG: ${{ inputs.tag_name }}
-        run: |
-          python - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
-
-          project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
-          expected_version = os.environ["PACKAGE_VERSION"]
-          release_tag = os.environ["RELEASE_TAG"]
-          if project_version != expected_version or release_tag != f"v{expected_version}":
-              raise SystemExit(
-                  f"Documentation version mismatch: tag={release_tag!r}, expected={expected_version!r}, "
-                  f"project={project_version!r}."
-              )
-          PY
 
       - name: Install native IPOPT and build dependencies
         run: |
@@ -68,43 +73,39 @@ jobs:
       - name: Verify documentation contract
         run: uv run --frozen --group dev --group docs python -m pytest tests/test_documentation.py
 
-      - name: Build documentation
+      - name: Build documentation from the selected commit
+        env:
+          BLVPY_DOCS_SOURCE_REF: ${{ github.sha }}
         run: uv run --frozen --group docs sphinx-build -W --keep-going -n -b html docs docs/_build/html
 
-      - name: Recover previously published versions
+      - name: Recover the published series site
+        id: history
         env:
           HISTORY_DIR: ${{ runner.temp }}/blvpy-pages-history
           SITE_DIR: ${{ runner.temp }}/blvpy-pages-site
         run: |
+          git fetch --no-tags origin refs/heads/gh-pages:refs/remotes/origin/gh-pages
+          previous_tip="$(git rev-parse refs/remotes/origin/gh-pages)"
+          echo "previous_tip=$previous_tip" >> "$GITHUB_OUTPUT"
+          git worktree add --detach "$HISTORY_DIR" "$previous_tip"
           mkdir -p "$SITE_DIR"
-          set +e
-          git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            git fetch --no-tags origin refs/heads/gh-pages:refs/remotes/origin/gh-pages
-            git worktree add --detach "$HISTORY_DIR" refs/remotes/origin/gh-pages
-            rsync --archive --exclude=.git "$HISTORY_DIR/" "$SITE_DIR/"
-          elif [ "$status" -ne 2 ]; then
-            echo "Could not inspect the remote gh-pages branch." >&2
-            exit "$status"
-          fi
+          rsync --archive --exclude=.git "$HISTORY_DIR/" "$SITE_DIR/"
 
-      - name: Stage latest and immutable release documentation
+      - name: Stage the mutable documentation series
         env:
-          PACKAGE_VERSION: ${{ inputs.package_version }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
           SITE_DIR: ${{ runner.temp }}/blvpy-pages-site
         run: |
-          uv run --frozen --group dev --group docs python scripts/stage_docs.py stage-release \
+          uv run --frozen --group dev --group docs python scripts/stage_docs.py stage-series \
             --build-dir docs/_build/html \
             --site-dir "$SITE_DIR" \
-            --version "$PACKAGE_VERSION" \
+            --package-version "$PACKAGE_VERSION" \
             --base-url https://dxogrp.github.io/blvpy/
 
-      - name: Upload version-history artifact
+      - name: Upload staged-site artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: blvpy-documentation-site-${{ inputs.package_version }}
+          name: blvpy-documentation-site-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/blvpy-pages-site
           include-hidden-files: true
           if-no-files-found: error
@@ -112,11 +113,12 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
+          name: blvpy-pages-series-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/blvpy-pages-site
           include-hidden-files: true
 
   publish:
-    name: Publish latest and versioned documentation
+    name: Publish mutable documentation series
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -128,53 +130,48 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Check out release for authenticated publishing
+      - name: Check out the selected commit for authenticated publishing
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag_name }}
+          ref: ${{ github.sha }}
 
-      - name: Download version-history artifact
+      - name: Download staged-site artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: blvpy-documentation-site-${{ inputs.package_version }}
+          name: blvpy-documentation-site-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/blvpy-pages-site
 
-      - name: Prepare GitHub Pages worktree
+      - name: Prepare the existing GitHub Pages worktree
         env:
+          EXPECTED_TIP: ${{ needs.build.outputs.previous_tip }}
           PAGES_DIR: ${{ runner.temp }}/blvpy-pages
           SITE_DIR: ${{ runner.temp }}/blvpy-pages-site
         run: |
-          set +e
-          git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            git fetch --no-tags origin refs/heads/gh-pages:refs/remotes/origin/gh-pages
-            git worktree add --detach "$PAGES_DIR" refs/remotes/origin/gh-pages
-          elif [ "$status" -eq 2 ]; then
-            git worktree add --detach "$PAGES_DIR"
-            git -C "$PAGES_DIR" checkout --orphan gh-pages
-            git -C "$PAGES_DIR" rm -rf .
-          else
-            echo "Could not inspect the remote gh-pages branch." >&2
-            exit "$status"
+          git fetch --no-tags origin refs/heads/gh-pages:refs/remotes/origin/gh-pages
+          current_tip="$(git rev-parse refs/remotes/origin/gh-pages)"
+          if [ "$current_tip" != "$EXPECTED_TIP" ]; then
+            echo "gh-pages changed while documentation was being built." >&2
+            exit 1
           fi
+          git worktree add --detach "$PAGES_DIR" "$EXPECTED_TIP"
           rsync --archive --delete --exclude=.git "$SITE_DIR/" "$PAGES_DIR/"
 
-      - name: Preserve version history on gh-pages
+      - name: Commit the series update without rewriting history
         env:
-          PACKAGE_VERSION: ${{ inputs.package_version }}
+          PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
           PAGES_DIR: ${{ runner.temp }}/blvpy-pages
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           git -C "$PAGES_DIR" config user.name "github-actions[bot]"
           git -C "$PAGES_DIR" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "$PAGES_DIR" add --all
           if git -C "$PAGES_DIR" diff --cached --quiet; then
-            echo "Documentation history is already current."
+            echo "Documentation is already current."
           else
-            git -C "$PAGES_DIR" commit -m "docs: publish $PACKAGE_VERSION"
-            git -C "$PAGES_DIR" push origin HEAD:gh-pages
+            short_sha="${SOURCE_SHA:0:12}"
+            git -C "$PAGES_DIR" commit -m "docs: publish $PACKAGE_VERSION from $short_sha"
+            git -C "$PAGES_DIR" push origin HEAD:refs/heads/gh-pages
           fi
 
       - name: Configure GitHub Pages
@@ -183,3 +180,5 @@ jobs:
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        with:
+          artifact_name: blvpy-pages-series-${{ github.run_id }}-${{ github.run_attempt }}

@@ -38,39 +38,39 @@ def _switcher(site: Path) -> list[dict[str, object]]:
     return json.loads((site / "switcher.json").read_text(encoding="utf-8"))
 
 
-def test_stage_first_documentation_release(tmp_path: Path) -> None:
+def test_stage_first_documentation_series(tmp_path: Path) -> None:
     build = _make_build(tmp_path / "build", "release 0.1.0")
     site = tmp_path / "site"
 
     stage_documentation(build, site, "0.1.0", "https://dxogrp.github.io/blvpy/")
 
-    assert (site / "version" / "0.1.0" / "index.html").read_text(encoding="utf-8") == "release 0.1.0"
-    assert (site / "version" / "0.1.0" / "_static" / "style.css").is_file()
+    assert (site / "version" / "0.1" / "index.html").read_text(encoding="utf-8") == "release 0.1.0"
+    assert (site / "version" / "0.1" / "_static" / "style.css").is_file()
     assert (site / "index.html").read_text(encoding="utf-8") == "release 0.1.0"
     assert (site / "_static" / "style.css").read_text(encoding="utf-8") == "/* release 0.1.0 */"
     assert (site / ".nojekyll").is_file()
     assert _switcher(site) == [
         {
             "name": "latest",
-            "version": "0.1.0",
+            "version": "0.1",
             "url": "https://dxogrp.github.io/blvpy/",
             "preferred": True,
         },
         {
-            "name": "0.1.0",
-            "version": "0.1.0",
-            "url": "https://dxogrp.github.io/blvpy/version/0.1.0/",
+            "name": "0.1",
+            "version": "0.1",
+            "url": "https://dxogrp.github.io/blvpy/version/0.1/",
             "preferred": False,
         },
     ]
     assert 'http-equiv="refresh"' not in (site / "index.html").read_text(encoding="utf-8")
 
 
-def test_stage_new_release_preserves_and_sorts_existing_versions(tmp_path: Path) -> None:
+def test_stage_new_series_preserves_and_sorts_existing_series(tmp_path: Path) -> None:
     site = tmp_path / "site"
     first = _make_build(tmp_path / "first", "original release")
     stage_documentation(first, site, "0.9.0", "https://docs.example.test/blvpy")
-    original = (site / "version" / "0.9.0" / "index.html").read_bytes()
+    original = (site / "version" / "0.9" / "index.html").read_bytes()
     (site / "obsolete.html").write_text("old root page", encoding="utf-8")
     obsolete_assets = site / "obsolete-assets"
     obsolete_assets.mkdir()
@@ -79,37 +79,32 @@ def test_stage_new_release_preserves_and_sorts_existing_versions(tmp_path: Path)
     second = _make_build(tmp_path / "second", "new release")
     stage_documentation(second, site, "0.10.0", "https://docs.example.test/blvpy")
 
-    assert (site / "version" / "0.9.0" / "index.html").read_bytes() == original
+    assert (site / "version" / "0.9" / "index.html").read_bytes() == original
     assert (site / "index.html").read_text(encoding="utf-8") == "new release"
     assert not (site / "obsolete.html").exists()
     assert not obsolete_assets.exists()
     switcher = _switcher(site)
-    assert [entry["name"] for entry in switcher] == ["latest", "0.10.0", "0.9.0"]
-    assert [entry["version"] for entry in switcher] == ["0.10.0", "0.10.0", "0.9.0"]
+    assert [entry["name"] for entry in switcher] == ["latest", "0.10", "0.9"]
+    assert [entry["version"] for entry in switcher] == ["0.10", "0.10", "0.9"]
     assert [entry["preferred"] for entry in switcher] == [True, False, False]
     assert [entry["url"] for entry in switcher] == [
         "https://docs.example.test/blvpy/",
-        "https://docs.example.test/blvpy/version/0.10.0/",
-        "https://docs.example.test/blvpy/version/0.9.0/",
+        "https://docs.example.test/blvpy/version/0.10/",
+        "https://docs.example.test/blvpy/version/0.9/",
     ]
 
 
-def test_restaging_is_idempotent_but_rejects_changed_release(tmp_path: Path) -> None:
+def test_restaging_replaces_an_older_series_without_changing_latest_root(tmp_path: Path) -> None:
     site = tmp_path / "site"
     original = _make_build(tmp_path / "original", "original")
     stage_documentation(original, site, "0.1.0", "https://docs.example.test")
     stage_documentation(_make_build(tmp_path / "newer", "newer"), site, "0.2.0", "https://docs.example.test")
-    stage_documentation(original, site, "0.1.0", "https://docs.example.test")
-    root_before_rejected_change = (site / "index.html").read_bytes()
-
     changed = _make_build(tmp_path / "changed", "changed")
-    with pytest.raises(ValueError, match="already published"):
-        stage_documentation(changed, site, "0.1.0", "https://docs.example.test")
+    stage_documentation(changed, site, "0.1.1", "https://docs.example.test")
 
-    assert (site / "version" / "0.1.0" / "index.html").read_text(encoding="utf-8") == "original"
-    assert (site / "version" / "0.2.0" / "index.html").read_text(encoding="utf-8") == "newer"
+    assert (site / "version" / "0.1" / "index.html").read_text(encoding="utf-8") == "changed"
+    assert (site / "version" / "0.2" / "index.html").read_text(encoding="utf-8") == "newer"
     assert (site / "index.html").read_text(encoding="utf-8") == "newer"
-    assert (site / "index.html").read_bytes() == root_before_rejected_change
     assert sum(bool(entry["preferred"]) for entry in _switcher(site)) == 1
 
 
@@ -194,7 +189,7 @@ def test_markdown_sources_respect_configured_line_width() -> None:
     assert violations == []
 
 
-def test_gallery_links_are_release_pinned_and_target_every_example() -> None:
+def test_gallery_links_use_release_tag_locally_and_target_every_example() -> None:
     documentation = "\n".join(path.read_text(encoding="utf-8") for path in DOCS_ROOT.rglob("*.md"))
     examples = sorted(path.name for path in EXAMPLES_ROOT.glob("*.py"))
     linked_examples = sorted(EXAMPLE_ROLE_PATTERN.findall(documentation))
@@ -205,7 +200,11 @@ def test_gallery_links_are_release_pinned_and_target_every_example() -> None:
     assert examples
     assert linked_examples == examples
     assert example_url == (f"https://github.com/dxogrp/blvpy/blob/v{blvpy.__version__}/examples/%s")
-    assert namespace["html_baseurl"] == f"https://dxogrp.github.io/blvpy/version/{blvpy.__version__}/"
+    series = ".".join(blvpy.__version__.split(".")[:2])
+    assert namespace["version"] == series
+    assert namespace["release"] == series
+    assert namespace["html_title"] == f"BLVPY {series}"
+    assert namespace["html_baseurl"] == f"https://dxogrp.github.io/blvpy/version/{series}/"
 
 
 def test_documented_public_signatures_match_release_contract() -> None:
