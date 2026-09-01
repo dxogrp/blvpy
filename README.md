@@ -8,8 +8,8 @@
     - [PyPI](#pypi)
     - [Development setup](#development-setup)
   - [Quick start](#quick-start)
-  - [Examples](#examples)
   - [Documentation](#documentation)
+  - [Examples](#examples)
   - [License](#license)
   - [Citing](#citing)
 
@@ -146,6 +146,15 @@ diagnostics = problem.gap_diagnostics(result)
 Every variable in `LowerProblem.parameters` is an upper-level variable and is replaced internally by a CVXPY parameter in the lower problem.
 Unlisted lower variables remain the original CVXPY objects, so the upper objective can use the returned lower solution directly.
 
+## Documentation
+
+The complete user guide and API reference are available at [this page](https://dxogrp.github.io/blvpy/).
+To build and preview the Sphinx documentation locally, run:
+
+```shell
+make docs
+```
+
 ## Examples
 
 The [`examples`](examples) directory contains several [Marimo](https://marimo.io/) notebooks for demonstrating the use of BLVPY.
@@ -157,14 +166,7 @@ make marimo
 
 to install Marimo and open the notebooks in your browser.
 
-## Documentation
-
-The complete user guide and API reference are available at [this page](https://dxogrp.github.io/blvpy/).
-To build and preview the Sphinx documentation locally, run:
-
-```shell
-make docs
-```
+Executed, non-interactive versions are available in the [published example gallery](https://dxogrp.github.io/blvpy/examples.html).
 
 ## License
 
