@@ -9,7 +9,7 @@ The original idea of **disciplined bilevel programming** was introduced in
   title={Disciplined Bilevel Programming},
   author={H. Zhu and J. Boedecker},
   journal={arXiv},
-  volume={},
+  volume={2609.00644},
   year={2026}
 }
 ```
