@@ -6,7 +6,7 @@ import logging
 
 import blvpy.progress as progress
 from blvpy.progress import ProgressReporter
-from blvpy.result import BilevelResult, IterationRecord, Residuals, RunRecord
+from blvpy.result import BilevelResult, IterationRecord, PolishResult, Residuals, RunRecord
 
 _PREFIX = "(BLVPY)"
 
@@ -297,6 +297,43 @@ def test_unavailable_record_fields_are_omitted_and_nonfinite_values_are_explicit
     assert "iters=" not in run_block
     assert "message=no point" in run_block
     assert "before_violation=-inf" in transcript
+
+
+def test_polishing_summary_reports_decision_values_and_zero_baseline(capfd) -> None:
+    reporter = ProgressReporter(enabled=True)
+
+    reporter.polishing(
+        PolishResult(
+            variable_values={},
+            feasible=True,
+            objective=8.0,
+            objective_improvement_ratio=0.2,
+        )
+    )
+
+    captured = capfd.readouterr()
+    assert captured.out == ""
+    lines = captured.err.splitlines()
+    assert lines[:3] == ["-" * 79, "Polishing".center(79), "-" * 79]
+    result = _event_block(captured.err, "Result:")
+    assert "feasible=true" in result
+    assert "objective=8.000e+00" in result
+    assert "improvement_ratio=2.000e-01" in result
+    assert all(len(line) <= 79 for line in captured.err.splitlines())
+
+    reporter = ProgressReporter(enabled=True)
+    reporter.polishing(
+        PolishResult(
+            variable_values={},
+            feasible=False,
+            objective=-1.0,
+            objective_improvement_ratio=None,
+        )
+    )
+    result = _event_block(capfd.readouterr().err, "Result:")
+    assert "feasible=false" in result
+    assert "objective=-1.000e+00" in result
+    assert "improvement_ratio=n/a" in result
 
 
 def test_progress_handler_installation_is_idempotent() -> None:

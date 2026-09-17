@@ -15,7 +15,13 @@ metadata for inspection; their detailed structure might change.
 ```{eval-rst}
 .. autoclass:: blvpy.BilevelProblem
    :members: upper_variables, source_variables, is_dblp, validate, canonicalize,
-             solve, gap_diagnostics
+             solve, polish, gap_diagnostics
+   :member-order: bysource
+```
+
+```{eval-rst}
+.. autoclass:: blvpy.PolishResult
+   :members:
    :member-order: bysource
 ```
 

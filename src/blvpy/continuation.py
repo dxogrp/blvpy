@@ -1118,6 +1118,7 @@ def _result(
         final_iteration=final_record,
         message=message,
         _feasibility_tolerance=feasibility_tolerance,
+        _problem_token=model._result_token,
     )
 
 

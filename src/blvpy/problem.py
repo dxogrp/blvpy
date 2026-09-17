@@ -25,7 +25,7 @@ from .errors import UnsupportedModelError, ValidationError
 from .lower_problem import LowerProblem
 
 if TYPE_CHECKING:
-    from .result import BilevelResult, GapDiagnostics
+    from .result import BilevelResult, GapDiagnostics, PolishResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +117,7 @@ class BilevelProblem:
         self.upper_constraints = constraints
         self._canonical: CanonicalLowerProblem | None = None
         self._lifted: _LiftedProblem | None = None
+        self._result_token = object()
 
     @property
     def upper_variables(self) -> tuple[cp.Variable, ...]:
@@ -418,6 +419,66 @@ class BilevelProblem:
             solver_options=solver_options,
             solver_verbose=solver_verbose,
         )
+
+    def polish(
+        self,
+        result: BilevelResult,
+        *,
+        solver: str = cp.CLARABEL,
+        solver_options: Mapping[str, Any] | None = None,
+        verbose: bool = True,
+        solver_verbose: bool = False,
+    ) -> PolishResult:
+        """Re-solve the lower problem at a result's fixed upper point.
+
+        Parameters
+        ----------
+        result : BilevelResult
+            Successful or ``"continuation_failed"`` result produced by this
+            problem with complete source-variable snapshots.
+        solver : str, default=cvxpy.CLARABEL
+            CVXPY conic backend used for the fixed-upper lower solve.
+        solver_options : mapping or None, default=None
+            Backend-specific options copied and forwarded unchanged to CVXPY.
+        verbose : bool, default=True
+            Whether to write the concise polishing summary to standard error.
+        solver_verbose : bool, default=False
+            Whether to request CVXPY and native conic-solver output.
+
+        Returns
+        -------
+        PolishResult
+            Immutable complete candidate snapshots, upper feasibility, the
+            polished upper objective, and its relative improvement.
+
+        Raises
+        ------
+        TypeError
+            If ``result`` is not a :class:`blvpy.BilevelResult`.
+        ValueError
+            If the result is incompatible or unsuitable for polishing, or an
+            argument has an invalid value.
+        SolverUnavailableError
+            If the requested conic solver is unavailable or cannot load.
+        SolveError
+            If the fixed-upper lower solve returns no usable certificate.
+
+        Notes
+        -----
+        This method restores all model state before returning or raising. A
+        polished response can violate upper constraints or lose an optimistic
+        lower-level selection when the lower solution is nonunique.
+        """
+
+        from .polishing import _PolishSettings, polish_bilevel
+
+        settings = _PolishSettings(
+            solver=solver,
+            solver_options=solver_options,
+            verbose=verbose,
+            solver_verbose=solver_verbose,
+        )
+        return polish_bilevel(self, result, settings)
 
     def _validate_upper(self) -> None:
         if not isinstance(self.upper_objective, (cp.Minimize, cp.Maximize)):

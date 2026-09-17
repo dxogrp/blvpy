@@ -225,6 +225,53 @@ class GapDiagnostics:
 
 
 @dataclass(frozen=True, slots=True)
+class PolishResult:
+    """Immutable candidate returned by :meth:`blvpy.BilevelProblem.polish`.
+
+    Parameters
+    ----------
+    variable_values : mapping
+        Complete polished snapshots keyed by the original CVXPY variables.
+        Upper values are fixed at the supplied bilevel result and lower values
+        come from the fresh fixed-upper lower solve.
+    feasible : bool
+        Whether the polished point passes BLVPY's standard residual check at
+        exact lower complementarity using the originating solve tolerance.
+    objective : float
+        Polished upper objective in its original modeled sense.
+    objective_improvement_ratio : float or None
+        Sense-aware relative improvement over the original point. Positive is
+        better, negative is worse, and ``None`` represents a zero baseline.
+
+    Notes
+    -----
+    The mapping and every numerical value are immutable snapshots. Polishing
+    does not assign the candidate to the user's CVXPY variables.
+    """
+
+    variable_values: Mapping[Any, ArrayLike]
+    feasible: bool
+    objective: float
+    objective_improvement_ratio: float | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.variable_values, Mapping):
+            raise ValueError("variable_values must be a mapping.")
+        values = {key: _snapshot(value, f"variable_values[{key!r}]") for key, value in self.variable_values.items()}
+        object.__setattr__(self, "variable_values", MappingProxyType(values))
+        if not isinstance(self.feasible, (bool, np.bool_)):
+            raise ValueError("feasible must be boolean.")
+        object.__setattr__(self, "feasible", bool(self.feasible))
+        object.__setattr__(self, "objective", _finite_real_float(self.objective, "objective"))
+        if self.objective_improvement_ratio is not None:
+            object.__setattr__(
+                self,
+                "objective_improvement_ratio",
+                _finite_real_float(self.objective_improvement_ratio, "objective_improvement_ratio"),
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class IterationRecord:
     """Numerical record for one epsilon-continuation attempt.
 
@@ -466,6 +513,7 @@ class BilevelResult:
     final_iteration: IterationRecord | None = None
     message: str | None = None
     _feasibility_tolerance: float = field(default=1e-7, repr=False)
+    _problem_token: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         _status(self.status)
@@ -610,6 +658,13 @@ def _nonnegative_float(value: object, name: str) -> float:
 
 def _finite_nonnegative_float(value: object, name: str) -> float:
     result = _nonnegative_float(value, name)
+    if not np.isfinite(result):
+        raise ValueError(f"{name} must be finite.")
+    return result
+
+
+def _finite_real_float(value: object, name: str) -> float:
+    result = _real_float(value, name)
     if not np.isfinite(result):
         raise ValueError(f"{name} must be finite.")
     return result
