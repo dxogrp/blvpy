@@ -465,6 +465,7 @@ class BilevelResult:
     selected_run_index: int | None = None
     final_iteration: IterationRecord | None = None
     message: str | None = None
+    _feasibility_tolerance: float = field(default=1e-7, repr=False)
 
     def __post_init__(self) -> None:
         _status(self.status)
@@ -505,6 +506,11 @@ class BilevelResult:
             if selected_run_index not in run_indices:
                 raise ValueError("selected_run_index must identify one of the recorded runs.")
         object.__setattr__(self, "selected_run_index", selected_run_index)
+        object.__setattr__(
+            self,
+            "_feasibility_tolerance",
+            _finite_nonnegative_float(self._feasibility_tolerance, "feasibility_tolerance"),
+        )
         final_iteration = self.final_iteration
         if final_iteration is not None and not isinstance(final_iteration, IterationRecord):
             raise ValueError("final_iteration must be an IterationRecord or None.")

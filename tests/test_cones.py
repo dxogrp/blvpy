@@ -289,6 +289,7 @@ def test_result_snapshots_arrays_and_exposes_history() -> None:
         iterations=(record,),
         runs=(failed_run, selected_run),
         selected_run_index=1,
+        _feasibility_tolerance=2e-6,
     )
     source[0] = 99.0
     initial[0] = 99.0
@@ -308,10 +309,17 @@ def test_result_snapshots_arrays_and_exposes_history() -> None:
     assert selected_run.succeeded
     assert selected_run.initial_values["x"].tolist() == [-1.0, 1.0]
     assert result.variable_values["x"].tolist() == [1.0, 2.0]
+    assert result._feasibility_tolerance == pytest.approx(2e-6)
     with pytest.raises(ValueError):
         result.canonical_primal[0] = 10.0
     with pytest.raises(ValueError):
         selected_run.initial_values["x"][0] = 10.0
+
+
+@pytest.mark.parametrize("tolerance", [-1.0, np.inf, np.nan, True])
+def test_result_rejects_invalid_internal_feasibility_tolerance(tolerance: object) -> None:
+    with pytest.raises(ValueError, match="feasibility_tolerance"):
+        BilevelResult(status="optimal", _feasibility_tolerance=tolerance)  # type: ignore[arg-type]
 
 
 def test_run_history_tracks_accepted_and_attempted_epsilons() -> None:
