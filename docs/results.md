@@ -216,6 +216,15 @@ acceptable = residuals.is_feasible(
 
 This check concerns the returned lifted lower-optimality conditions.
 
+## Polished candidates
+
+{meth}`blvpy.BilevelProblem.polish` re-solves the lower problem while keeping
+the upper values from a result fixed. It returns a compact, immutable
+{class}`blvpy.PolishResult` containing the complete candidate, its feasibility,
+its upper objective, and the sense-aware improvement ratio. The call does not
+alter the problem or original result. See {doc}`polishing` for the ratio
+definition, feasibility semantics, terminal output, and explicit adoption.
+
 ## Complete gap diagnostics
 
 Call the convenience method only when the extra fixed-upper lower solve is

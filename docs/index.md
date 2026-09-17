@@ -53,6 +53,7 @@ modeling
 supported-atoms
 solving
 results
+polishing
 examples
 troubleshooting
 api

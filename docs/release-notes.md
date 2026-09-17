@@ -1,5 +1,13 @@
 # Release notes
 
+## Unreleased
+
+- Added {meth}`blvpy.BilevelProblem.polish`, which re-solves the lower problem
+  at a result's fixed upper point and returns an immutable
+  {class}`blvpy.PolishResult` with complete variable snapshots, feasibility,
+  the polished upper objective, and a sense-aware improvement ratio. Polishing
+  restores all model state and prints a concise summary by default.
+
 ## 0.3
 
 - Added `cp.Maximize` support at both bilevel levels. Lower maximization

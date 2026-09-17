@@ -82,6 +82,17 @@ def test_every_public_export_has_an_explicit_autodoc_entry() -> None:
     assert documented == set(blvpy.__all__)
 
 
+def test_polishing_guide_is_navigated_after_results_and_cross_linked() -> None:
+    index = (DOCS_ROOT / "index.md").read_text(encoding="utf-8")
+    assert "\nresults\npolishing\nexamples\n" in index
+
+    guide = (DOCS_ROOT / "polishing.md").read_text(encoding="utf-8")
+    assert guide.startswith("# Polishing\n")
+    for page in ("quickstart.md", "solving.md", "results.md", "api.md"):
+        content = (DOCS_ROOT / page).read_text(encoding="utf-8")
+        assert "{doc}`polishing`" in content
+
+
 def test_every_example_is_linked_from_the_gallery() -> None:
     documentation = "\n".join(path.read_text(encoding="utf-8") for path in DOCS_ROOT.rglob("*.md"))
     examples = sorted(path.stem for path in EXAMPLES_ROOT.glob("*.py"))

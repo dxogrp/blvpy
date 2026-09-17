@@ -6,6 +6,9 @@ metadata for inspection; their detailed structure might change.
 
 ## Modeling and solving
 
+For the fixed-upper post-solve workflow and interpretation of its compact
+result, see {doc}`polishing`.
+
 ```{eval-rst}
 .. autoclass:: blvpy.LowerProblem
    :members: objective, constraints, parameters
@@ -21,7 +24,7 @@ metadata for inspection; their detailed structure might change.
 
 ```{eval-rst}
 .. autoclass:: blvpy.PolishResult
-   :members:
+   :members: variable_values, feasible, objective, objective_improvement_ratio
    :member-order: bysource
 ```
 
