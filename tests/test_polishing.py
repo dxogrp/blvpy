@@ -117,6 +117,76 @@ def test_polish_resolves_lower_at_fixed_upper_and_reevaluates_stale_objective() 
     assert original.objective == 999.0
 
 
+def test_polish_resolves_maximization_lower_problem() -> None:
+    x = cp.Variable(name="x")
+    y = cp.Variable(name="y")
+    lower = LowerProblem(
+        cp.Maximize(-cp.square(y - x)),
+        parameters=[x],
+    )
+    model = BilevelProblem(cp.Minimize(cp.square(y - 1.0)), lower)
+    original = BilevelResult(
+        status="optimal",
+        variable_values={x: np.array(0.4), y: np.array(-0.2)},
+    )
+
+    polished = model.polish(original, verbose=False)
+
+    assert polished.feasible
+    assert float(polished.variable_values[x]) == pytest.approx(0.4, abs=1e-12)
+    assert float(polished.variable_values[y]) == pytest.approx(0.4, abs=1e-7)
+    assert polished.objective == pytest.approx(0.36, abs=1e-7)
+    assert polished.objective_improvement_ratio == pytest.approx(0.75, abs=1e-7)
+
+
+def test_polish_uses_frozen_fixed_parameter_for_solve_and_objective_then_restores_state() -> None:
+    x = cp.Variable(name="x")
+    y = cp.Variable(name="y")
+    fixed_shift = cp.Parameter(value=1.5, name="fixed_shift")
+    lower = LowerProblem(
+        cp.Minimize(cp.square(y - x - fixed_shift)),
+        parameters=[x],
+    )
+    model = BilevelProblem(cp.Minimize(cp.square(y) + fixed_shift), lower)
+    model.validate()
+    canonical = model.canonicalize()
+    linked_parameter = next(iter(model._parameter_links))
+    lifted = model._lifted_problem
+    assert float(canonical.fixed_parameter_values[fixed_shift.id]) == pytest.approx(1.5)
+
+    fixed_shift.value = -4.0
+    linked_parameter.value = 8.0
+    leaves = (
+        x,
+        y,
+        fixed_shift,
+        linked_parameter,
+        lifted.primal,
+        lifted.slack,
+        lifted.dual,
+        lifted.epsilon,
+    )
+    state = {leaf: _snapshot(leaf.value) for leaf in leaves}
+    original = BilevelResult(
+        status="optimal",
+        variable_values={x: np.array(0.25), y: np.array(0.5)},
+    )
+
+    polished = model.polish(original, verbose=False)
+
+    assert polished.feasible
+    assert float(polished.variable_values[x]) == pytest.approx(0.25, abs=1e-12)
+    assert float(polished.variable_values[y]) == pytest.approx(1.75, abs=1e-7)
+    original_objective = 0.5**2 + 1.5
+    expected_objective = 1.75**2 + 1.5
+    assert polished.objective == pytest.approx(expected_objective, abs=1e-7)
+    assert polished.objective_improvement_ratio == pytest.approx(
+        (original_objective - expected_objective) / original_objective,
+        abs=1e-7,
+    )
+    _assert_state(state)
+
+
 @pytest.mark.parametrize(
     ("maximize", "coefficient", "offset", "expected_sign"),
     [
