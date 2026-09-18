@@ -58,5 +58,6 @@ print("source gap =", diagnostics.source_gap)
 
 To obtain a fresh lower response at the returned upper point, call
 `polished = problem.polish(result)`. The compact result reports feasibility,
-the polished upper objective, and its sense-aware improvement without changing
-the model. See {doc}`polishing` for interpretation and explicit adoption.
+the polished upper objective, and its relative improvement over the original
+point without changing the model. See {doc}`polishing` for interpretation and
+explicit adoption.

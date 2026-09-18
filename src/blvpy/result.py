@@ -165,9 +165,10 @@ class GapDiagnostics:
     primal_residual_term : float
         Correction ``lambda.T @ r_p``, where ``r_p = A @ u + s - b``.
     source_gap : float or None, optional
-        Sense-normalized suboptimality against a fresh fixed-upper reference
-        solve: returned objective minus the optimum for minimization, and the
-        optimum minus returned objective for maximization.
+        Lower-level source-objective suboptimality against a fresh fixed-upper
+        reference solve: returned objective minus the optimum for
+        minimization, and the optimum minus returned objective for
+        maximization.
         :meth:`blvpy.BilevelProblem.gap_diagnostics` populates this field.
 
     Raises
@@ -240,8 +241,9 @@ class PolishResult:
     objective : float
         Polished upper objective in its original modeled sense.
     objective_improvement_ratio : float or None
-        Sense-aware relative improvement over the original point. Positive is
-        better, negative is worse, and ``None`` represents a zero baseline.
+        Relative improvement over the original point. Positive is better and
+        negative is worse for both minimization and maximization; ``None``
+        represents a zero baseline.
 
     Notes
     -----

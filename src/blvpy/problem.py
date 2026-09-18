@@ -387,7 +387,7 @@ class BilevelProblem:
         Returns
         -------
         GapDiagnostics
-            Canonical inexact-gap terms and sense-normalized lower
+            Canonical inexact-gap terms and lower-level source-objective
             suboptimality against the reference optimum.
 
         Raises
@@ -448,7 +448,7 @@ class BilevelProblem:
         Returns
         -------
         PolishResult
-            Immutable complete candidate snapshots, upper feasibility, the
+            Immutable complete candidate snapshots, feasibility, the
             polished upper objective, and its relative improvement.
 
         Raises

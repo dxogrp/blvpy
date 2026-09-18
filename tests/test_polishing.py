@@ -198,7 +198,7 @@ def test_polish_uses_frozen_fixed_parameter_for_solve_and_objective_then_restore
         (False, 0.0, 1.0, 0),
     ],
 )
-def test_public_ratio_is_sense_aware_for_positive_and_negative_objectives(
+def test_public_ratio_respects_objective_direction_for_positive_and_negative_objectives(
     maximize: bool,
     coefficient: float,
     offset: float,

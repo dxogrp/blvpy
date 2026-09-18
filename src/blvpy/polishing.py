@@ -181,7 +181,7 @@ def _objective_improvement_ratio(
     *,
     maximize: bool,
 ) -> float | None:
-    """Return sense-aware relative improvement, or None for a zero baseline."""
+    """Return relative objective improvement, or None for a zero baseline."""
 
     original = float(original)
     polished = float(polished)

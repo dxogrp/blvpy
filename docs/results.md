@@ -221,9 +221,10 @@ This check concerns the returned lifted lower-optimality conditions.
 {meth}`blvpy.BilevelProblem.polish` re-solves the lower problem while keeping
 the upper values from a result fixed. It returns a compact, immutable
 {class}`blvpy.PolishResult` containing the complete candidate, its feasibility,
-its upper objective, and the sense-aware improvement ratio. The call does not
-alter the problem or original result. See {doc}`polishing` for the ratio
-definition, feasibility semantics, terminal output, and explicit adoption.
+its upper objective, and its relative improvement over the original upper
+objective. The call does not alter the problem or original result. See
+{doc}`polishing` for the ratio definition, feasibility semantics, terminal
+output, and explicit adoption.
 
 ## Complete gap diagnostics
 
@@ -245,7 +246,8 @@ c^Tu+b^T\lambda
 $$
 
 where $r_p=Au+s-b$ and $r_d=A^T\lambda+c$. It then performs one additional
-fixed-upper conic solve and reports the sense-normalized **source gap**
+fixed-upper conic solve and reports the lower-level source-objective
+suboptimality as the **source gap**
 
 $$
 \operatorname{source\_gap}=

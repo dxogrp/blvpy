@@ -57,8 +57,9 @@ a best-effort basis.
   standard feasibility check.
 - `objective` is the upper objective at the polished point, in the original
   modeled sense. A `cp.Maximize` objective is not negated.
-- `objective_improvement_ratio` is the sense-aware change from the original
-  result point.
+- `objective_improvement_ratio` compares the polished objective with the
+  original result point. Positive values mean improvement for both
+  minimization and maximization.
 - `variable_values` contains immutable snapshots for every original CVXPY
   variable in the problem. Upper values come from the supplied result and
   lower values come from the fixed-upper solve.
