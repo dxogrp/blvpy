@@ -160,6 +160,7 @@ make docs
 The [`examples`](examples) directory contains [Marimo](https://marimo.io/) notebooks for demonstrating BLVPY.
 Published notebooks live in `examples/gallery`, while `examples/advanced` contains repository-only workflows that may use advanced features or take longer to run.
 Shared notebook assets live in `examples/_shared`; see the [examples guide](examples/README.md) for the collection policy and commands.
+The advanced collection includes an end-to-end [solve-polish workflow](examples/advanced/polishing_workflow.py).
 Run
 
 ```shell

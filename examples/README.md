@@ -20,3 +20,9 @@ make check-examples
 ```
 
 Gallery notebooks should be deterministic, reasonably quick to execute, and suitable for a standalone published snapshot. Put specialized or computationally expensive workflows in `advanced/` instead.
+
+## Advanced workflows
+
+- [`polishing_workflow.py`](advanced/polishing_workflow.py) performs a deliberately
+  coarse nonlinear solve, inspects a feasible polished lower response, and adopts
+  that candidate explicitly.

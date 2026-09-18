@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a repository-only advanced solve-polish workflow that evaluates and
+  explicitly adopts a feasible improved candidate after a deliberately coarse
+  nonlinear solve.
 - Reorganized the examples into a published gallery and a repository-only
   advanced collection with shared notebook assets.
 - Added {meth}`blvpy.BilevelProblem.polish`, which re-solves the lower problem
