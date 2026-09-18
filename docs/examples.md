@@ -39,9 +39,10 @@ live sessions can request tighter continuation targets.
 Advanced examples are available as source notebooks in the repository. They are
 checked statically but are not executed or published with the gallery.
 
-- [Solve-polish workflow](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/polishing_workflow.py)
-  performs a deliberately coarse nonlinear solve, evaluates the polished lower
-  response, and adopts the feasible improved candidate explicitly.
+- [Ridge-polishing decision](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/ridge_polishing.py)
+  retrains a validation-selected ridge model at its fixed penalty, then lets
+  the user choose between lower-level feasibility and a better relaxed
+  validation objective.
 
 Browse all [repository examples](https://github.com/dxogrp/blvpy/tree/main/examples).
 

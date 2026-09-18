@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Added a repository-only advanced solve-polish workflow that evaluates and
-  explicitly adopts a feasible improved candidate after a deliberately coarse
-  nonlinear solve.
+- Added a repository-only ridge-polishing workflow that compares a feasible
+  fixed-penalty response with a better epsilon-relaxed validation objective
+  and leaves candidate adoption to the user.
 - Reorganized the examples into a published gallery and a repository-only
   advanced collection with shared notebook assets.
 - Added {meth}`blvpy.BilevelProblem.polish`, which re-solves the lower problem
