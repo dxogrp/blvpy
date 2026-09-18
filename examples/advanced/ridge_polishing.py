@@ -63,9 +63,7 @@ def _(mo):
       +\lambda\lVert v\rVert_2^2.
     \]
 
-    The positive penalty makes the lower response unique. We use deterministic
-    synthetic data so the numerical tradeoff is reproducible without a data
-    download.
+    The positive penalty makes the lower response unique.
     """)
     return
 
@@ -85,7 +83,15 @@ def _(np):
     X_validation = X_validation / feature_scale
     y_training = X_training @ true_coefficients + rng.normal(scale=1.1, size=n_training)
     y_validation = X_validation @ true_coefficients + rng.normal(scale=0.25, size=n_validation)
-    return X_training, X_validation, n_features, n_training, n_validation, y_training, y_validation
+    return (
+        X_training,
+        X_validation,
+        n_features,
+        n_training,
+        n_validation,
+        y_training,
+        y_validation,
+    )
 
 
 @app.cell
@@ -125,8 +131,7 @@ def _(mo):
 
     We retain BLVPY's default
     $\epsilon_{\mathrm{initial}}=10^{-1}$ and continue to
-    $\epsilon_{\mathrm{target}}=10^{-4}$. This is a normal solve rather than
-    a deliberately one-step or rescaled construction. The returned
+    $\epsilon_{\mathrm{target}}=10^{-4}$. The returned
     coefficients are valid for the epsilon-relaxed formulation, but they need
     not be the fixed-penalty ridge solution.
     """)
@@ -139,7 +144,7 @@ def _(coefficients, cp, np, penalty, problem):
     result = problem.solve(
         epsilon_target=epsilon_target,
         solver=cp.IPOPT,
-        verbose=False,
+        verbose=True,
     )
 
     assert result.succeeded, result.message
@@ -206,7 +211,7 @@ def _(
     polished = problem.polish(
         result,
         solver=cp.CLARABEL,
-        verbose=False,
+        verbose=True,
     )
 
     polished_penalty = float(np.asarray(polished.variable_values[penalty]))
@@ -257,7 +262,6 @@ def _(
     return (
         coefficient_change,
         polished,
-        polished_coefficients,
         polished_lower_objective,
         polished_named_values,
         polished_penalty,
@@ -412,7 +416,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     candidate_choice = mo.ui.radio(
         options={
