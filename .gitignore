@@ -18,8 +18,8 @@ htmlcov/
 docs/_build/
 
 # Generated Marimo outputs and session state
-examples/figures/
-examples/__marimo__/
+examples/**/figures/
+examples/**/__marimo__/
 
 # Editors and operating systems
 .DS_Store

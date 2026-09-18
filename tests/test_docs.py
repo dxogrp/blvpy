@@ -84,7 +84,7 @@ def test_every_public_export_has_an_explicit_autodoc_entry() -> None:
 
 def test_every_example_is_linked_from_the_gallery() -> None:
     documentation = "\n".join(path.read_text(encoding="utf-8") for path in DOCS_ROOT.rglob("*.md"))
-    examples = sorted(path.stem for path in EXAMPLES_ROOT.glob("*.py"))
+    examples = sorted(path.stem for path in (EXAMPLES_ROOT / "gallery").glob("*.py"))
     linked_examples = sorted(EXAMPLE_ROLE_PATTERN.findall(documentation))
 
     assert examples
@@ -123,14 +123,27 @@ def test_export_examples_isolated_and_replaces_stale_tree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = tmp_path / "source"
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    source = examples / "gallery"
     _write_notebook(source, "b.py")
     _write_notebook(source, "a.py")
     (source / "zhlatex.mplstyle").write_bytes(b"axes.grid: True\n")
     generated = source / "figures"
     generated.mkdir()
     (generated / "existing.pdf").write_bytes(b"existing")
+    shared = examples / "_shared"
+    shared.mkdir()
+    (shared / "zhlatex.mplstyle").write_bytes(b"font.size: 10\n")
+    assets = shared / "assets"
+    assets.mkdir()
+    (assets / "marker.txt").write_text("shared", encoding="utf-8")
+    advanced = examples / "advanced"
+    advanced.mkdir()
+    _write_notebook(advanced, "expensive.py")
     source_before = _snapshot(source)
+    shared_before = _snapshot(shared)
+    advanced_before = _snapshot(advanced)
     output = tmp_path / "rendered"
     output.mkdir()
     (output / "retired.html").write_text("stale", encoding="utf-8")
@@ -140,6 +153,10 @@ def test_export_examples_isolated_and_replaces_stale_tree(
     def fake_runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(command)
         working_directory = Path(kwargs["cwd"])
+        assert working_directory.name == "gallery"
+        assert not (working_directory.parent / "advanced").exists()
+        assert (working_directory.parent / "_shared" / "zhlatex.mplstyle").read_bytes() == b"font.size: 10\n"
+        assert (working_directory.parent / "_shared" / "assets" / "marker.txt").read_text(encoding="utf-8") == "shared"
         if not (working_directory / "figures").exists():
             assert {path.name for path in working_directory.iterdir()} == {
                 "a.py",
@@ -157,13 +174,15 @@ def test_export_examples_isolated_and_replaces_stale_tree(
         (working_directory / "__marimo__").mkdir(exist_ok=True)
         return _write_fake_export(command)
 
-    export_examples(source, output, runner=fake_runner)
+    export_examples(source, output, shared_dir=shared, runner=fake_runner)
 
     assert [Path(command[-3]).stem for command in calls] == ["a", "b"]
     assert calls[0][:5] == [sys.executable, "-m", "marimo", "export", "html"]
     assert {"--include-code", "--no-sandbox", "--force"} <= set(calls[0])
     assert sorted(path.name for path in output.iterdir()) == ["a.html", "b.html"]
     assert _snapshot(source) == source_before
+    assert _snapshot(shared) == shared_before
+    assert _snapshot(advanced) == advanced_before
 
 
 def test_export_failure_preserves_previous_tree(tmp_path: Path) -> None:
@@ -229,11 +248,42 @@ def test_export_rejects_unsafe_paths(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="must not overlap"):
         export_examples(source, source / "rendered")
 
+    with pytest.raises(ValueError, match="Shared example directory does not exist"):
+        export_examples(source, output, shared_dir=tmp_path / "missing-shared")
+
+    with pytest.raises(ValueError, match="source and shared directories must not overlap"):
+        export_examples(source, output, shared_dir=source)
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "notebook-link.py").symlink_to(source / "example.py")
+    with pytest.raises(ValueError, match="Shared example assets cannot contain symbolic links"):
+        export_examples(source, output, shared_dir=shared)
+
     output_target = tmp_path / "output-target"
     output_target.mkdir()
     output.symlink_to(output_target, target_is_directory=True)
     with pytest.raises(ValueError, match="output directory cannot be a symbolic link"):
         export_examples(source, output)
+
+
+def test_export_cli_forwards_shared_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "gallery"
+    shared = tmp_path / "_shared"
+    output = tmp_path / "rendered"
+    received: list[tuple[Path, Path, Path | None]] = []
+
+    def fake_export(source_dir: Path, output_dir: Path, *, shared_dir: Path | None = None) -> None:
+        received.append((source_dir, output_dir, shared_dir))
+
+    monkeypatch.setattr(export_module, "export_examples", fake_export)
+    arguments = ["--source-dir", str(source), "--shared-dir", str(shared), "--output-dir", str(output)]
+
+    assert export_module.main(arguments) == 0
+    assert received == [(source, output, shared)]
 
 
 def test_documentation_series_accepts_stable_versions_and_rejects_other_forms() -> None:

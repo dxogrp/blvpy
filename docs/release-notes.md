@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reorganized the examples into a published gallery and a repository-only
+  advanced collection with shared notebook assets.
 - Added {meth}`blvpy.BilevelProblem.polish`, which re-solves the lower problem
   at a result's fixed upper point and returns an immutable
   {class}`blvpy.PolishResult` with complete variable snapshots, feasibility,

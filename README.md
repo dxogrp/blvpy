@@ -157,14 +157,16 @@ make docs
 
 ## Examples
 
-The [`examples`](examples) directory contains several [Marimo](https://marimo.io/) notebooks for demonstrating the use of BLVPY.
+The [`examples`](examples) directory contains [Marimo](https://marimo.io/) notebooks for demonstrating BLVPY.
+Published notebooks live in `examples/gallery`, while `examples/advanced` contains repository-only workflows that may use advanced features or take longer to run.
+Shared notebook assets live in `examples/_shared`; see the [examples guide](examples/README.md) for the collection policy and commands.
 Run
 
 ```shell
 make marimo
 ```
 
-to install Marimo and open the notebooks in your browser.
+to install Marimo and open the complete example workspace in your browser.
 
 Executed, non-interactive versions are available in the [published example gallery](https://dxogrp.github.io/blvpy/examples.html).
 

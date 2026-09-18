@@ -63,10 +63,11 @@ jobs:
       - name: Build documentation from the selected commit
         run: uv run --frozen --group docs --group examples sphinx-build -W --keep-going -n -b html docs docs/_build/html
 
-      - name: Export rendered examples
+      - name: Export rendered example gallery
         run: |
           uv run --frozen --group docs --group examples python scripts/export_examples.py \
-            --source-dir examples \
+            --source-dir examples/gallery \
+            --shared-dir examples/_shared \
             --output-dir docs/_build/html/examples
 
       - name: Recover the published series site

@@ -25,22 +25,24 @@ _sync-docs-examples:
 	@uv sync --frozen --group dev --group docs --group examples
 
 .PHONY: marimo
-marimo: sync-examples ## open the Marimo example gallery
+marimo: sync-examples ## open the Marimo example workspace
 	@printf "$(BLUE)Opening Marimo examples...$(RESET)\n"
 	@uv run --frozen --group examples marimo edit examples
 
 .PHONY: check-examples
 check-examples: sync-examples ## statically check every Marimo example
 	@printf "$(BLUE)Checking Marimo examples...$(RESET)\n"
-	@uv run --frozen --group examples marimo check --strict examples/*.py
+	@uv run --frozen --group examples marimo check --strict examples
 
 .PHONY: docs
 docs: _sync-docs-examples ## build and serve the Sphinx documentation
 	@printf "$(BLUE)Building Sphinx documentation...$(RESET)\n"
 	@uv run --frozen --group docs --group examples sphinx-build -b html docs docs/_build/html
-	@printf "$(BLUE)Exporting executed examples; this may take several minutes...$(RESET)\n"
+	@printf "$(BLUE)Exporting the executed example gallery; this may take several minutes...$(RESET)\n"
 	@uv run --frozen --group docs --group examples python scripts/export_examples.py \
-		--source-dir examples --output-dir docs/_build/html/examples
+		--source-dir examples/gallery \
+		--shared-dir examples/_shared \
+		--output-dir docs/_build/html/examples
 	@printf "$(BLUE)Serving documentation at http://127.0.0.1:8000...$(RESET)\n"
 	@uv run --frozen --group docs --group examples python -m http.server --directory docs/_build/html 8000
 
