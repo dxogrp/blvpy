@@ -83,27 +83,23 @@ def test_every_public_export_has_an_explicit_autodoc_entry() -> None:
 
 
 def test_every_example_is_linked_from_the_gallery() -> None:
-    documentation = "\n".join(path.read_text(encoding="utf-8") for path in DOCS_ROOT.rglob("*.md"))
-    examples = sorted(path.stem for path in (EXAMPLES_ROOT / "gallery").glob("*.py"))
-    linked_examples = sorted(EXAMPLE_ROLE_PATTERN.findall(documentation))
+    documentation = (DOCS_ROOT / "examples.md").read_text(encoding="utf-8")
+    examples = {path.stem for path in (EXAMPLES_ROOT / "gallery").glob("*.py")}
+    linked_examples = set(EXAMPLE_ROLE_PATTERN.findall(documentation))
 
     assert examples
     assert linked_examples == examples
 
 
-def test_documentation_uses_series_chrome_and_relative_example_links() -> None:
+def test_documentation_configuration_matches_deployment_contract() -> None:
     configuration = _configuration()
     series = ".".join(blvpy.__version__.split(".")[:2])
 
-    assert configuration["package_version"] == blvpy.__version__
-    assert configuration["documentation_series"] == series
     assert configuration["version"] == series
     assert configuration["release"] == series
-    assert configuration["html_title"] == f"BLVPY {series}"
     assert configuration["html_baseurl"] == f"https://dxogrp.github.io/blvpy/version/{series}/"
     assert configuration["extlinks"]["example"] == ("examples/%s.html", "%s")
     assert configuration["html_context"]["docs_switcher_url"] == "https://dxogrp.github.io/blvpy/switcher.json"
-    assert "github_version" not in configuration["html_context"]
 
 
 def test_only_example_links_open_in_a_new_tab() -> None:

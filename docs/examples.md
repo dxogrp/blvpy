@@ -34,9 +34,19 @@ live sessions can request tighter continuation targets.
 - {example}`DC motor MPC tuning <dc_motor_mpc_tuning>`
   learns control-cost weights while anticipating a constrained MPC response.
 
-For live interaction, install and open the gallery from a repository checkout:
+## Advanced examples
+
+Advanced examples are available as source notebooks in the repository. They are
+checked statically but are not executed or published with the gallery.
+
+- [Solve-polish workflow](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/polishing_workflow.py)
+  performs a deliberately coarse nonlinear solve, evaluates the polished lower
+  response, and adopts the feasible improved candidate explicitly.
+
+Browse all [repository examples](https://github.com/dxogrp/blvpy/tree/main/examples).
+
+For live interaction, install and open the complete example workspace from a repository checkout:
 
 ```shell
-make sync-examples
 make marimo
 ```
