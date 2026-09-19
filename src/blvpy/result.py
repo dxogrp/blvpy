@@ -243,7 +243,8 @@ class PolishResult:
     objective_improvement_ratio : float or None
         Relative improvement over the original point. Positive is better and
         negative is worse for both minimization and maximization; ``None``
-        represents a zero baseline.
+        represents a zero baseline. Signed infinity is retained when the
+        relative magnitude exceeds floating-point range; NaN is invalid.
 
     Notes
     -----
@@ -269,7 +270,7 @@ class PolishResult:
             object.__setattr__(
                 self,
                 "objective_improvement_ratio",
-                _finite_real_float(self.objective_improvement_ratio, "objective_improvement_ratio"),
+                _non_nan_real_float(self.objective_improvement_ratio, "objective_improvement_ratio"),
             )
 
 
@@ -669,6 +670,13 @@ def _finite_real_float(value: object, name: str) -> float:
     result = _real_float(value, name)
     if not np.isfinite(result):
         raise ValueError(f"{name} must be finite.")
+    return result
+
+
+def _non_nan_real_float(value: object, name: str) -> float:
+    result = _real_float(value, name)
+    if np.isnan(result):
+        raise ValueError(f"{name} must not be NaN.")
     return result
 
 

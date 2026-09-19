@@ -87,7 +87,8 @@ is worse. When the original objective is exactly zero, division would be
 undefined, so `objective_improvement_ratio` is `None` and the terminal output
 shows `n/a`. A nonzero value that is merely close to zero is still used as the
 denominator; the resulting ratio can therefore be large and should be read
-alongside the absolute `objective`.
+alongside the absolute `objective`. If its magnitude exceeds floating-point
+range, the ratio is `+inf` or `-inf`, with the usual better-or-worse sign.
 
 ## Feasibility
 

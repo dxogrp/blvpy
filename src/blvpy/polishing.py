@@ -188,7 +188,11 @@ def _objective_improvement_ratio(
     if original == 0.0:
         return None
     improvement = polished - original if maximize else original - polished
-    return improvement / abs(original)
+    denominator = abs(original)
+    if np.isinf(improvement):
+        magnitude = 1.0 + abs(polished) / denominator
+        return magnitude if improvement > 0.0 else -magnitude
+    return improvement / denominator
 
 
 def _boolean(value: object, name: str) -> bool:

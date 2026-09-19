@@ -311,6 +311,63 @@ def test_ratio_definition_including_zero_and_near_zero_baselines(
         assert ratio == pytest.approx(expected)
 
 
+@pytest.mark.parametrize(
+    ("original", "polished", "maximize", "expected"),
+    [
+        (np.finfo(float).max, -np.finfo(float).max, False, 2.0),
+        (-np.finfo(float).max, np.finfo(float).max, False, -2.0),
+        (np.finfo(float).max, -np.finfo(float).max, True, -2.0),
+        (-np.finfo(float).max, np.finfo(float).max, True, 2.0),
+    ],
+)
+def test_ratio_avoids_intermediate_overflow(
+    original: float,
+    polished: float,
+    maximize: bool,
+    expected: float,
+) -> None:
+    assert _objective_improvement_ratio(original, polished, maximize=maximize) == expected
+
+
+@pytest.mark.parametrize(("maximize", "expected"), [(False, -np.inf), (True, np.inf)])
+def test_ratio_retains_signed_infinity_when_true_magnitude_exceeds_float_range(
+    maximize: bool,
+    expected: float,
+) -> None:
+    smallest = np.nextafter(0.0, 1.0)
+
+    assert _objective_improvement_ratio(smallest, 1.0, maximize=maximize) == expected
+
+
+@pytest.mark.parametrize("ratio", [np.inf, -np.inf])
+def test_polish_result_accepts_infinite_improvement_ratio(ratio: float) -> None:
+    result = PolishResult(
+        variable_values={},
+        feasible=True,
+        objective=1.0,
+        objective_improvement_ratio=ratio,
+    )
+
+    assert result.objective_improvement_ratio == ratio
+
+
+def test_polish_result_rejects_nan_ratio_and_nonfinite_objective() -> None:
+    with pytest.raises(ValueError, match="objective_improvement_ratio must not be NaN"):
+        PolishResult(
+            variable_values={},
+            feasible=True,
+            objective=1.0,
+            objective_improvement_ratio=np.nan,
+        )
+    with pytest.raises(ValueError, match="objective must be finite"):
+        PolishResult(
+            variable_values={},
+            feasible=True,
+            objective=np.inf,
+            objective_improvement_ratio=0.0,
+        )
+
+
 def test_exact_zero_public_baseline_returns_none() -> None:
     model, x, y, _, _ = _scalar_model(coefficient=1.0, offset=-0.65)
 
