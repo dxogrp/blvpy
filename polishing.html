@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Polishing &#8212; BLVPY 0.4</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=91272d87" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=8f59a566" />
+    <script src="_static/documentation_options.js?v=7f00635f"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script defer="defer" src="_static/version-switcher.js?v=a3984577"></script>
+    <link rel="canonical" href="https://dxogrp.github.io/blvpy/version/0.4/polishing.html" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Examples" href="examples.html" />
+    <link rel="prev" title="Results and diagnostics" href="results.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">BLVPY</a></h1>
+
+
+
+<p class="blurb">Disciplined bilevel programming in Python</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=dxogrp&repo=blvpy&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modeling.html">Problem modeling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="supported-atoms.html">Supported atoms</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solving.html">Solving</a></li>
+<li class="toctree-l1"><a class="reference internal" href="results.html">Results and diagnostics</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Polishing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#basic-usage">Basic usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#interpreting-the-result">Interpreting the result</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#feasibility">Feasibility</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#adopting-the-candidate">Adopting the candidate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#solver-options-and-errors">Solver options and errors</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cite.html">Citing</a></li>
+</ul>
+
+
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><div class="version-switcher" role="navigation" aria-label="Documentation version">
+  <h3>Version</h3>
+  <select
+    id="blvpy-version-select"
+    data-current-version="0.4"
+    data-switcher-url="https://dxogrp.github.io/blvpy/switcher.json"
+    aria-label="Documentation version"
+    hidden
+  >
+    <option value="" selected>0.4</option>
+  </select>
+  <p class="version-switcher-fallback">
+    Release 0.4
+  </p>
+</div>
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section class="tex2jax_ignore mathjax_ignore" id="polishing">
+<h1>Polishing<a class="headerlink" href="#polishing" title="Link to this heading">¶</a></h1>
+<p>An epsilon-continuation solve returns a point that approximately satisfies the
+lower optimality conditions. Polishing holds the result’s upper variables
+fixed and solves the canonical lower problem once more, without the
+continuation relaxation. This produces a fresh lower response and a compact
+summary that helps you decide whether to adopt or discard the candidate.</p>
+<p>Polishing is non-mutating: it restores every affected CVXPY variable,
+parameter, and lifted value before returning or raising, and it does not
+change the supplied <a class="reference internal" href="api.html#blvpy.BilevelResult" title="blvpy.BilevelResult"><code class="xref py py-class docutils literal notranslate"><span class="pre">BilevelResult</span></code></a>.</p>
+<section id="basic-usage">
+<h2>Basic usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h2>
+<p>Call <a class="reference internal" href="api.html#blvpy.BilevelProblem.polish" title="blvpy.BilevelProblem.polish"><code class="xref py py-meth docutils literal notranslate"><span class="pre">blvpy.BilevelProblem.polish()</span></code></a> with a result from the same problem:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">cvxpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">cp</span>
+
+<span class="n">polished</span> <span class="o">=</span> <span class="n">problem</span><span class="o">.</span><span class="n">polish</span><span class="p">(</span>
+    <span class="n">result</span><span class="p">,</span>
+    <span class="n">solver</span><span class="o">=</span><span class="n">cp</span><span class="o">.</span><span class="n">CLARABEL</span><span class="p">,</span>
+    <span class="n">solver_options</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">solver_verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">polished</span><span class="o">.</span><span class="n">feasible</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">polished</span><span class="o">.</span><span class="n">residuals</span><span class="o">.</span><span class="n">max_violation</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">polished</span><span class="o">.</span><span class="n">feasibility_tolerance</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">polished</span><span class="o">.</span><span class="n">objective</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">polished</span><span class="o">.</span><span class="n">objective_improvement_ratio</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Successful results and complete <code class="docutils literal notranslate"><span class="pre">continuation_failed</span></code> results can be
+polished. The source-variable snapshots in the result, rather than the
+variables’ current <code class="docutils literal notranslate"><span class="pre">.value</span></code> attributes, define the point to polish.</p>
+<p>With the default <code class="docutils literal notranslate"><span class="pre">verbose=True</span></code>, the call immediately writes a summary like
+this to standard error:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>-------------------------------------------------------------------------------
+                                   Polishing
+-------------------------------------------------------------------------------
+(BLVPY) Result: feasible=true | objective=8.000e+00
+(BLVPY)   improvement_ratio=2.000e-01
+(BLVPY) Residuals: max_violation=5.000e-08 | feasibility_tolerance=1.000e-07
+</pre></div>
+</div>
+<p>When the candidate is infeasible, the summary instead prints every residual
+used by the feasibility decision and marks the largest checked value:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>(BLVPY) Result: feasible=false | objective=8.000e+00
+(BLVPY)   improvement_ratio=2.000e-01
+(BLVPY) Residuals: feasibility_tolerance=1.000e-07
+(BLVPY)   primal_equality=1.000e-08
+(BLVPY)   dual_equality=2.000e-08
+(BLVPY)   recovery=3.000e-08
+(BLVPY)   upper_constraints=4.000e-04 | largest=true
+(BLVPY)   primal_cone=5.000e-08
+(BLVPY)   dual_cone=6.000e-08
+(BLVPY)   gap_violation=7.000e-08
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">largest=true</span></code> marks every exact tie; <code class="docutils literal notranslate"><span class="pre">max_violation</span></code> is omitted because it
+would repeat the marked value.</p>
+<p>Set <code class="docutils literal notranslate"><span class="pre">verbose=False</span></code> to suppress BLVPY’s summary. This is independent of
+<code class="docutils literal notranslate"><span class="pre">solver_verbose</span></code>: the latter controls CVXPY and native conic-solver output on
+a best-effort basis.</p>
+</section>
+<section id="interpreting-the-result">
+<h2>Interpreting the result<a class="headerlink" href="#interpreting-the-result" title="Link to this heading">¶</a></h2>
+<p><a class="reference internal" href="api.html#blvpy.PolishResult" title="blvpy.PolishResult"><code class="xref py py-class docutils literal notranslate"><span class="pre">blvpy.PolishResult</span></code></a> is an immutable snapshot of the complete candidate,
+its diagnostics, and its upper-objective comparison; see <a class="reference internal" href="api.html"><span class="doc">API reference</span></a> for
+individual field contracts. Its <code class="docutils literal notranslate"><span class="pre">feasible</span></code> property is derived rather than
+stored:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">polished</span><span class="o">.</span><span class="n">feasible</span> <span class="o">==</span> <span class="n">polished</span><span class="o">.</span><span class="n">residuals</span><span class="o">.</span><span class="n">is_feasible</span><span class="p">(</span><span class="n">polished</span><span class="o">.</span><span class="n">feasibility_tolerance</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Both the original and polished upper objectives are reevaluated under the
+same fixed-parameter state. For original objective <span class="math notranslate nohighlight">\(F_{\rm original}\)</span> and
+polished objective <span class="math notranslate nohighlight">\(F_{\rm polished}\)</span>, the reported ratio is</p>
+<div class="math notranslate nohighlight">
+\[
+\frac{F_{\rm original}-F_{\rm polished}}
+     {|F_{\rm original}|}
+\quad\text{for minimization},
+\]</div>
+<p>and</p>
+<div class="math notranslate nohighlight">
+\[
+\frac{F_{\rm polished}-F_{\rm original}}
+     {|F_{\rm original}|}
+\quad\text{for maximization}.
+\]</div>
+<p>A positive ratio is an improvement, zero is unchanged, and a negative ratio
+is worse. When the original objective is exactly zero, division would be
+undefined, so <code class="docutils literal notranslate"><span class="pre">objective_improvement_ratio</span></code> is <code class="docutils literal notranslate"><span class="pre">None</span></code> and the terminal output
+shows <code class="docutils literal notranslate"><span class="pre">n/a</span></code>. A nonzero value that is merely close to zero is still used as the
+denominator; the resulting ratio can therefore be large and should be read
+alongside the absolute <code class="docutils literal notranslate"><span class="pre">objective</span></code>. If its magnitude exceeds floating-point
+range, the ratio is <code class="docutils literal notranslate"><span class="pre">+inf</span></code> or <code class="docutils literal notranslate"><span class="pre">-inf</span></code>, with the usual better-or-worse sign.</p>
+</section>
+<section id="feasibility">
+<h2>Feasibility<a class="headerlink" href="#feasibility" title="Link to this heading">¶</a></h2>
+<p>Polishing independently recomputes BLVPY’s residuals at <code class="docutils literal notranslate"><span class="pre">epsilon=0</span></code> and checks
+them against the originating solve’s tolerance, because a successful solver
+status indicates that numerical stopping rules were met rather than proving
+exact feasibility. See <a class="reference internal" href="results.html"><span class="doc">Results and diagnostics</span></a> for the residual definitions and the
+scope of polished and source-point diagnostics.</p>
+<p>Raw <code class="docutils literal notranslate"><span class="pre">complementarity</span></code> remains available in <code class="docutils literal notranslate"><span class="pre">polished.residuals</span></code> but is omitted
+from the terminal: at <code class="docutils literal notranslate"><span class="pre">epsilon=0</span></code>, its positive part is <code class="docutils literal notranslate"><span class="pre">gap_violation</span></code>, while
+a negative value does not violate the one-sided gap check.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>If the lower problem has multiple optima, the conic solver chooses one of
+them. That response can lose the optimistic tie-breaking achieved by the
+bilevel solve, worsen the upper objective, or violate an upper constraint
+that depends on lower variables. A completed polishing solve can therefore
+return <code class="docutils literal notranslate"><span class="pre">feasible=False</span></code>.</p>
+</div>
+</section>
+<section id="adopting-the-candidate">
+<h2>Adopting the candidate<a class="headerlink" href="#adopting-the-candidate" title="Link to this heading">¶</a></h2>
+<p>To adopt the complete candidate, project each immutable snapshot through the
+original variable’s attributes:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">if</span> <span class="n">polished</span><span class="o">.</span><span class="n">feasible</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">variable</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">polished</span><span class="o">.</span><span class="n">variable_values</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">variable</span><span class="o">.</span><span class="n">project_and_assign</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="solver-options-and-errors">
+<h2>Solver options and errors<a class="headerlink" href="#solver-options-and-errors" title="Link to this heading">¶</a></h2>
+<p>Clarabel is the default fixed-upper conic solver. <code class="docutils literal notranslate"><span class="pre">solver_options</span></code> is copied
+and forwarded to CVXPY, so backend-specific settings can be supplied without
+being modified:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">polished</span> <span class="o">=</span> <span class="n">problem</span><span class="o">.</span><span class="n">polish</span><span class="p">(</span>
+    <span class="n">result</span><span class="p">,</span>
+    <span class="n">solver</span><span class="o">=</span><span class="n">cp</span><span class="o">.</span><span class="n">SCS</span><span class="p">,</span>
+    <span class="n">solver_options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;eps&quot;</span><span class="p">:</span> <span class="mf">1e-7</span><span class="p">},</span>
+    <span class="n">solver_verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Polishing raises rather than encoding solver-status details in
+<a class="reference internal" href="api.html#blvpy.PolishResult" title="blvpy.PolishResult"><code class="xref py py-class docutils literal notranslate"><span class="pre">PolishResult</span></code></a>. An unavailable backend raises
+<a class="reference internal" href="api.html#blvpy.SolverUnavailableError" title="blvpy.SolverUnavailableError"><code class="xref py py-class docutils literal notranslate"><span class="pre">blvpy.SolverUnavailableError</span></code></a>; a lower solve that fails or returns an
+incomplete certificate raises <a class="reference internal" href="api.html#blvpy.SolveError" title="blvpy.SolveError"><code class="xref py py-class docutils literal notranslate"><span class="pre">blvpy.SolveError</span></code></a>. Invalid, incomplete,
+or foreign results raise the corresponding argument error.</p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, Hao Zhu and BLVPY contributors.
+      
+      |
+      <a href="_sources/polishing.md.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
