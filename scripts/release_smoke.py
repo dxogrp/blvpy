@@ -16,7 +16,13 @@ def _smoke_minimize() -> None:
     y = cp.Variable(name="y")
     lower = bp.LowerProblem(cp.Minimize(cp.square(y - x)), parameters=[x])
     problem = bp.BilevelProblem(cp.Minimize(cp.square(x - 1.0) + cp.square(y + 1.0)), lower)
-    result = problem.solve(epsilon_initial=1e-2, epsilon_target=1e-4, verbose=False)
+    feasibility_tolerance = 1e-6
+    result = problem.solve(
+        epsilon_initial=1e-2,
+        epsilon_target=1e-4,
+        feasibility_tolerance=feasibility_tolerance,
+        verbose=False,
+    )
 
     if not result.succeeded:
         raise RuntimeError(result.message or f"Release smoke solve ended with status {result.status!r}.")
@@ -26,6 +32,49 @@ def _smoke_minimize() -> None:
         raise RuntimeError("Release smoke solve returned invalid values or residuals.")
     if diagnostics.source_gap is None or not np.isfinite(diagnostics.source_gap):
         raise RuntimeError("Release smoke diagnostics did not return a finite source gap.")
+
+    live_values = {x: np.array(17.0), y: np.array(-23.0)}
+    for variable, value in live_values.items():
+        variable.value = value
+    polished = problem.polish(result, verbose=False)
+
+    if set(polished.variable_values) != {x, y}:
+        raise RuntimeError("Release smoke polishing returned incomplete candidate snapshots.")
+    for variable, value in polished.variable_values.items():
+        array = np.asarray(value)
+        if array.shape != variable.shape or np.iscomplexobj(array) or not np.isfinite(array).all():
+            raise RuntimeError(f"Release smoke polishing returned an invalid snapshot for {variable.name()!r}.")
+        if array.flags.writeable:
+            raise RuntimeError(f"Release smoke polishing returned a mutable snapshot for {variable.name()!r}.")
+    if not np.array_equal(polished.variable_values[x], result.variable_values[x]):
+        raise RuntimeError("Release smoke polishing changed the fixed upper value.")
+    for variable, expected in live_values.items():
+        if variable.value is None or not np.array_equal(np.asarray(variable.value), expected):
+            raise RuntimeError(f"Release smoke polishing did not restore {variable.name()!r}.")
+
+    ratio = polished.objective_improvement_ratio
+    if not np.isfinite(polished.objective) or ratio is None or not np.isfinite(ratio):
+        raise RuntimeError("Release smoke polishing returned an invalid objective comparison.")
+    if not isinstance(polished.residuals, bp.Residuals):
+        raise RuntimeError("Release smoke polishing returned invalid residual diagnostics.")
+    expected_residuals = {
+        "primal_equality",
+        "dual_equality",
+        "recovery",
+        "upper_constraints",
+        "primal_cone",
+        "dual_cone",
+        "complementarity",
+        "gap_violation",
+    }
+    residual_values = polished.residuals.as_dict()
+    if set(residual_values) != expected_residuals or not np.isfinite(list(residual_values.values())).all():
+        raise RuntimeError("Release smoke polishing returned incomplete or nonfinite residuals.")
+    if polished.feasibility_tolerance != feasibility_tolerance:
+        raise RuntimeError("Release smoke polishing did not retain the originating feasibility tolerance.")
+    derived_feasibility = polished.residuals.is_feasible(polished.feasibility_tolerance)
+    if not polished.feasible or polished.feasible != derived_feasibility:
+        raise RuntimeError("Release smoke polishing returned inconsistent feasibility diagnostics.")
 
 
 def _smoke_maximize() -> None:
