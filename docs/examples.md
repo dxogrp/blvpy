@@ -43,6 +43,10 @@ checked statically but are not executed or published with the gallery.
   retrains a validation-selected ridge model at its fixed penalty, then lets
   the user choose between lower-level feasibility and a better relaxed
   validation objective.
+- [Low-carbon blend polishing](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/low_carbon_blend_polishing.py)
+  designs material rebates for a constrained producer, rejects a coarse
+  polished response, tightens continuation, and explicitly adopts the
+  candidate that passes a quantitative deployment gate.
 
 Browse all [repository examples](https://github.com/dxogrp/blvpy/tree/main/examples).
 
