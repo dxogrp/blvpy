@@ -184,6 +184,25 @@ def test_runtime_version_comes_from_distribution_metadata() -> None:
     assert blvpy.__version__ == importlib.metadata.version("blvpy")
 
 
+def test_release_candidate_executes_all_example_collections() -> None:
+    workflow = (WORKFLOWS_DIRECTORY / "release-candidate.yml").read_text(encoding="utf-8")
+    commands = re.findall(
+        r"python scripts/export_examples\.py\s+\\\s+"
+        r"--source-dir (?P<source>\S+)\s+\\\s+"
+        r"--shared-dir (?P<shared>\S+)\s+\\\s+"
+        r'--output-dir "(?P<output>[^"]+)"',
+        workflow,
+    )
+
+    assert len(commands) == 2
+    assert {source for source, _, _ in commands} == {
+        "examples/advanced",
+        "examples/gallery",
+    }
+    assert {shared for _, shared, _ in commands} == {"examples/_shared"}
+    assert len({output for _, _, output in commands}) == 2
+
+
 def test_external_workflow_action_pins_are_immutable() -> None:
     workflows = sorted([*WORKFLOWS_DIRECTORY.glob("*.yml"), *WORKFLOWS_DIRECTORY.glob("*.yaml")])
     assert workflows

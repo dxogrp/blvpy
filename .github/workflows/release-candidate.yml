@@ -93,6 +93,14 @@ jobs:
             --shared-dir examples/_shared \
             --output-dir "${{ runner.temp }}/blvpy-release-examples"
 
+      - name: Execute advanced Marimo examples
+        run: |
+          echo "Executing the advanced Marimo examples; this may take several minutes..."
+          uv run --frozen --group examples python scripts/export_examples.py \
+            --source-dir examples/advanced \
+            --shared-dir examples/_shared \
+            --output-dir "${{ runner.temp }}/blvpy-release-advanced-examples"
+
       - name: Compile Python sources
         run: uv run --frozen --group dev python -m compileall -q src scripts tests examples docs/conf.py
 
