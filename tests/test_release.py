@@ -102,6 +102,33 @@ def test_noncanonical_or_unstable_release_versions_are_rejected(version: str) ->
         canonical_stable_version(version)
 
 
+def test_repository_release_metadata_is_consistent() -> None:
+    project = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    project_version = canonical_stable_version(project["version"])
+
+    lock = tomllib.loads((REPOSITORY_ROOT / "uv.lock").read_text(encoding="utf-8"))
+    root_packages = [
+        package
+        for package in lock["package"]
+        if package["name"] == project["name"] and package.get("source") == {"editable": "."}
+    ]
+    assert len(root_packages) == 1, "uv.lock must contain exactly one editable root package."
+    assert root_packages[0]["version"] == str(project_version), "Run `uv lock` after changing the project version."
+
+    release_headings = [
+        line.removeprefix("## ")
+        for line in (REPOSITORY_ROOT / "docs" / "release-notes.md").read_text(encoding="utf-8").splitlines()
+        if line.startswith("## ")
+    ]
+    assert release_headings, "docs/release-notes.md must contain a second-level release heading."
+    release_heading = release_headings[0]
+    if release_heading != "Unreleased":
+        expected_heading = f"{project_version.major}.{project_version.minor}"
+        assert release_heading == expected_heading, (
+            f"Finalized release notes start with {release_heading!r}; expected {expected_heading!r}."
+        )
+
+
 def test_release_distributions_and_checksums(tmp_path: Path) -> None:
     source = _source_tree(tmp_path)
     dist = tmp_path / "dist"
