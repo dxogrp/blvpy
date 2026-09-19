@@ -165,9 +165,10 @@ class GapDiagnostics:
     primal_residual_term : float
         Correction ``lambda.T @ r_p``, where ``r_p = A @ u + s - b``.
     source_gap : float or None, optional
-        Sense-normalized suboptimality against a fresh fixed-upper reference
-        solve: returned objective minus the optimum for minimization, and the
-        optimum minus returned objective for maximization.
+        Lower-level source-objective suboptimality against a fresh fixed-upper
+        reference solve: returned objective minus the optimum for
+        minimization, and the optimum minus returned objective for
+        maximization.
         :meth:`blvpy.BilevelProblem.gap_diagnostics` populates this field.
 
     Raises
@@ -222,6 +223,69 @@ class GapDiagnostics:
         """float: Left-hand side minus right-hand side of the inexact identity."""
 
         return self.normalized_gap - self.inexact_identity_rhs
+
+
+@dataclass(frozen=True, slots=True)
+class PolishResult:
+    """Immutable candidate returned by :meth:`blvpy.BilevelProblem.polish`.
+
+    Parameters
+    ----------
+    variable_values : mapping
+        Complete polished snapshots keyed by the original CVXPY variables.
+        Upper values are fixed at the supplied bilevel result and lower values
+        come from the fresh fixed-upper lower solve.
+    residuals : Residuals
+        Residuals for the complete candidate at zero complementarity
+        relaxation.
+    feasibility_tolerance : float
+        Finite nonnegative tolerance inherited from the originating solve and
+        used to determine :attr:`feasible`.
+    objective : float
+        Polished upper objective in its original modeled sense.
+    objective_improvement_ratio : float or None
+        Relative improvement over the original point. Positive is better and
+        negative is worse for both minimization and maximization; ``None``
+        represents a zero baseline. Signed infinity is retained when the
+        relative magnitude exceeds floating-point range; NaN is invalid.
+
+    Notes
+    -----
+    The mapping and every numerical value are immutable snapshots. Polishing
+    does not assign the candidate to the user's CVXPY variables.
+    """
+
+    variable_values: Mapping[Any, ArrayLike]
+    residuals: Residuals
+    feasibility_tolerance: float
+    objective: float
+    objective_improvement_ratio: float | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.variable_values, Mapping):
+            raise ValueError("variable_values must be a mapping.")
+        values = {key: _snapshot(value, f"variable_values[{key!r}]") for key, value in self.variable_values.items()}
+        object.__setattr__(self, "variable_values", MappingProxyType(values))
+        if not isinstance(self.residuals, Residuals):
+            raise ValueError("residuals must be a Residuals instance.")
+        object.__setattr__(
+            self,
+            "feasibility_tolerance",
+            _finite_nonnegative_float(self.feasibility_tolerance, "feasibility_tolerance"),
+        )
+        object.__setattr__(self, "objective", _finite_real_float(self.objective, "objective"))
+        if self.objective_improvement_ratio is not None:
+            object.__setattr__(
+                self,
+                "objective_improvement_ratio",
+                _non_nan_real_float(self.objective_improvement_ratio, "objective_improvement_ratio"),
+            )
+
+    @property
+    def feasible(self) -> bool:
+        """bool: Whether the polished candidate passes its stored residual check."""
+
+        return self.residuals.is_feasible(self.feasibility_tolerance)
 
 
 @dataclass(frozen=True, slots=True)
@@ -465,6 +529,8 @@ class BilevelResult:
     selected_run_index: int | None = None
     final_iteration: IterationRecord | None = None
     message: str | None = None
+    _feasibility_tolerance: float = field(default=1e-7, repr=False)
+    _problem_token: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         _status(self.status)
@@ -505,6 +571,11 @@ class BilevelResult:
             if selected_run_index not in run_indices:
                 raise ValueError("selected_run_index must identify one of the recorded runs.")
         object.__setattr__(self, "selected_run_index", selected_run_index)
+        object.__setattr__(
+            self,
+            "_feasibility_tolerance",
+            _finite_nonnegative_float(self._feasibility_tolerance, "feasibility_tolerance"),
+        )
         final_iteration = self.final_iteration
         if final_iteration is not None and not isinstance(final_iteration, IterationRecord):
             raise ValueError("final_iteration must be an IterationRecord or None.")
@@ -606,6 +677,20 @@ def _finite_nonnegative_float(value: object, name: str) -> float:
     result = _nonnegative_float(value, name)
     if not np.isfinite(result):
         raise ValueError(f"{name} must be finite.")
+    return result
+
+
+def _finite_real_float(value: object, name: str) -> float:
+    result = _real_float(value, name)
+    if not np.isfinite(result):
+        raise ValueError(f"{name} must be finite.")
+    return result
+
+
+def _non_nan_real_float(value: object, name: str) -> float:
+    result = _real_float(value, name)
+    if np.isnan(result):
+        raise ValueError(f"{name} must not be NaN.")
     return result
 
 

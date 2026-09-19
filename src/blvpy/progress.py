@@ -13,7 +13,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .result import BilevelResult, IterationRecord, RunRecord
+    from .result import BilevelResult, IterationRecord, PolishResult, RunRecord
 
 _WIDTH = 79
 _PREFIX = "(BLVPY)"
@@ -355,6 +355,43 @@ class ProgressReporter:
         except Exception:
             return
 
+    def polishing(self, result: PolishResult) -> None:
+        """Write the terminal fixed-upper polishing summary."""
+
+        try:
+            if not self.enabled:
+                return
+            self._section("Polishing", banner=False)
+            ratio = result.objective_improvement_ratio
+            self._detail(
+                "Result",
+                f"feasible={str(result.feasible).lower()}",
+                f"objective={_number(result.objective)}",
+                f"improvement_ratio={'n/a' if ratio is None else _number(ratio)}",
+            )
+            if result.feasible:
+                self._detail(
+                    "Residuals",
+                    f"max_violation={_number(result.residuals.max_violation)}",
+                    f"feasibility_tolerance={_number(result.feasibility_tolerance)}",
+                )
+                return
+
+            self._detail(
+                "Residuals",
+                f"feasibility_tolerance={_number(result.feasibility_tolerance)}",
+            )
+            largest = result.residuals.max_violation
+            for name, value in result.residuals.as_dict().items():
+                if name == "complementarity":
+                    continue
+                fields = [f"{name}={_number(value)}"]
+                if value == largest:
+                    fields.append("largest=true")
+                self._indented(*fields)
+        except Exception:
+            return
+
     def failure(self, error: BaseException, *, elapsed: float | None) -> None:
         """Write a failed terminal summary without changing the exception."""
 
@@ -370,8 +407,9 @@ class ProgressReporter:
         except Exception:
             return
 
-    def _section(self, title: str) -> None:
-        self._banner()
+    def _section(self, title: str, *, banner: bool = True) -> None:
+        if banner:
+            self._banner()
         now = perf_counter()
         if self._phase is not None:
             self._line(f"{self._phase} complete", f"elapsed={_number(now - self._phase_started_at)}s")

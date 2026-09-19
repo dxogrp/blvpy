@@ -216,6 +216,19 @@ acceptable = residuals.is_feasible(
 
 This check concerns the returned lifted lower-optimality conditions.
 
+## Polished candidates
+
+{meth}`blvpy.BilevelProblem.polish` re-solves the lower problem while holding
+the result's upper values fixed and returns an immutable
+{class}`blvpy.PolishResult` containing the complete candidate, its upper
+objective, and its relative improvement over the original objective. Its
+`feasible` property is derived from the retained residuals and originating
+feasibility tolerance, so a failed check can be inspected without another
+solve. Those residuals diagnose only the polished candidate; the originating
+{class}`blvpy.BilevelResult` residuals and
+{meth}`blvpy.BilevelProblem.gap_diagnostics` describe the source point, while
+{doc}`polishing` covers the workflow and ratio definition.
+
 ## Complete gap diagnostics
 
 Call the convenience method only when the extra fixed-upper lower solve is
@@ -236,7 +249,8 @@ c^Tu+b^T\lambda
 $$
 
 where $r_p=Au+s-b$ and $r_d=A^T\lambda+c$. It then performs one additional
-fixed-upper conic solve and reports the sense-normalized **source gap**
+fixed-upper conic solve and reports the lower-level source-objective
+suboptimality as the **source gap**
 
 $$
 \operatorname{source\_gap}=

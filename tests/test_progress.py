@@ -6,7 +6,7 @@ import logging
 
 import blvpy.progress as progress
 from blvpy.progress import ProgressReporter
-from blvpy.result import BilevelResult, IterationRecord, Residuals, RunRecord
+from blvpy.result import BilevelResult, IterationRecord, PolishResult, Residuals, RunRecord
 
 _PREFIX = "(BLVPY)"
 
@@ -297,6 +297,79 @@ def test_unavailable_record_fields_are_omitted_and_nonfinite_values_are_explicit
     assert "iters=" not in run_block
     assert "message=no point" in run_block
     assert "before_violation=-inf" in transcript
+
+
+def test_polishing_summary_reports_feasible_residuals(capfd) -> None:
+    reporter = ProgressReporter(enabled=True)
+    residuals = _residuals()
+
+    reporter.polishing(
+        PolishResult(
+            variable_values={},
+            residuals=residuals,
+            feasibility_tolerance=1e-7,
+            objective=8.0,
+            objective_improvement_ratio=0.2,
+        )
+    )
+
+    captured = capfd.readouterr()
+    assert captured.out == ""
+    lines = captured.err.splitlines()
+    assert lines == [
+        "-" * 79,
+        "Polishing".center(79),
+        "-" * 79,
+        "(BLVPY) Result: feasible=true | objective=8.000e+00",
+        "(BLVPY)   improvement_ratio=2.000e-01",
+        "(BLVPY) Residuals: max_violation=2.500e-08 | feasibility_tolerance=1.000e-07",
+    ]
+    assert all(len(line) <= 79 for line in lines)
+
+
+def test_polishing_summary_reports_all_infeasible_residuals_and_largest_ties(capfd) -> None:
+    reporter = ProgressReporter(enabled=True)
+    residuals = Residuals(
+        primal_equality=1e-8,
+        dual_equality=2.5e-4,
+        recovery=3e-8,
+        upper_constraints=2.5e-4,
+        primal_cone=4e-8,
+        dual_cone=5e-8,
+        complementarity=9.0,
+        gap_violation=6e-8,
+    )
+
+    reporter.polishing(
+        PolishResult(
+            variable_values={},
+            residuals=residuals,
+            feasibility_tolerance=1e-7,
+            objective=-1.0,
+            objective_improvement_ratio=None,
+        )
+    )
+
+    captured = capfd.readouterr()
+    assert captured.out == ""
+    lines = captured.err.splitlines()
+    assert lines == [
+        "-" * 79,
+        "Polishing".center(79),
+        "-" * 79,
+        "(BLVPY) Result: feasible=false | objective=-1.000e+00 | improvement_ratio=n/a",
+        "(BLVPY) Residuals: feasibility_tolerance=1.000e-07",
+        "(BLVPY)   primal_equality=1.000e-08",
+        "(BLVPY)   dual_equality=2.500e-04 | largest=true",
+        "(BLVPY)   recovery=3.000e-08",
+        "(BLVPY)   upper_constraints=2.500e-04 | largest=true",
+        "(BLVPY)   primal_cone=4.000e-08",
+        "(BLVPY)   dual_cone=5.000e-08",
+        "(BLVPY)   gap_violation=6.000e-08",
+    ]
+    assert "complementarity" not in captured.err
+    assert "max_violation" not in captured.err
+    assert all(len(line) <= 79 for line in lines)
 
 
 def test_progress_handler_installation_is_idempotent() -> None:

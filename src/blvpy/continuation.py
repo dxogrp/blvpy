@@ -14,6 +14,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from .backends import solve_conic, solve_dnlp
 from .errors import InitializationError, SolveError, SolverUnavailableError
+from .fixed_lower import FixedLowerSolveError, solve_fixed_lower
 from .progress import ProgressReporter
 from .result import BilevelResult, IterationRecord, Residuals, RunRecord
 
@@ -314,6 +315,7 @@ def _solve_bilevel(
         objective=selected.record.objective,
         message=result_message,
         final_record=final,
+        feasibility_tolerance=feasibility_tolerance,
     )
 
 
@@ -859,31 +861,17 @@ def _initialize_lower(
                 f"Upper start for {variable.name()!r} violates the declared domain "
                 f"of generated lower parameter {parameter.name()!r}."
             ) from error
-    canonical = model.canonicalize()
-    data = canonical.apply_numeric()
-    primal = cp.Variable(canonical.canonical_size, name="blvpy_initial_primal")
-    slack = cp.Variable(canonical.constraint_size, name="blvpy_initial_slack")
-    equality = data.A @ primal + slack == data.b
-    lower = cp.Problem(
-        cp.Minimize(data.c @ primal),
-        [equality, *canonical.cone_layout.primal_constraints(slack)],
-    )
     try:
-        solve_conic(lower, conic_solver, options, solver_verbose)
-    except cp.SolverError as error:
+        solution = solve_fixed_lower(model, conic_solver, options, solver_verbose)
+    except (cp.SolverError, FixedLowerSolveError) as error:
         raise InitializationError(f"The fixed-data lower cone solve failed: {error}") from error
-    if lower.status not in cp.settings.SOLUTION_PRESENT:
-        raise InitializationError(f"The fixed-data lower cone problem returned status {lower.status!r}.")
-    if primal.value is None or slack.value is None or equality.dual_value is None:
-        raise InitializationError("The conic solver omitted a primal or dual certificate.")
 
     lifted = model._lifted_problem
-    lifted.primal.save_value(np.asarray(primal.value, dtype=float))
-    lifted.slack.save_value(np.asarray(slack.value, dtype=float))
-    lifted.dual.save_value(np.asarray(equality.dual_value, dtype=float))
-    source_values = canonical.recover_numeric(primal.value)
+    lifted.primal.save_value(np.asarray(solution.primal, dtype=float))
+    lifted.slack.save_value(np.asarray(solution.slack, dtype=float))
+    lifted.dual.save_value(np.asarray(solution.dual, dtype=float))
     for variable in model._cvxpy_lower_problem.variables():
-        variable.project_and_assign(source_values[variable.id])
+        variable.project_and_assign(solution.source_values[variable.id])
 
 
 def _restore_feasibility(
@@ -1109,6 +1097,7 @@ def _result(
     objective: float | None,
     message: str | None,
     final_record: IterationRecord | None = None,
+    feasibility_tolerance: float = 1e-7,
 ) -> BilevelResult:
     lifted = model._lifted_problem
     variable_values = {
@@ -1128,6 +1117,8 @@ def _result(
         selected_run_index=selected_run_index,
         final_iteration=final_record,
         message=message,
+        _feasibility_tolerance=feasibility_tolerance,
+        _problem_token=model._result_token,
     )
 
 

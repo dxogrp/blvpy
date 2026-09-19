@@ -1,6 +1,6 @@
 # Examples
 
-The gallery consists of standalone [Marimo](https://marimo.io/) notebooks for example applications.
+The gallery consists of standalone [Marimo](https://marimo.io/) notebooks from `examples/gallery`.
 Each link opens an executed, non-interactive HTML snapshot containing the notebook code and outputs.
 Published snapshots use $\epsilon_{\mathrm{target}}=10^{-5}$ to balance numerical validation and export time;
 live sessions can request tighter continuation targets.
@@ -34,9 +34,25 @@ live sessions can request tighter continuation targets.
 - {example}`DC motor MPC tuning <dc_motor_mpc_tuning>`
   learns control-cost weights while anticipating a constrained MPC response.
 
-For live interaction, install and open the gallery from a repository checkout:
+## Advanced examples
+
+Advanced examples are available as source notebooks in the repository. They are
+checked statically and executed during release validation, but are not published
+with the gallery.
+
+- [Ridge-polishing decision](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/ridge_polishing.py)
+  retrains a validation-selected ridge model at its fixed penalty, then lets
+  the user choose between lower-level feasibility and a better relaxed
+  validation objective.
+- [Low-carbon blend polishing](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/low_carbon_blend_polishing.py)
+  designs material rebates for a constrained producer, rejects a coarse
+  polished response, tightens continuation, and explicitly adopts the
+  candidate that passes a quantitative deployment gate.
+
+Browse all [repository examples](https://github.com/dxogrp/blvpy/tree/main/examples).
+
+For live interaction, install and open the complete example workspace from a repository checkout:
 
 ```shell
-make sync-examples
 make marimo
 ```

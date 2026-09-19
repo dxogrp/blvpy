@@ -32,7 +32,7 @@ def _():
 
     from blvpy import BilevelProblem, LowerProblem
 
-    plt.style.use(Path(__file__).resolve().parent / "zhlatex.mplstyle")
+    plt.style.use(Path(__file__).resolve().parents[1] / "_shared" / "zhlatex.mplstyle")
     return BilevelProblem, LowerProblem, Path, cp, mo, np, plt
 
 

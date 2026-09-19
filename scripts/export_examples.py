@@ -40,6 +40,15 @@ def _source_files(source_dir: Path) -> tuple[list[Path], list[Path]]:
     return notebooks, styles
 
 
+def _validate_shared_directory(shared_dir: Path) -> None:
+    """Reject links and special files before copying shared example assets."""
+    for path in shared_dir.rglob("*"):
+        if path.is_symlink():
+            raise ValueError(f"Shared example assets cannot contain symbolic links: {path}.")
+        if not path.is_dir() and not path.is_file():
+            raise ValueError(f"Unsupported shared example filesystem entry: {path}.")
+
+
 def _format_log(value: Any) -> str:
     if value is None:
         return ""
@@ -138,26 +147,39 @@ def export_examples(
     source_dir: Path,
     output_dir: Path,
     *,
+    shared_dir: Path | None = None,
     runner: Runner = subprocess.run,
     timeout: float = 180,
 ) -> None:
-    """Execute every top-level Marimo notebook and replace ``output_dir`` on success."""
+    """Execute top-level notebooks, staging ``shared_dir`` as a sibling directory."""
     if timeout <= 0:
         raise ValueError("The Marimo export timeout must be positive.")
 
     source_input = source_dir.expanduser()
     output_input = output_dir.expanduser()
+    shared_input = shared_dir.expanduser() if shared_dir is not None else None
     if source_input.is_symlink():
         raise ValueError(f"Example source directory cannot be a symbolic link: {source_input}.")
     if output_input.is_symlink():
         raise ValueError(f"Example output directory cannot be a symbolic link: {output_input}.")
+    if shared_input is not None and shared_input.is_symlink():
+        raise ValueError(f"Shared example directory cannot be a symbolic link: {shared_input}.")
 
     source = source_input.resolve()
     output = output_input.resolve()
+    shared = shared_input.resolve() if shared_input is not None else None
     if not source.is_dir():
         raise ValueError(f"Example source directory does not exist: {source}.")
     if _paths_overlap(source, output):
         raise ValueError("Example source and output directories must not overlap.")
+    if shared is not None:
+        if not shared.is_dir():
+            raise ValueError(f"Shared example directory does not exist: {shared}.")
+        if _paths_overlap(source, shared):
+            raise ValueError("Example source and shared directories must not overlap.")
+        if _paths_overlap(shared, output):
+            raise ValueError("Shared example and output directories must not overlap.")
+        _validate_shared_directory(shared)
     notebooks, styles = _source_files(source)
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -172,9 +194,13 @@ def export_examples(
             tempfile.TemporaryDirectory(prefix="blvpy-example-input-") as temporary_name,
             tempfile.TemporaryDirectory(prefix="blvpy-matplotlib-") as matplotlib_config_name,
         ):
-            temporary_input = Path(temporary_name)
+            temporary_root = Path(temporary_name)
+            temporary_input = temporary_root / source.name
+            temporary_input.mkdir()
             for source_file in [*notebooks, *styles]:
                 shutil.copy2(source_file, temporary_input / source_file.name)
+            if shared is not None:
+                shutil.copytree(shared, temporary_root / shared.name)
 
             environment = os.environ.copy()
             environment.update(
@@ -212,6 +238,7 @@ def export_examples(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-dir", required=True, type=Path, help="directory containing Marimo example sources")
+    parser.add_argument("--shared-dir", type=Path, help="directory of assets staged beside the example sources")
     parser.add_argument("--output-dir", required=True, type=Path, help="directory to replace with exported HTML pages")
     return parser
 
@@ -219,7 +246,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        export_examples(args.source_dir, args.output_dir)
+        export_examples(args.source_dir, args.output_dir, shared_dir=args.shared_dir)
     except (OSError, RuntimeError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
     return 0

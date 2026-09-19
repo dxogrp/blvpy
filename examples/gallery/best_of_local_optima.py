@@ -30,7 +30,7 @@ def _():
 
     figure_directory = Path(__file__).resolve().parent / "figures"
     figure_directory.mkdir(parents=True, exist_ok=True)
-    plt.style.use(Path(__file__).resolve().parent / "zhlatex.mplstyle")
+    plt.style.use(Path(__file__).resolve().parents[1] / "_shared" / "zhlatex.mplstyle")
     return BilevelProblem, LowerProblem, cp, figure_directory, mo, np, plt
 
 

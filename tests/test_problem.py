@@ -268,6 +268,20 @@ def test_solve_defaults_match_documented_continuation_settings() -> None:
     assert _SolveSettings().best_of is None
 
 
+def test_polish_defaults_match_documented_settings() -> None:
+    from blvpy.polishing import _PolishSettings
+
+    parameters = inspect.signature(BilevelProblem.polish).parameters
+    assert parameters["solver"].default == cp.CLARABEL
+    assert parameters["solver_options"].default is None
+    assert parameters["verbose"].default is True
+    assert parameters["solver_verbose"].default is False
+    assert _PolishSettings().solver == cp.CLARABEL
+    assert _PolishSettings().solver_options is None
+    assert _PolishSettings().verbose is True
+    assert _PolishSettings().solver_verbose is False
+
+
 @pytest.mark.parametrize(
     ("verbose", "solver_verbose"),
     [(False, False), (True, False), (False, True), (True, True)],

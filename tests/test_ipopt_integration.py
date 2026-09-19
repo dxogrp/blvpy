@@ -326,12 +326,14 @@ def _solve(
     epsilon_initial: float = 1e-2,
     epsilon_target: float = 1e-5,
     best_of: int | None = None,
+    feasibility_tolerance: float = 1e-7,
     seed: int = 0,
 ) -> BilevelResult:
     return model.solve(
         epsilon_initial=epsilon_initial,
         epsilon_target=epsilon_target,
         best_of=best_of,
+        feasibility_tolerance=feasibility_tolerance,
         seed=seed,
         solver_options=_SOLVER_OPTIONS,
     )
@@ -374,6 +376,67 @@ def test_analytic_quadratic_reaches_target_and_is_epsilon_lower_optimal() -> Non
         check_gap_convenience=True,
     )
     assert oracle.source_gap == pytest.approx(result.final_epsilon, abs=3e-6)
+
+
+def test_quadratic_solve_then_polish_preserves_state_and_uses_solve_tolerance() -> None:
+    model, x, y = _quadratic_model()
+    epsilon = 1e-4
+    feasibility_tolerance = 5e-6
+
+    result = _solve(
+        model,
+        epsilon_initial=epsilon,
+        epsilon_target=epsilon,
+        feasibility_tolerance=feasibility_tolerance,
+        seed=41,
+    )
+
+    assert result.succeeded
+    assert result._feasibility_tolerance == feasibility_tolerance
+    lifted = model._lifted_problem
+    leaves = (
+        *model.source_variables,
+        *model._cvxpy_lower_problem.parameters(),
+        lifted.primal,
+        lifted.slack,
+        lifted.dual,
+        lifted.epsilon,
+    )
+    model_state = {leaf: None if leaf.value is None else np.array(leaf.value, copy=True) for leaf in leaves}
+    result_values = {variable: np.array(value, copy=True) for variable, value in result.variable_values.items()}
+    result_vectors = {
+        name: np.array(getattr(result, name), copy=True) for name in ("canonical_primal", "slack", "dual")
+    }
+    original_x = float(result.variable_values[x])
+    original_y = float(result.variable_values[y])
+    original_objective = (original_x - 1.0) ** 2 + (original_y + 1.0) ** 2
+
+    polished = model.polish(result, solver=cp.CLARABEL, verbose=False)
+
+    assert polished.feasible
+    assert set(polished.variable_values) == {x, y}
+    assert float(polished.variable_values[x]) == pytest.approx(original_x, abs=1e-12)
+    assert float(polished.variable_values[y]) == pytest.approx(original_x, abs=1e-7)
+    assert abs(float(polished.variable_values[y]) - original_y) > 0.5 * sqrt(epsilon)
+    polished_objective = (original_x - 1.0) ** 2 + (original_x + 1.0) ** 2
+    assert result.objective == pytest.approx(original_objective, abs=1e-9)
+    assert polished.objective == pytest.approx(polished_objective, abs=1e-8)
+    expected_ratio = (original_objective - polished_objective) / abs(original_objective)
+    assert polished.objective_improvement_ratio == pytest.approx(expected_ratio, abs=1e-8)
+    assert polished.objective_improvement_ratio < 0.0
+
+    for leaf, value in model_state.items():
+        if value is None:
+            assert leaf.value is None
+        else:
+            np.testing.assert_array_equal(leaf.value, value)
+    assert set(result.variable_values) == set(result_values)
+    for variable, value in result_values.items():
+        np.testing.assert_array_equal(result.variable_values[variable], value)
+    for name, value in result_vectors.items():
+        np.testing.assert_array_equal(getattr(result, name), value)
+    assert result.objective == pytest.approx(original_objective, abs=1e-9)
+    assert result._feasibility_tolerance == feasibility_tolerance
 
 
 def test_analytic_max_max_preserves_original_objective_values() -> None:

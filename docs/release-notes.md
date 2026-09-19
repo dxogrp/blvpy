@@ -1,14 +1,25 @@
 # Release notes
 
+## 0.4
+
+- Added {meth}`blvpy.BilevelProblem.polish`, a non-mutating fixed-upper lower
+  re-solve that returns an immutable candidate with residual-based feasibility
+  and an upper-objective comparison.
+- Added examples for the new {doc}`polishing` feature.
+- Reorganized the examples into a published gallery and a repository-only
+  advanced collection with shared notebook assets.
+
 ## 0.3
 
 - Added `cp.Maximize` support at both bilevel levels. Lower maximization
   objectives are normalized to an equivalent minimization before conic
   canonicalization, while `LowerProblem.objective` and solve-time upper
   objective values remain in their original modeled sense.
-- Made complete and partial best-of run selection objective-sense aware, and
-  defined `GapDiagnostics.source_gap` as sense-normalized lower
-  suboptimality.
+- Made complete and partial best-of run selection choose the lowest upper
+  objective for minimization and the highest for maximization. Defined
+  `GapDiagnostics.source_gap` as the returned lower objective minus the
+  reference optimum for minimization, and the reference optimum minus the
+  returned lower objective for maximization.
 - Add examples.
 
 ## 0.2

@@ -15,7 +15,7 @@ metadata for inspection; their detailed structure might change.
 ```{eval-rst}
 .. autoclass:: blvpy.BilevelProblem
    :members: upper_variables, source_variables, is_dblp, validate, canonicalize,
-             solve, gap_diagnostics
+             solve, polish, gap_diagnostics
    :member-order: bysource
 ```
 
@@ -28,6 +28,16 @@ metadata for inspection; their detailed structure might change.
              selected_run, all_objectives
    :member-order: bysource
 ```
+
+```{eval-rst}
+.. autoclass:: blvpy.PolishResult
+   :members: variable_values, residuals, feasibility_tolerance, feasible,
+             objective, objective_improvement_ratio
+   :member-order: bysource
+```
+
+For the fixed-upper post-solve workflow and interpretation of
+{class}`blvpy.PolishResult`, see {doc}`polishing`.
 
 ```{eval-rst}
 .. autoclass:: blvpy.RunRecord

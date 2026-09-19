@@ -85,12 +85,21 @@ jobs:
           uv run --frozen --group docs sphinx-build -M clean docs docs/_build
           uv run --frozen --group docs sphinx-build -W --keep-going -n -b html docs docs/_build/html
 
-      - name: Execute Marimo examples
+      - name: Execute published Marimo gallery
         run: |
-          echo "Executing Marimo examples; this may take several minutes..."
+          echo "Executing the published Marimo gallery; this may take several minutes..."
           uv run --frozen --group examples python scripts/export_examples.py \
-            --source-dir examples \
+            --source-dir examples/gallery \
+            --shared-dir examples/_shared \
             --output-dir "${{ runner.temp }}/blvpy-release-examples"
+
+      - name: Execute advanced Marimo examples
+        run: |
+          echo "Executing the advanced Marimo examples; this may take several minutes..."
+          uv run --frozen --group examples python scripts/export_examples.py \
+            --source-dir examples/advanced \
+            --shared-dir examples/_shared \
+            --output-dir "${{ runner.temp }}/blvpy-release-advanced-examples"
 
       - name: Compile Python sources
         run: uv run --frozen --group dev python -m compileall -q src scripts tests examples docs/conf.py

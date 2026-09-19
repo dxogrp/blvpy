@@ -25,7 +25,7 @@ from .errors import (
 )
 from .lower_problem import LowerProblem
 from .problem import BilevelProblem
-from .result import BilevelResult, GapDiagnostics, IterationRecord, Residuals, RunRecord
+from .result import BilevelResult, GapDiagnostics, IterationRecord, PolishResult, Residuals, RunRecord
 
 __all__ = [
     "ApproximateCanonicalizationError",
@@ -45,6 +45,7 @@ __all__ = [
     "LowerProblem",
     "ParameterMappingError",
     "ParameterSpec",
+    "PolishResult",
     "RecoverySpec",
     "Residuals",
     "RunRecord",

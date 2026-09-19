@@ -183,3 +183,8 @@ Availability is checked when CVXPY actually invokes the backend.
 `solver_verbose=False` (the default) suppresses CVXPY and native solver output on a best-effort basis.
 The flags are independent.
 For quiet IPOPT calls, BLVPY supplies `print_level=0` and `sb="yes"` only when the user did not provide those options.
+
+After a continuation solve, {meth}`~blvpy.BilevelProblem.polish` can reuse the
+fixed-upper canonical lower-solve path to produce a fresh lower response. See
+{doc}`polishing` for its feasibility and objective summary, non-mutating
+behavior, and solver options.
