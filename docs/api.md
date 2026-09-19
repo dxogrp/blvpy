@@ -31,7 +31,8 @@ metadata for inspection; their detailed structure might change.
 
 ```{eval-rst}
 .. autoclass:: blvpy.PolishResult
-   :members: variable_values, feasible, objective, objective_improvement_ratio
+   :members: variable_values, residuals, feasibility_tolerance, feasible,
+             objective, objective_improvement_ratio
    :member-order: bysource
 ```
 

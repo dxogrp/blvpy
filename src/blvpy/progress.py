@@ -369,6 +369,26 @@ class ProgressReporter:
                 f"objective={_number(result.objective)}",
                 f"improvement_ratio={'n/a' if ratio is None else _number(ratio)}",
             )
+            if result.feasible:
+                self._detail(
+                    "Residuals",
+                    f"max_violation={_number(result.residuals.max_violation)}",
+                    f"feasibility_tolerance={_number(result.feasibility_tolerance)}",
+                )
+                return
+
+            self._detail(
+                "Residuals",
+                f"feasibility_tolerance={_number(result.feasibility_tolerance)}",
+            )
+            largest = result.residuals.max_violation
+            for name, value in result.residuals.as_dict().items():
+                if name == "complementarity":
+                    continue
+                fields = [f"{name}={_number(value)}"]
+                if value == largest:
+                    fields.append("largest=true")
+                self._indented(*fields)
         except Exception:
             return
 

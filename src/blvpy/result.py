@@ -235,9 +235,12 @@ class PolishResult:
         Complete polished snapshots keyed by the original CVXPY variables.
         Upper values are fixed at the supplied bilevel result and lower values
         come from the fresh fixed-upper lower solve.
-    feasible : bool
-        Whether the polished point passes BLVPY's standard residual check at
-        exact lower complementarity using the originating solve tolerance.
+    residuals : Residuals
+        Independently computed residuals for the complete polished candidate
+        with zero complementarity relaxation.
+    feasibility_tolerance : float
+        Finite nonnegative tolerance inherited from the originating bilevel
+        solve and used to determine :attr:`feasible`.
     objective : float
         Polished upper objective in its original modeled sense.
     objective_improvement_ratio : float or None
@@ -253,7 +256,8 @@ class PolishResult:
     """
 
     variable_values: Mapping[Any, ArrayLike]
-    feasible: bool
+    residuals: Residuals
+    feasibility_tolerance: float
     objective: float
     objective_improvement_ratio: float | None
 
@@ -262,9 +266,13 @@ class PolishResult:
             raise ValueError("variable_values must be a mapping.")
         values = {key: _snapshot(value, f"variable_values[{key!r}]") for key, value in self.variable_values.items()}
         object.__setattr__(self, "variable_values", MappingProxyType(values))
-        if not isinstance(self.feasible, (bool, np.bool_)):
-            raise ValueError("feasible must be boolean.")
-        object.__setattr__(self, "feasible", bool(self.feasible))
+        if not isinstance(self.residuals, Residuals):
+            raise ValueError("residuals must be a Residuals instance.")
+        object.__setattr__(
+            self,
+            "feasibility_tolerance",
+            _finite_nonnegative_float(self.feasibility_tolerance, "feasibility_tolerance"),
+        )
         object.__setattr__(self, "objective", _finite_real_float(self.objective, "objective"))
         if self.objective_improvement_ratio is not None:
             object.__setattr__(
@@ -272,6 +280,12 @@ class PolishResult:
                 "objective_improvement_ratio",
                 _non_nan_real_float(self.objective_improvement_ratio, "objective_improvement_ratio"),
             )
+
+    @property
+    def feasible(self) -> bool:
+        """bool: Whether the polished candidate passes its stored residual check."""
+
+        return self.residuals.is_feasible(self.feasibility_tolerance)
 
 
 @dataclass(frozen=True, slots=True)

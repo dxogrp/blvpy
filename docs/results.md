@@ -220,11 +220,18 @@ This check concerns the returned lifted lower-optimality conditions.
 
 {meth}`blvpy.BilevelProblem.polish` re-solves the lower problem while keeping
 the upper values from a result fixed. It returns a compact, immutable
-{class}`blvpy.PolishResult` containing the complete candidate, its feasibility,
-its upper objective, and its relative improvement over the original upper
-objective. The call does not alter the problem or original result. See
-{doc}`polishing` for the ratio definition, feasibility semantics, terminal
-output, and explicit adoption.
+{class}`blvpy.PolishResult` containing the complete candidate, its independently
+computed residuals and originating feasibility tolerance, its upper objective,
+and its relative improvement over the original upper objective. Its
+`feasible` property is derived from the retained residuals and tolerance, so a
+failed check can be inspected without another solve. The call does not alter
+the problem or original result. See {doc}`polishing` for the ratio definition,
+feasibility semantics, terminal output, and explicit adoption.
+
+The polished residuals diagnose only the polished candidate. The residuals on
+the originating {class}`blvpy.BilevelResult` and the output of
+{meth}`blvpy.BilevelProblem.gap_diagnostics` continue to describe the original
+source point.
 
 ## Complete gap diagnostics
 

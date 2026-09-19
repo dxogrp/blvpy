@@ -113,7 +113,8 @@ def _polish_bilevel(
         candidate_values = _complete_candidate_values(model)
         return PolishResult(
             variable_values=candidate_values,
-            feasible=residuals.is_feasible(result._feasibility_tolerance),
+            residuals=residuals,
+            feasibility_tolerance=result._feasibility_tolerance,
             objective=polished_objective,
             objective_improvement_ratio=_objective_improvement_ratio(
                 original_objective,

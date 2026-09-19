@@ -26,6 +26,8 @@ polished = problem.polish(
 )
 
 print(polished.feasible)
+print(polished.residuals.max_violation)
+print(polished.feasibility_tolerance)
 print(polished.objective)
 print(polished.objective_improvement_ratio)
 ```
@@ -43,7 +45,28 @@ this to standard error:
 -------------------------------------------------------------------------------
 (BLVPY) Result: feasible=true | objective=8.000e+00
 (BLVPY)   improvement_ratio=2.000e-01
+(BLVPY) Residuals: max_violation=5.000e-08 | feasibility_tolerance=1.000e-07
 ```
+
+When the candidate is infeasible, the summary instead prints every residual
+used by the feasibility decision and marks the largest checked value:
+
+```text
+(BLVPY) Result: feasible=false | objective=8.000e+00
+(BLVPY)   improvement_ratio=2.000e-01
+(BLVPY) Residuals: feasibility_tolerance=1.000e-07
+(BLVPY)   primal_equality=1.000e-08
+(BLVPY)   dual_equality=2.000e-08
+(BLVPY)   recovery=3.000e-08
+(BLVPY)   upper_constraints=4.000e-04 | largest=true
+(BLVPY)   primal_cone=5.000e-08
+(BLVPY)   dual_cone=6.000e-08
+(BLVPY)   gap_violation=7.000e-08
+```
+
+All exact ties for the largest checked residual are marked. The derived
+`max_violation` is omitted from this expanded form because it would duplicate
+the value of a marked entry.
 
 Set `verbose=False` to suppress BLVPY's summary. This is independent of
 `solver_verbose`: the latter controls CVXPY and native conic-solver output on
@@ -51,10 +74,14 @@ a best-effort basis.
 
 ## Interpreting the result
 
-{class}`blvpy.PolishResult` is immutable and contains four fields:
+{class}`blvpy.PolishResult` is immutable and exposes the following values:
 
-- `feasible` is whether the complete polished candidate passes BLVPY's
-  standard feasibility check.
+- `residuals` contains the independently evaluated residuals for the polished
+  candidate.
+- `feasibility_tolerance` is the tolerance inherited from the solve that
+  produced the original result.
+- `feasible` is the read-only result of
+  `residuals.is_feasible(feasibility_tolerance)`.
 - `objective` is the upper objective at the polished point, in the original
   modeled sense. A `cp.Maximize` objective is not negated.
 - `objective_improvement_ratio` compares the polished objective with the
@@ -93,17 +120,32 @@ range, the ratio is `+inf` or `-inf`, with the usual better-or-worse sign.
 ## Feasibility
 
 Polishing evaluates the normal BLVPY residual system with `epsilon=0`, so
-there is no positive continuation allowance for complementarity. The check
-includes lower primal and dual equalities, primal- and dual-cone membership,
-source-variable recovery, complementarity, and the upper and generated
-linked-variable constraints. `feasible` uses the `feasibility_tolerance` from
-the solve that produced the original result.
+there is no positive continuation allowance for complementarity. The seven
+values that determine `feasible` are lower primal and dual equality errors,
+source-variable recovery error, the largest upper or generated
+linked-variable constraint violation, primal- and dual-cone distances, and
+`gap_violation`. They are compared with `feasibility_tolerance`, which comes
+from the solve that produced the original result.
 
-The boolean is intentionally the only feasibility information stored in a
-{class}`~blvpy.PolishResult`; detailed residual components for the polished
-candidate are not retained. The original {class}`~blvpy.BilevelResult`'s
-residuals and {meth}`~blvpy.BilevelProblem.gap_diagnostics` describe the
-unpolished source point only and do not diagnose `polished.feasible`.
+A successful lower-solver status means that the candidate met that solver's
+numerical stopping rules; it does not prove exact feasibility. BLVPY therefore
+recomputes these residuals independently from the returned candidate. This
+also checks upper constraints involving the lower response selected by the
+solver, which can differ when the lower problem has multiple optima.
+
+The retained {class}`~blvpy.Residuals` also contains raw `complementarity`.
+At `epsilon=0`, `gap_violation` is its positive part: positive
+complementarity is reported unchanged, while a negative numerical value is
+clamped to zero. Only `gap_violation` directly enters the feasibility check,
+so the terminal's expanded infeasible summary omits raw `complementarity` to
+avoid reporting the same positive discrepancy twice. The raw value remains
+available as `polished.residuals.complementarity` for detailed inspection.
+
+These residuals describe the polished candidate. By contrast, the original
+{class}`~blvpy.BilevelResult`'s residuals and
+{meth}`~blvpy.BilevelProblem.gap_diagnostics` describe the unpolished source
+point. Polishing does not call `gap_diagnostics()` or perform another solve to
+populate its result.
 
 :::{warning}
 If the lower problem has multiple optima, the conic solver chooses one of

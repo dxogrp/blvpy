@@ -343,7 +343,8 @@ def test_ratio_retains_signed_infinity_when_true_magnitude_exceeds_float_range(
 def test_polish_result_accepts_infinite_improvement_ratio(ratio: float) -> None:
     result = PolishResult(
         variable_values={},
-        feasible=True,
+        residuals=Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        feasibility_tolerance=1e-7,
         objective=1.0,
         objective_improvement_ratio=ratio,
     )
@@ -355,17 +356,68 @@ def test_polish_result_rejects_nan_ratio_and_nonfinite_objective() -> None:
     with pytest.raises(ValueError, match="objective_improvement_ratio must not be NaN"):
         PolishResult(
             variable_values={},
-            feasible=True,
+            residuals=Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            feasibility_tolerance=1e-7,
             objective=1.0,
             objective_improvement_ratio=np.nan,
         )
     with pytest.raises(ValueError, match="objective must be finite"):
         PolishResult(
             variable_values={},
-            feasible=True,
+            residuals=Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            feasibility_tolerance=1e-7,
             objective=np.inf,
             objective_improvement_ratio=0.0,
         )
+
+
+def test_polish_result_derives_feasibility_at_the_tolerance_boundary() -> None:
+    residuals = Residuals(0.1, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.1)
+
+    result = PolishResult(
+        variable_values={},
+        residuals=residuals,
+        feasibility_tolerance=0.1,
+        objective=1.0,
+        objective_improvement_ratio=0.0,
+    )
+
+    assert result.residuals is residuals
+    assert result.feasibility_tolerance == 0.1
+    assert result.feasible
+
+
+def test_polish_result_validates_residuals_and_feasibility_tolerance() -> None:
+    residuals = Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    values = {
+        "variable_values": {},
+        "residuals": residuals,
+        "feasibility_tolerance": 1e-7,
+        "objective": 1.0,
+        "objective_improvement_ratio": 0.0,
+    }
+
+    with pytest.raises(ValueError, match="residuals must be a Residuals instance"):
+        PolishResult(**{**values, "residuals": object()})  # type: ignore[arg-type]
+    for invalid in (-1.0, np.inf, np.nan, True, np.bool_(True), "invalid"):
+        with pytest.raises(ValueError, match="feasibility_tolerance"):
+            PolishResult(**{**values, "feasibility_tolerance": invalid})  # type: ignore[arg-type]
+
+
+def test_polish_result_residual_diagnostics_are_immutable() -> None:
+    residuals = Residuals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1e-12, 0.0)
+    result = PolishResult(
+        variable_values={},
+        residuals=residuals,
+        feasibility_tolerance=1e-7,
+        objective=1.0,
+        objective_improvement_ratio=0.0,
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        result.residuals = Residuals(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        result.feasibility_tolerance = 1.0  # type: ignore[misc]
 
 
 def test_exact_zero_public_baseline_returns_none() -> None:
@@ -385,7 +437,7 @@ def test_default_tolerance_marks_upper_constraint_violation_infeasible() -> None
     assert not polished.feasible
 
 
-@pytest.mark.parametrize(("tolerance", "expected"), [(1e-7, False), (0.2, True)])
+@pytest.mark.parametrize(("tolerance", "expected"), [(1e-7, False), (0.1, True)])
 def test_polish_uses_originating_result_feasibility_tolerance(
     monkeypatch: pytest.MonkeyPatch,
     tolerance: float,
@@ -406,6 +458,8 @@ def test_polish_uses_originating_result_feasibility_tolerance(
         verbose=False,
     )
 
+    assert polished.residuals is residuals
+    assert polished.feasibility_tolerance == tolerance
     assert polished.feasible is expected
 
 
@@ -445,8 +499,8 @@ def test_complete_scalar_vector_matrix_snapshots_are_immutable_and_adoptable() -
         polished.variable_values[scalar] = np.array(1.0)  # type: ignore[index]
     with pytest.raises(ValueError):
         polished.variable_values[matrix][0, 0] = 99.0
-    with pytest.raises(FrozenInstanceError):
-        polished.feasible = False  # type: ignore[misc]
+    assert isinstance(type(polished).feasible, property)
+    assert type(polished).feasible.fset is None
 
     np.testing.assert_array_equal(scalar.value, np.array(-4.0))
     np.testing.assert_array_equal(vector.value, np.array([-3.0, -2.0]))
@@ -763,6 +817,10 @@ def test_default_terminal_output_reports_polished_summary(
     assert f"objective={polished.objective:.3e}" in captured.err
     expected_ratio = "n/a" if ratio_is_none else f"{polished.objective_improvement_ratio:.3e}"
     assert f"improvement_ratio={expected_ratio}" in captured.err
+    assert (
+        f"(BLVPY) Residuals: max_violation={polished.residuals.max_violation:.3e} | "
+        f"feasibility_tolerance={polished.feasibility_tolerance:.3e}"
+    ) in captured.err
 
 
 @pytest.mark.parametrize(("name", "value"), [("verbose", 1), ("solver_verbose", "yes")])

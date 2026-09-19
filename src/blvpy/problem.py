@@ -448,8 +448,9 @@ class BilevelProblem:
         Returns
         -------
         PolishResult
-            Immutable complete candidate snapshots, feasibility, the
-            polished upper objective, and its relative improvement.
+            Immutable complete candidate snapshots, residuals, the originating
+            feasibility tolerance, the polished upper objective, and its
+            relative improvement.
 
         Raises
         ------
