@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.4
 
 - Added {meth}`blvpy.BilevelProblem.polish`, which re-solves the lower problem
   at a result's fixed upper point and returns an immutable
@@ -8,9 +8,9 @@
   the polished upper objective, and a relative upper-objective improvement
   ratio. Polishing restores all model state and prints a concise summary by
   default.
+- Added examples for the new {doc}`polishing` feature.
 - Reorganized the examples into a published gallery and a repository-only
   advanced collection with shared notebook assets.
-- Added examples for the new {doc}`polishing` feature.
 
 ## 0.3
 
