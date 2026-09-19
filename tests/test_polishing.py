@@ -8,6 +8,7 @@ from typing import Any
 import cvxpy as cp
 import numpy as np
 import pytest
+import scipy.sparse as sp
 from numpy.typing import ArrayLike, NDArray
 
 from blvpy import BilevelProblem, BilevelResult, LowerProblem, PolishResult, Residuals
@@ -98,6 +99,63 @@ def _assert_state(
             assert leaf.value is None
         else:
             np.testing.assert_array_equal(leaf.value, value)
+
+
+def _sparse_matrix(values: ArrayLike) -> sp.coo_array:
+    indices = (np.array([0, 1]), np.array([0, 1]))
+    return sp.coo_array((np.asarray(values, dtype=float), indices), shape=(2, 2))
+
+
+def _sparse_state(
+    leaf: cp.Variable | cp.Parameter,
+) -> tuple[NDArray[np.int64], NDArray[np.int64], NDArray[np.float64]]:
+    value = leaf.value_sparse
+    assert value is not None
+    return (
+        np.array(value.row, dtype=np.int64, copy=True),
+        np.array(value.col, dtype=np.int64, copy=True),
+        np.array(value.data, dtype=float, copy=True),
+    )
+
+
+def _assert_sparse_state(
+    leaf: cp.Variable | cp.Parameter,
+    expected: tuple[NDArray[np.int64], NDArray[np.int64], NDArray[np.float64]],
+) -> None:
+    actual = _sparse_state(leaf)
+    for actual_part, expected_part in zip(actual, expected, strict=True):
+        np.testing.assert_array_equal(actual_part, expected_part)
+
+
+def _sparse_model_and_result() -> tuple[
+    BilevelProblem,
+    cp.Variable,
+    cp.Variable,
+    cp.Parameter,
+    cp.Parameter,
+    BilevelResult,
+]:
+    indices = ([0, 1], [0, 1])
+    x = cp.Variable((2, 2), sparsity=indices, name="sparse_x")
+    y = cp.Variable(name="sparse_y")
+    fixed_shift = cp.Parameter((2, 2), sparsity=indices, name="sparse_fixed_shift")
+    fixed_shift.value_sparse = _sparse_matrix([0.4, 0.1])
+    lower = LowerProblem(
+        cp.Minimize(y),
+        [y >= cp.sum(x) + cp.sum(fixed_shift)],
+        parameters=[x],
+    )
+    model = BilevelProblem(cp.Minimize(cp.square(y)), lower)
+    model.validate()
+    linked_parameter = next(iter(model._parameter_links))
+    result = BilevelResult(
+        status="optimal",
+        variable_values={x: np.diag([0.1, 0.2]), y: np.array(1.05)},
+        canonical_primal=(1.05,),
+        slack=(0.25,),
+        dual=(1.0,),
+    )
+    return model, x, y, fixed_shift, linked_parameter, result
 
 
 def test_polish_resolves_lower_at_fixed_upper_and_reevaluates_stale_objective() -> None:
@@ -344,6 +402,65 @@ def test_complete_scalar_vector_matrix_snapshots_are_immutable_and_adoptable() -
     np.testing.assert_allclose(matrix.value, [[1.0, 2.0], [1.5, 2.5]], atol=1e-6)
     matrix.value = np.full((2, 2), -100.0)
     assert polished.variable_values[matrix][0, 0] == pytest.approx(1.0, abs=1e-6)
+
+
+@pytest.mark.filterwarnings("ignore:Reading from a sparse CVXPY expression.*:RuntimeWarning")
+@pytest.mark.filterwarnings("ignore:Accessing a sparse CVXPY expression.*:RuntimeWarning")
+def test_sparse_linked_and_fixed_values_are_restored_after_successful_polish() -> None:
+    model, x, y, fixed_shift, linked_parameter, result = _sparse_model_and_result()
+    x.value_sparse = _sparse_matrix([1.2, 1.3])
+    fixed_shift.value_sparse = _sparse_matrix([2.0, 3.0])
+    linked_parameter.value_sparse = _sparse_matrix([4.0, 5.0])
+    states = {leaf: _sparse_state(leaf) for leaf in (x, fixed_shift, linked_parameter)}
+
+    polished = model.polish(result, verbose=False)
+
+    assert polished.feasible
+    np.testing.assert_allclose(polished.variable_values[x], np.diag([0.1, 0.2]), atol=1e-12)
+    assert float(polished.variable_values[y]) == pytest.approx(0.8, abs=1e-7)
+    assert all(not value.flags.writeable for value in polished.variable_values.values())
+    with pytest.raises(ValueError):
+        polished.variable_values[x][0, 0] = 99.0
+    for leaf, state in states.items():
+        _assert_sparse_state(leaf, state)
+
+
+@pytest.mark.filterwarnings("ignore:Reading from a sparse CVXPY expression.*:RuntimeWarning")
+@pytest.mark.filterwarnings("ignore:Accessing a sparse CVXPY expression.*:RuntimeWarning")
+def test_unset_sparse_linked_values_are_restored_after_polish() -> None:
+    model, x, _, _, linked_parameter, result = _sparse_model_and_result()
+    leaves = (x, linked_parameter)
+    for leaf in leaves:
+        leaf.save_value(None)
+
+    polished = model.polish(result, verbose=False)
+
+    assert polished.feasible
+    for leaf in leaves:
+        assert leaf.value_sparse is None
+
+
+@pytest.mark.filterwarnings("ignore:Reading from a sparse CVXPY expression.*:RuntimeWarning")
+@pytest.mark.filterwarnings("ignore:Accessing a sparse CVXPY expression.*:RuntimeWarning")
+def test_sparse_linked_and_fixed_values_are_restored_when_polish_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, x, _, fixed_shift, linked_parameter, result = _sparse_model_and_result()
+    x.value_sparse = _sparse_matrix([1.2, 1.3])
+    fixed_shift.value_sparse = _sparse_matrix([2.0, 3.0])
+    linked_parameter.value_sparse = _sparse_matrix([4.0, 5.0])
+    states = {leaf: _sparse_state(leaf) for leaf in (x, fixed_shift, linked_parameter)}
+
+    def fail(*args, **kwargs):
+        raise cp.SolverError("synthetic sparse polishing failure")
+
+    monkeypatch.setattr("blvpy.polishing.solve_fixed_lower", fail)
+
+    with pytest.raises(SolveError, match="synthetic sparse polishing failure"):
+        model.polish(result, verbose=False)
+
+    for leaf, state in states.items():
+        _assert_sparse_state(leaf, state)
 
 
 def test_nonunique_lower_solution_can_lose_optimistic_upper_feasibility() -> None:

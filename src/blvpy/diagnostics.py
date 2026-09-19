@@ -249,7 +249,11 @@ def _restore_leaf(leaf: cp.Variable | cp.Parameter, state: _LeafState) -> None:
     if state.value is None:
         leaf.save_value(None)
     elif state.sparse_path:
-        leaf.save_value(np.array(state.value, copy=True), sparse_path=True)
+        value = sp.coo_array(
+            (np.array(state.value, copy=True), leaf.sparse_idx),
+            shape=leaf.shape,
+        )
+        leaf.save_value(value, sparse_path=True)
     elif sp.issparse(state.value):
         leaf.save_value(state.value.copy())
     else:
@@ -258,10 +262,7 @@ def _restore_leaf(leaf: cp.Variable | cp.Parameter, state: _LeafState) -> None:
 
 def _save_dense_value(leaf: cp.Variable | cp.Parameter, value: ArrayLike) -> None:
     array = np.array(value, dtype=float, copy=True)
-    if leaf.sparse_idx is None:
-        leaf.save_value(array)
-    else:
-        leaf.save_value(array[leaf.sparse_idx], sparse_path=True)
+    leaf.save_value(array)
 
 
 def _finite_array(value: ArrayLike, name: str) -> NDArray[np.float64]:
