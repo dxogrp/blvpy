@@ -2,20 +2,15 @@
 
 ## Unreleased
 
-- Added a repository-only ridge-polishing workflow that compares a feasible
-  fixed-penalty response with a better epsilon-relaxed validation objective
-  and leaves candidate adoption to the user.
-- Added a repository-only low-carbon blend workflow that uses polishing to
-  reject a coarse continuation result, refine it, and explicitly adopt the
-  feasible candidate that passes an objective-degradation threshold.
-- Reorganized the examples into a published gallery and a repository-only
-  advanced collection with shared notebook assets.
 - Added {meth}`blvpy.BilevelProblem.polish`, which re-solves the lower problem
   at a result's fixed upper point and returns an immutable
   {class}`blvpy.PolishResult` with complete variable snapshots, feasibility,
   the polished upper objective, and a relative upper-objective improvement
   ratio. Polishing restores all model state and prints a concise summary by
   default.
+- Reorganized the examples into a published gallery and a repository-only
+  advanced collection with shared notebook assets.
+- Added examples for the new {doc}`polishing` feature.
 
 ## 0.3
 

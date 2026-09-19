@@ -7,12 +7,13 @@ app = marimo.App(width="medium")
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    # Gate a low-carbon blend policy with polishing
+    # Low-Carbon Binder Blending with Material Rebates
 
     A public buyer wants to encourage a lower-carbon binder, but the producer
-    retains control of the material recipe. The buyer chooses six rebate
-    rates, and the producer responds with a minimum-cost blend subject to
-    strength, durability, and availability limits.
+    retains control of the material recipe. This creates a bilevel problem:
+    the upper problem chooses six material-specific rebate rates, while the
+    lower problem selects a minimum-cost blend subject to strength,
+    durability, and availability limits.
 
     This example uses `polish()` as a deployment gate. A first continuation
     solve looks attractive, but its exact fixed-rebate response misses a 1%
@@ -41,42 +42,57 @@ def _():
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Buyer and producer decisions
+    ## Bilevel formulation
 
     Let $r\in\mathbf{R}^6$ be the buyer's rebate rates and
-    $y\in\mathbf{R}^6$ the producer's material shares. For a fixed rebate,
-    the producer solves the strongly convex quadratic program
-
-    \[
-    \begin{array}{ll}
-    \mathop{\mathrm{minimize}}_y
-      & (c-r)^T y+\rho\lVert y-y_{\mathrm{ref}}\rVert_2^2 \\
-    \mathop{\mathrm{subject\ to}}
-      & \mathbf{1}^T y=1,\\
-      & s^T y\geq0.84,\qquad d^T y\geq0.82,\\
-      & 0\preceq y\preceq u.
-    \end{array}
-    \]
-
-    Here $c$ is base cost, $s$ and $d$ are normalized quality scores, $u$
-    contains material-specific availability limits, and the positive
-    regularizer $\rho$ makes the response unique. Anticipating that response,
-    the buyer solves
+    $y\in\mathbf{R}^6$ the producer's material shares. The buyer minimizes
+    carbon intensity and a quadratic rebate penalty while anticipating the
+    producer's response:
 
     \[
     \begin{array}{ll}
     \mathop{\mathrm{minimize}}_{r,y}
-      & e^T y+1.5\lVert r\rVert_2^2 \\
+      & e^T y+\eta\lVert r\rVert_2^2 \\
     \mathop{\mathrm{subject\ to}}
-      & 0\preceq r\preceq0.08,\qquad \mathbf{1}^T r\leq0.03,\\
-      & y\text{ solves the producer problem for }r,
+      & 0\preceq r\preceq r_{\max}\mathbf{1},\\
+      & \mathbf{1}^T r\leq R_{\max},\\
+      & y\in S(r).
     \end{array}
     \]
 
-    where $e^T y$ is normalized carbon intensity. The sum constraint is an
-    aggregate cap on posted rates, not a model of realized rebate spending.
-    The quadratic rebate term discourages a large or needlessly concentrated
-    policy.
+    Here $e^T y$ is normalized carbon intensity, $r_{\max}$ bounds each
+    posted rate, and $R_{\max}$ is an aggregate rate cap rather than a model
+    of realized rebate spending. For fixed $r$, the producer solves
+
+    \[
+    \begin{array}{ll}
+    S(r)=\mathop{\mathrm{argmin}}_y
+      & (c-r)^T y+\rho\lVert y-y_{\mathrm{ref}}\rVert_2^2 \\
+    \mathop{\mathrm{subject\ to}}
+      & \mathbf{1}^T y=1,\\
+      & s^T y\geq s_{\min},\qquad d^T y\geq d_{\min},\\
+      & 0\preceq y\preceq u.
+    \end{array}
+    \]
+
+    The vectors $c$, $s$, $d$, and $u$ contain base costs, quality scores, and
+    availability limits. The reference recipe is $y_{\mathrm{ref}}$. Because
+    $\rho>0$, the producer's quadratic program has a unique response.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Synthetic material instance
+
+    Six illustrative constituents span high-carbon conventional material and
+    lower-carbon substitutes. The reference recipe, cost and carbon
+    coefficients, quality scores, and availability limits below are all
+    normalized synthetic data. We use $\rho=0.025$, $\eta=1.5$,
+    $s_{\min}=0.84$, $d_{\min}=0.82$, $r_{\max}=0.08$, and
+    $R_{\max}=0.03$.
     """)
     return
 
@@ -121,6 +137,19 @@ def _(np):
         strength_minimum,
         strength_score,
     )
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Specify the bilevel model
+
+    `rebate` is the buyer's vector decision and is listed as a
+    `LowerProblem` parameter, so the producer treats its rates as fixed. The
+    initial values provide the same feasible, neutral starting point for both
+    continuation passes.
+    """)
+    return
 
 
 @app.cell
@@ -600,11 +629,10 @@ def _(
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## See what polishing changes
+    ## Blend comparison
 
     The composition chart shows the larger movement after the coarse solve
-    and the much smaller correction after refinement. The decision chart
-    compares both objective degradations with the same 1% acceptance rule.
+    and the much smaller correction after refinement.
     """)
     return
 
@@ -612,14 +640,11 @@ def _(mo):
 @app.cell
 def _(
     baseline_blend,
-    coarse_degradation,
     coarse_polished_blend,
     coarse_result_blend,
     material_names,
-    maximum_degradation,
     np,
     plt,
-    refined_degradation,
     refined_polished_blend,
     refined_result_blend,
 ):
@@ -640,12 +665,12 @@ def _(
         ]
     )
 
-    _figure, (_composition_axis, _decision_axis) = plt.subplots(1, 2, figsize=(11.5, 4.8))
+    _figure, _axis = plt.subplots(figsize=(7.5, 4.8))
     _left = np.zeros(len(_candidate_labels))
     _colors = plt.colormaps["tab20c"](np.linspace(0.05, 0.9, len(material_names)))
     for _index, (_material, _color) in enumerate(zip(material_names, _colors, strict=True)):
         _shares = _candidate_blends[:, _index]
-        _composition_axis.barh(
+        _axis.barh(
             _candidate_labels,
             _shares,
             left=_left,
@@ -653,35 +678,15 @@ def _(
             label=_material,
         )
         _left += _shares
-    _composition_axis.set_xlim(0.0, 1.0)
-    _composition_axis.set_xlabel("Material share")
-    _composition_axis.invert_yaxis()
-    _composition_axis.legend(
+    _axis.set_xlim(0.0, 1.0)
+    _axis.set_xlabel("Material share")
+    _axis.invert_yaxis()
+    _axis.legend(
         loc="upper center",
         bbox_to_anchor=(0.5, -0.18),
         frameon=False,
         ncol=2,
     )
-
-    _degradations = 100.0 * np.array([coarse_degradation, refined_degradation])
-    _decision_axis.bar(
-        [r"$10^{-4}$", r"$10^{-6}$"],
-        _degradations,
-        color=["tab:orange", "tab:green"],
-        width=0.58,
-    )
-    _decision_axis.axhline(
-        100.0 * maximum_degradation,
-        color="0.25",
-        linestyle="--",
-        linewidth=1.5,
-        label="1% acceptance gate",
-    )
-    for _index, _value in enumerate(_degradations):
-        _decision_axis.text(_index, _value + 0.12, f"{_value:.2f}%", ha="center", va="bottom")
-    _decision_axis.set_ylabel("Objective degradation after polish (%)")
-    _decision_axis.set_xlabel(r"Continuation target $\epsilon$")
-    _decision_axis.legend(frameon=False)
 
     _figure.tight_layout()
     plt.show()
