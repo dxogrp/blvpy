@@ -100,9 +100,10 @@ linked-variable constraints. `feasible` uses the `feasibility_tolerance` from
 the solve that produced the original result.
 
 The boolean is intentionally the only feasibility information stored in a
-{class}`~blvpy.PolishResult`. Use the original result's residuals or
-{meth}`~blvpy.BilevelProblem.gap_diagnostics` when detailed numerical
-diagnostics are needed.
+{class}`~blvpy.PolishResult`; detailed residual components for the polished
+candidate are not retained. The original {class}`~blvpy.BilevelResult`'s
+residuals and {meth}`~blvpy.BilevelProblem.gap_diagnostics` describe the
+unpolished source point only and do not diagnose `polished.feasible`.
 
 :::{warning}
 If the lower problem has multiple optima, the conic solver chooses one of
