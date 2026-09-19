@@ -236,11 +236,11 @@ class PolishResult:
         Upper values are fixed at the supplied bilevel result and lower values
         come from the fresh fixed-upper lower solve.
     residuals : Residuals
-        Independently computed residuals for the complete polished candidate
-        with zero complementarity relaxation.
+        Residuals for the complete candidate at zero complementarity
+        relaxation.
     feasibility_tolerance : float
-        Finite nonnegative tolerance inherited from the originating bilevel
-        solve and used to determine :attr:`feasible`.
+        Finite nonnegative tolerance inherited from the originating solve and
+        used to determine :attr:`feasible`.
     objective : float
         Polished upper objective in its original modeled sense.
     objective_improvement_ratio : float or None

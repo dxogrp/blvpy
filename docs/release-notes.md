@@ -2,14 +2,9 @@
 
 ## 0.4
 
-- Added {meth}`blvpy.BilevelProblem.polish`, which re-solves the lower problem
-  at a result's fixed upper point and returns an immutable
-  {class}`blvpy.PolishResult` with complete variable snapshots, independently
-  computed residuals, the originating feasibility tolerance, derived
-  feasibility, the polished upper objective, and a relative upper-objective
-  improvement ratio. Polishing restores all model state and prints a compact
-  residual summary, expanding every checked residual and marking the largest
-  when the candidate is infeasible.
+- Added {meth}`blvpy.BilevelProblem.polish`, a non-mutating fixed-upper lower
+  re-solve that returns an immutable candidate with residual-based feasibility
+  and an upper-objective comparison.
 - Added examples for the new {doc}`polishing` feature.
 - Reorganized the examples into a published gallery and a repository-only
   advanced collection with shared notebook assets.

@@ -6,9 +6,9 @@ fixed and solves the canonical lower problem once more, without the
 continuation relaxation. This produces a fresh lower response and a compact
 summary that helps you decide whether to adopt or discard the candidate.
 
-Polishing is deliberately non-mutating. It restores every affected CVXPY
-variable, parameter, and lifted value before returning or raising, and it
-does not change the supplied {class}`~blvpy.BilevelResult`.
+Polishing is non-mutating: it restores every affected CVXPY variable,
+parameter, and lifted value before returning or raising, and it does not
+change the supplied {class}`~blvpy.BilevelResult`.
 
 ## Basic usage
 
@@ -64,9 +64,8 @@ used by the feasibility decision and marks the largest checked value:
 (BLVPY)   gap_violation=7.000e-08
 ```
 
-All exact ties for the largest checked residual are marked. The derived
-`max_violation` is omitted from this expanded form because it would duplicate
-the value of a marked entry.
+`largest=true` marks every exact tie; `max_violation` is omitted because it
+would repeat the marked value.
 
 Set `verbose=False` to suppress BLVPY's summary. This is independent of
 `solver_verbose`: the latter controls CVXPY and native conic-solver output on
@@ -74,22 +73,14 @@ a best-effort basis.
 
 ## Interpreting the result
 
-{class}`blvpy.PolishResult` is immutable and exposes the following values:
+{class}`blvpy.PolishResult` is an immutable snapshot of the complete candidate,
+its diagnostics, and its upper-objective comparison; see {doc}`api` for
+individual field contracts. Its `feasible` property is derived rather than
+stored:
 
-- `residuals` contains the independently evaluated residuals for the polished
-  candidate.
-- `feasibility_tolerance` is the tolerance inherited from the solve that
-  produced the original result.
-- `feasible` is the read-only result of
-  `residuals.is_feasible(feasibility_tolerance)`.
-- `objective` is the upper objective at the polished point, in the original
-  modeled sense. A `cp.Maximize` objective is not negated.
-- `objective_improvement_ratio` compares the polished objective with the
-  original result point. Positive values mean improvement for both
-  minimization and maximization.
-- `variable_values` contains immutable snapshots for every original CVXPY
-  variable in the problem. Upper values come from the supplied result and
-  lower values come from the fixed-upper solve.
+```python
+polished.feasible == polished.residuals.is_feasible(polished.feasibility_tolerance)
+```
 
 Both the original and polished upper objectives are reevaluated under the
 same fixed-parameter state. For original objective $F_{\rm original}$ and
@@ -119,33 +110,15 @@ range, the ratio is `+inf` or `-inf`, with the usual better-or-worse sign.
 
 ## Feasibility
 
-Polishing evaluates the normal BLVPY residual system with `epsilon=0`, so
-there is no positive continuation allowance for complementarity. The seven
-values that determine `feasible` are lower primal and dual equality errors,
-source-variable recovery error, the largest upper or generated
-linked-variable constraint violation, primal- and dual-cone distances, and
-`gap_violation`. They are compared with `feasibility_tolerance`, which comes
-from the solve that produced the original result.
+Polishing independently recomputes BLVPY's residuals at `epsilon=0` and checks
+them against the originating solve's tolerance, because a successful solver
+status indicates that numerical stopping rules were met rather than proving
+exact feasibility. See {doc}`results` for the residual definitions and the
+scope of polished and source-point diagnostics.
 
-A successful lower-solver status means that the candidate met that solver's
-numerical stopping rules; it does not prove exact feasibility. BLVPY therefore
-recomputes these residuals independently from the returned candidate. This
-also checks upper constraints involving the lower response selected by the
-solver, which can differ when the lower problem has multiple optima.
-
-The retained {class}`~blvpy.Residuals` also contains raw `complementarity`.
-At `epsilon=0`, `gap_violation` is its positive part: positive
-complementarity is reported unchanged, while a negative numerical value is
-clamped to zero. Only `gap_violation` directly enters the feasibility check,
-so the terminal's expanded infeasible summary omits raw `complementarity` to
-avoid reporting the same positive discrepancy twice. The raw value remains
-available as `polished.residuals.complementarity` for detailed inspection.
-
-These residuals describe the polished candidate. By contrast, the original
-{class}`~blvpy.BilevelResult`'s residuals and
-{meth}`~blvpy.BilevelProblem.gap_diagnostics` describe the unpolished source
-point. Polishing does not call `gap_diagnostics()` or perform another solve to
-populate its result.
+Raw `complementarity` remains available in `polished.residuals` but is omitted
+from the terminal: at `epsilon=0`, its positive part is `gap_violation`, while
+a negative value does not violate the one-sided gap check.
 
 :::{warning}
 If the lower problem has multiple optima, the conic solver chooses one of
@@ -157,18 +130,14 @@ return `feasible=False`.
 
 ## Adopting the candidate
 
-Because polishing is non-mutating, inspect its summary before assigning any
-values. To adopt the complete candidate explicitly, project each immutable
-snapshot through the original variable's attributes:
+To adopt the complete candidate, project each immutable snapshot through the
+original variable's attributes:
 
 ```python
 if polished.feasible:
     for variable, value in polished.variable_values.items():
         variable.project_and_assign(value)
 ```
-
-This loop assigns upper and lower variables. Omitting the loop leaves the
-model exactly as it was before `polish()`.
 
 ## Solver options and errors
 
@@ -189,5 +158,4 @@ Polishing raises rather than encoding solver-status details in
 {class}`~blvpy.PolishResult`. An unavailable backend raises
 {class}`blvpy.SolverUnavailableError`; a lower solve that fails or returns an
 incomplete certificate raises {class}`blvpy.SolveError`. Invalid, incomplete,
-or foreign results raise the corresponding argument error. Model state is
-restored on every error path.
+or foreign results raise the corresponding argument error.
