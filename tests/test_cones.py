@@ -271,6 +271,260 @@ def test_exponential_cone_distance_is_scale_normalized(scale: float) -> None:
     assert layout.dual_distance(scale * point) / scale == pytest.approx(dual_reference, rel=3e-14)
 
 
+def test_exponential_cone_ordinary_projection_matches_clarabel_at_binary_scales() -> None:
+    layout = ConeLayout(exponential=1)
+    point = np.array([0.05481268, -1.0, 0.03155354])
+    expected_primal = _independent_exponential_cone_distance(point, dual=False)
+    expected_dual = _independent_exponential_cone_distance(-point, dual=True)
+
+    for exponent in (-800, 0, 800):
+        scale = math.ldexp(1.0, exponent)
+        scaled = np.ldexp(point, exponent)
+        assert layout.primal_distance(scaled) / scale == pytest.approx(expected_primal, abs=3e-6)
+        assert layout.dual_distance(-scaled) / scale == pytest.approx(expected_dual, abs=3e-6)
+
+
+def test_exponential_cone_detects_large_exact_boundary_perturbations() -> None:
+    layout = ConeLayout(exponential=1)
+    scale = math.ldexp(1.0, 40)
+    offset = math.ldexp(1.0, -10)
+    primal = np.array([offset, scale + offset, scale - offset])
+    dual = np.array([-scale, -scale - offset, scale - offset])
+
+    assert layout.primal_distance(primal) == pytest.approx(math.sqrt(3.0) * offset, rel=2e-10)
+    assert layout.dual_distance(dual) == pytest.approx(math.sqrt(2.0) * offset, rel=2e-10)
+
+
+def test_exponential_cone_does_not_round_large_outside_points_into_the_cone() -> None:
+    layout = ConeLayout(exponential=1)
+    scale = 1e20
+    below = np.nextafter(scale, 0.0)
+
+    primal_distance = layout.primal_distance(np.array([0.0, scale, below]))
+    dual_distance = layout.dual_distance(np.array([-scale, -scale, below]))
+
+    assert scale - below == 16384.0
+    assert np.isfinite(primal_distance) and primal_distance > 0.0
+    assert np.isfinite(dual_distance) and dual_distance > 0.0
+
+
+@pytest.mark.parametrize(
+    ("point", "dual", "expected"),
+    [
+        (
+            np.array(
+                [
+                    float.fromhex("0x1.10ed9a6f354c6p+328"),
+                    float.fromhex("0x1.2baca964ee188p+319"),
+                    float.fromhex("0x1.f245e54ec9b69p+991"),
+                ]
+            ),
+            False,
+            1.725426022327339146e80,
+        ),
+        (
+            np.array(
+                [
+                    float.fromhex("0x1.fc7e1d08cae00p+310"),
+                    float.fromhex("0x1.258b8820e4c98p+305"),
+                    float.fromhex("0x1.1fc5e6a2a0856p+385"),
+                ]
+            ),
+            False,
+            1.239927639838598852e75,
+        ),
+        (
+            np.array([-20.27415202440371, 188.16580958765275, 168.94569540550697]),
+            False,
+            2.068487597400123e-15,
+        ),
+        (
+            np.array([-5.888237520874409e-63, 1.8372460860390376e-64, 2.214884604039796e-78]),
+            False,
+            2.3166589062223175e-93,
+        ),
+        (
+            np.array(
+                [
+                    -float.fromhex("0x1.294dcbc501016p+2"),
+                    float.fromhex("0x1.60429d2f0d4cap+10"),
+                    float.fromhex("0x1.2098a38f109a0p-437"),
+                ]
+            ),
+            True,
+            9.679274795118902e-146,
+        ),
+    ],
+)
+def test_exponential_cone_preserves_one_ulp_smooth_boundary_distances(
+    point: np.ndarray,
+    dual: bool,
+    expected: float,
+) -> None:
+    layout = ConeLayout(exponential=1)
+    distance = layout.dual_distance(point) if dual else layout.primal_distance(point)
+
+    assert distance == pytest.approx(expected, rel=3e-13)
+
+
+def test_exponential_cone_binary_normalization_preserves_small_face_distances() -> None:
+    layout = ConeLayout(exponential=1)
+    large = math.ldexp(1.0, 1000)
+    expected = math.ldexp(1.0, -100)
+
+    for point in (np.array([-large, 0.0, -expected]), np.array([-large, -expected, 0.0])):
+        assert layout.primal_distance(point) == expected
+    for point in (np.array([expected, large, 0.0]), np.array([0.0, large, -expected])):
+        assert layout.dual_distance(point) == expected
+
+
+def test_exponential_cone_retries_inexact_subnormal_normalization() -> None:
+    layout = ConeLayout(exponential=1)
+    point = np.array(
+        [
+            -float.fromhex("0x1.fbca2e0e69b6cp-77"),
+            float.fromhex("0x1.3a5dccc4b2283p+56"),
+            -float.fromhex("0x1.af8c8c8ebe758p-998"),
+        ]
+    )
+
+    assert layout.dual_distance(point) == -point[2]
+
+
+@pytest.mark.filterwarnings("error")
+def test_exponential_cone_endpoint_limits_stay_finite_without_float_warnings() -> None:
+    layout = ConeLayout(exponential=1)
+    primal_point = np.array([-1.87337558e283, 1.46269072e280, -5.23592150e-105])
+    dual_point = np.array([-1.64186439087947524e147, 1.17767475895071370e229, -1.63895105406993598e-121])
+    dual_norm_point = np.array([1.03071715e166, -2.88037999e159, 4.71209192e-234])
+    dual_positive_endpoint = -np.array([0.05, -1.0, -1e-11])
+    dual_zero_tail_endpoint = -np.array([0.038819993662081075, -1.0, -0.0])
+    dual_shifted_endpoint = -np.array(
+        [
+            float.fromhex("0x1.dcef84eaff1d7p-5"),
+            -1.0,
+            -float.fromhex("0x1.8415cbb6965adp-31"),
+        ]
+    )
+    dual_large_endpoint = -np.array(
+        [
+            float.fromhex("0x1.449e64107fa9ap+508"),
+            -float.fromhex("0x1.5cfbb4074105fp+512"),
+            -float.fromhex("0x1.df9000ae7cdd0p+481"),
+        ]
+    )
+    dual_extreme_endpoint = -np.array(
+        [
+            float.fromhex("0x1.b69b83e9bbd54p+1014"),
+            -float.fromhex("0x1.1a2c02ed61a16p+1023"),
+            -float.fromhex("0x1.bc1aff575f461p+530"),
+        ]
+    )
+    dual_stagnant_endpoint = -np.array(
+        [
+            float.fromhex("0x1.83723efd02d42p-10"),
+            -1.0,
+            -float.fromhex("0x1.58e1d66966279p-1018"),
+        ]
+    )
+
+    with np.errstate(all="warn"):
+        assert layout.primal_distance(primal_point) == 5.2359215e-105
+        assert layout.dual_distance(dual_point) == 1.63895105406993598e-121
+        assert layout.dual_distance(dual_norm_point) == math.hypot(*dual_norm_point)
+        assert layout.dual_distance(dual_positive_endpoint) == pytest.approx(2.791280213955958e-11, rel=3e-14)
+        assert layout.dual_distance(dual_zero_tail_endpoint) == pytest.approx(9.276178509796446e-14, rel=3e-14)
+        assert layout.dual_distance(dual_shifted_endpoint) == pytest.approx(3.742717013170938e-11, rel=3e-14)
+        assert layout.dual_distance(dual_large_endpoint) == pytest.approx(1.542174911535098e144, rel=3e-14)
+        assert layout.dual_distance(dual_extreme_endpoint) == pytest.approx(9.769726975428852e161, rel=3e-14)
+        assert layout.dual_distance(dual_stagnant_endpoint) == pytest.approx(7.836807490998222e-298, rel=3e-14)
+
+
+@pytest.mark.filterwarnings("error")
+def test_exponential_cone_endpoint_log_corrections_saturate_without_raising() -> None:
+    layout = ConeLayout(exponential=1)
+    point = np.array(
+        [
+            -float.fromhex("0x1.93e785b178209p+955"),
+            float.fromhex("0x1.475d5716a578cp-68"),
+            -float.fromhex("0x1.03b0de439d89bp-719"),
+        ]
+    )
+
+    assert layout.primal_distance(point) == float.fromhex("0x1.03b0de439d89bp-719")
+
+
+@pytest.mark.filterwarnings("error")
+def test_exponential_cone_positive_endpoint_projection_is_homogeneous() -> None:
+    layout = ConeLayout(exponential=1)
+    point = np.array(
+        [
+            float.fromhex("0x1.3934bb2b0d6d1p-207"),
+            -float.fromhex("0x1.36384d28cb6b6p-224"),
+            float.fromhex("0x1.a43749a1515bep+982"),
+        ]
+    )
+    exponent = -586
+    scaled_point = np.array([math.ldexp(float(entry), exponent) for entry in point])
+
+    distance = layout.primal_distance(point)
+    scaled_distance = layout.primal_distance(scaled_point)
+
+    assert distance == pytest.approx(7.201296203473927e-66, rel=3e-14)
+    assert scaled_distance == math.ldexp(distance, exponent)
+
+
+@pytest.mark.filterwarnings("error")
+def test_exponential_cone_inexact_normalization_retains_valid_normalized_metrics() -> None:
+    layout = ConeLayout(exponential=1)
+    moreau_point = np.array(
+        [
+            float.fromhex("0x1.d27c291cf86dcp-996"),
+            float.fromhex("0x1.7b2774e8fb780p+400"),
+            float.fromhex("0x1.e75bc9140e69ep-207"),
+        ]
+    )
+    moreau_norm = math.hypot(*moreau_point)
+    primal_distance = layout.primal_distance(moreau_point)
+    opposite_dual_distance = layout.dual_distance(-moreau_point)
+
+    assert math.hypot(primal_distance, opposite_dual_distance) == pytest.approx(moreau_norm, rel=3e-15)
+
+    homogeneous_point = np.array(
+        [
+            -float.fromhex("0x1.a14fa7342d942p+713"),
+            -float.fromhex("0x1.b3b19b17552e0p-551"),
+            -float.fromhex("0x1.9263732674008p+188"),
+        ]
+    )
+    exponent = 232
+    scaled_point = np.array([math.ldexp(float(entry), exponent) for entry in homogeneous_point])
+    distance = layout.dual_distance(homogeneous_point)
+
+    assert layout.dual_distance(scaled_point) == pytest.approx(math.ldexp(distance, exponent), rel=5e-14)
+
+
+def test_exponential_cone_certified_underflow_remains_strictly_positive() -> None:
+    layout = ConeLayout(exponential=1)
+    point = np.array([-1.0, 0.00134, 0.0])
+    distance = layout.primal_distance(point)
+
+    assert distance == math.nextafter(0.0, 1.0)
+    assert math.hypot(distance, layout.dual_distance(-point)) == math.hypot(*point)
+
+
+def test_exponential_cone_logged_displacements_preserve_moreau_norms() -> None:
+    layout = ConeLayout(exponential=1)
+    point = np.array([-2.59681199641880966e-164, 7.33525122817056057e-40, -9.59394456361389405e251])
+    norm = math.hypot(*point)
+    primal_distance = layout.primal_distance(point)
+    opposite_dual_distance = layout.dual_distance(-point)
+
+    assert primal_distance == norm
+    assert math.hypot(primal_distance, opposite_dual_distance) == norm
+
+
+@pytest.mark.filterwarnings("error")
 @pytest.mark.parametrize(
     "point",
     [
@@ -281,6 +535,8 @@ def test_exponential_cone_distance_is_scale_normalized(scale: float) -> None:
         np.array([6.41904613e-6, -1.03027122e-7, 1.0]),
         np.array([2.76619574e-140, 1.0, -1.67004426e-121]),
         np.array([1.0, 1.68256427e-185, 8.83517680e-244]),
+        np.array([1e-310, -1.0, 1e-12]),
+        np.array([-1.0, 1e-310, -1e-3]),
     ],
 )
 def test_exponential_cone_projection_handles_extreme_ratios(point: np.ndarray) -> None:
@@ -561,6 +817,44 @@ def test_exponential_cone_distances_match_independent_clarabel_projections() -> 
         assert layout.dual_distance(point) == pytest.approx(
             _independent_exponential_cone_distance(point, dual=True),
             abs=3e-6,
+        )
+
+
+def test_exponential_cone_random_near_faces_match_analytic_and_clarabel_distances() -> None:
+    layout = ConeLayout(exponential=1)
+    rng = np.random.default_rng(314159)
+
+    for _ in range(6):
+        ratio = rng.uniform(-4.0, 4.0)
+        y_value = math.exp(rng.uniform(-2.0, 2.0))
+        exponential = math.exp(ratio)
+        boundary = np.array([ratio * y_value, y_value, y_value * exponential])
+        outward = np.array([exponential, exponential * (1.0 - ratio), -1.0])
+        outward /= np.linalg.norm(outward)
+        expected = 1e-3 * max(1.0, float(np.linalg.norm(boundary)))
+        point = boundary + expected * outward
+
+        distance = layout.primal_distance(point)
+        assert distance == pytest.approx(expected, rel=3e-9, abs=1e-12)
+        assert distance == pytest.approx(
+            _independent_exponential_cone_distance(point, dual=False),
+            abs=5e-7,
+        )
+
+        dual_x = -math.exp(rng.uniform(-2.0, 2.0))
+        dual_ratio = rng.uniform(-4.0, 4.0)
+        dual_exponential = math.exp(dual_ratio - 1.0)
+        dual_boundary = np.array([dual_x, dual_ratio * dual_x, -dual_x * dual_exponential])
+        dual_outward = np.array([(dual_ratio - 1.0) * dual_exponential, -dual_exponential, -1.0])
+        dual_outward /= np.linalg.norm(dual_outward)
+        expected_dual = 1e-3 * max(1.0, float(np.linalg.norm(dual_boundary)))
+        dual_point = dual_boundary + expected_dual * dual_outward
+
+        dual_distance = layout.dual_distance(dual_point)
+        assert dual_distance == pytest.approx(expected_dual, rel=3e-9, abs=1e-12)
+        assert dual_distance == pytest.approx(
+            _independent_exponential_cone_distance(dual_point, dual=True),
+            abs=5e-7,
         )
 
 
