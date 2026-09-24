@@ -557,6 +557,77 @@ def test_power_cone_distance_is_scale_normalized(scale: float) -> None:
     assert layout.dual_distance(scale * point) / scale == pytest.approx(dual_reference, rel=2e-13)
 
 
+@pytest.mark.parametrize("alpha", [0.3, 1e-17, np.nextafter(0.0, 1.0), np.nextafter(1.0, 0.0)])
+def test_power_cone_retries_inexact_subnormal_normalization(alpha: float) -> None:
+    layout = ConeLayout(power_3d=(alpha,))
+    expected = float.fromhex("0x1.af8c8c8ebe758p-998")
+    point = np.array([-expected, float.fromhex("0x1.3a5dccc4b2283p+56"), 0.0])
+
+    assert layout.primal_distance(point) == expected
+    assert layout.dual_distance(point) == expected
+
+
+def test_power_cone_certified_underflow_remains_strictly_positive() -> None:
+    layout = ConeLayout(power_3d=(math.nextafter(0.0, 1.0),))
+    point = np.array([0.5, 1.0, 1.0])
+    distance = layout.primal_distance(point)
+
+    assert distance == math.nextafter(0.0, 1.0)
+    assert math.hypot(distance, layout.dual_distance(-point)) == math.hypot(*point)
+
+
+@pytest.mark.parametrize("exponent", [-800, 0, 800])
+def test_half_power_cone_scaled_axis_projection_has_analytic_distance(exponent: int) -> None:
+    layout = ConeLayout(power_3d=(0.5,))
+    scale = math.ldexp(1.0, exponent)
+    point = np.array([0.0, 0.0, scale])
+
+    assert layout.primal_distance(point) / scale == pytest.approx(math.sqrt(2.0 / 3.0), rel=2e-14)
+    assert layout.dual_distance(point) / scale == pytest.approx(1.0 / math.sqrt(3.0), rel=2e-14)
+
+
+def test_half_power_cone_detects_large_exact_boundary_perturbations() -> None:
+    layout = ConeLayout(power_3d=(0.5,))
+    scale = math.ldexp(1.0, 40)
+    offset = math.ldexp(1.0, -10)
+    primal = np.array([scale - offset, scale - offset, scale + 2.0 * offset])
+    dual = np.array([scale - offset, scale - offset, 2.0 * scale + offset])
+
+    assert layout.primal_distance(primal) == pytest.approx(math.sqrt(6.0) * offset, rel=2e-10)
+    assert layout.dual_distance(dual) == pytest.approx(math.sqrt(3.0) * offset, rel=2e-10)
+
+
+def test_half_power_cone_does_not_round_large_outside_points_into_the_cone() -> None:
+    layout = ConeLayout(power_3d=(0.5,))
+    scale = 1e20
+    primal_tail = np.nextafter(scale, math.inf)
+    dual_tail = np.nextafter(2.0 * scale, math.inf)
+
+    primal_distance = layout.primal_distance(np.array([scale, scale, primal_tail]))
+    dual_distance = layout.dual_distance(np.array([scale, scale, dual_tail]))
+
+    assert np.isfinite(primal_distance) and primal_distance > 0.0
+    assert np.isfinite(dual_distance) and dual_distance > 0.0
+
+
+def test_half_power_cone_binary_normalization_preserves_small_axis_distances() -> None:
+    layout = ConeLayout(power_3d=(0.5,))
+    point = np.array([math.ldexp(1.0, 900), 0.0, 1.0])
+
+    assert layout.primal_distance(point) == pytest.approx(math.ldexp(1.0, -900), rel=5e-14)
+    assert layout.dual_distance(point) == pytest.approx(math.ldexp(1.0, -902), rel=5e-14)
+
+
+def test_power_cone_log_membership_is_homogeneous_after_large_cancellation() -> None:
+    layout = ConeLayout(power_3d=(0.01,))
+    point = np.array([3.4610905843285547e-101, 2.9122722960798893e229, 1.462115862295044e226])
+    distance = layout.primal_distance(point)
+    scaled = np.ldexp(point, -500)
+
+    assert distance == pytest.approx(3.719446293369851e-115, rel=3e-13)
+    assert layout.primal_distance(scaled) == pytest.approx(math.ldexp(distance, -500), rel=3e-13)
+
+
 def test_product_cone_distances_distinguish_zero_cone_dual() -> None:
     layout = ConeLayout(zero=1, nonnegative=2, second_order=(3,))
     value = np.array([4.0, -3.0, 2.0, 0.0, 1.0, 0.0])
@@ -874,6 +945,39 @@ def test_power_cone_distances_match_independent_clarabel_projections(alpha: floa
         )
 
 
+@pytest.mark.parametrize("alpha", [1e-4, 1.0 - 1e-4])
+def test_power_cone_random_near_endpoint_faces_match_analytic_and_clarabel_distances(alpha: float) -> None:
+    layout = ConeLayout(power_3d=(alpha,))
+    rng = np.random.default_rng(round(alpha * 1_000_000) + 2718)
+    complement = 1.0 - alpha
+    dual_scale = math.exp(alpha * math.log(alpha) + complement * math.log(complement))
+
+    for _ in range(4):
+        x_value, y_value = np.exp(rng.uniform(-2.0, 2.0, size=2))
+        product = math.exp(alpha * math.log(x_value) + complement * math.log(y_value))
+        boundary = np.array([x_value, y_value, product])
+        outward = np.array([-alpha * product / x_value, -complement * product / y_value, 1.0])
+        outward /= np.linalg.norm(outward)
+        expected = 1e-3 * max(1.0, float(np.linalg.norm(boundary)))
+        point = boundary + expected * outward
+
+        distance = layout.primal_distance(point)
+        assert distance == pytest.approx(expected, rel=3e-9, abs=1e-12)
+        assert distance == pytest.approx(
+            _independent_power_cone_distance(point, alpha, dual=False),
+            abs=5e-7,
+        )
+
+        dual_boundary = np.array([x_value, y_value, product / dual_scale])
+        dual_outward = np.array([-alpha * product / x_value, -complement * product / y_value, dual_scale])
+        dual_outward /= np.linalg.norm(dual_outward)
+        expected_dual = 1e-3 * max(1.0, float(np.linalg.norm(dual_boundary)))
+        dual_point = dual_boundary + expected_dual * dual_outward
+
+        dual_distance = layout.dual_distance(dual_point)
+        assert dual_distance == pytest.approx(expected_dual, rel=3e-9, abs=1e-12)
+
+
 def test_power_cone_dual_distance_uses_moreau_decomposition() -> None:
     rng = np.random.default_rng(1138)
     for alpha in (0.001, 0.2, 0.5, 0.95, 0.999):
@@ -928,6 +1032,51 @@ def test_power_cone_projection_handles_near_endpoint_exponents(alpha: float) -> 
     assert dual_distance == pytest.approx(reflected_layout.dual_distance(reflected), rel=2e-9)
     assert layout.primal_distance(np.array([*point[:2], -point[2]])) == pytest.approx(primal_distance, rel=1e-13)
     assert layout.dual_distance(np.array([*point[:2], -point[2]])) == pytest.approx(dual_distance, rel=1e-13)
+
+
+@pytest.mark.filterwarnings("error")
+@pytest.mark.parametrize("alpha", [1e-17, np.nextafter(0.0, 1.0), np.nextafter(1.0, 0.0)])
+def test_power_cone_projection_handles_every_representable_endpoint_exponent(alpha: float) -> None:
+    layout = ConeLayout(power_3d=(alpha,))
+    point = np.array([-1.3, 0.9, 0.45])
+    primal_distance = layout.primal_distance(point)
+    dual_distance = layout.dual_distance(point)
+    primal_distance_of_negative = layout.primal_distance(-point)
+    dual_distance_of_negative = layout.dual_distance(-point)
+
+    distances = (
+        primal_distance,
+        dual_distance,
+        primal_distance_of_negative,
+        dual_distance_of_negative,
+    )
+    assert all(np.isfinite(distance) and distance > 0.0 for distance in distances)
+
+    if alpha < 0.5:
+        expected = 1.3
+        expected_of_negative = math.hypot(0.9, 0.45)
+    else:
+        expected = math.hypot(1.3, 0.45)
+        expected_of_negative = 0.9
+    assert primal_distance == pytest.approx(expected, rel=2e-11)
+    assert dual_distance == pytest.approx(expected, rel=2e-11)
+    assert primal_distance_of_negative == pytest.approx(expected_of_negative, rel=2e-11)
+    assert dual_distance_of_negative == pytest.approx(expected_of_negative, rel=2e-11)
+
+    assert math.hypot(primal_distance, dual_distance_of_negative) == pytest.approx(
+        np.linalg.norm(point),
+        rel=2e-11,
+    )
+    assert math.hypot(dual_distance, primal_distance_of_negative) == pytest.approx(
+        np.linalg.norm(point),
+        rel=2e-11,
+    )
+
+    for exponent in (-500, 500):
+        scale = math.ldexp(1.0, exponent)
+        scaled = np.ldexp(point, exponent)
+        assert layout.primal_distance(scaled) / scale == pytest.approx(primal_distance, rel=2e-11)
+        assert layout.dual_distance(scaled) / scale == pytest.approx(dual_distance, rel=2e-11)
 
 
 def test_mixed_product_distance_aggregates_power_blocks_in_canonical_order() -> None:
