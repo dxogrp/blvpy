@@ -164,9 +164,9 @@ unchanged.
 
 ```{eval-rst}
 .. autoclass:: blvpy.ConeLayout
-   :members: from_dims, nonneg, soc, p3d, size, zero_slice, nonnegative_slice,
-             nonneg_slice, second_order_slices, soc_slices, power_3d_slices,
-             p3d_slices, blocks,
+   :members: from_dims, nonneg, soc, p3d, exp, size, zero_slice,
+             nonnegative_slice, nonneg_slice, second_order_slices, soc_slices,
+             exponential_slices, exp_slices, power_3d_slices, p3d_slices, blocks,
              primal_constraints, dual_constraints, primal_distance,
              dual_distance, complementarity
    :member-order: bysource

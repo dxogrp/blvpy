@@ -4,6 +4,8 @@
 
 - Added exact 3D power-cone support, including exact `cp.power` and `cp.pnorm`
   atoms and direct `cp.PowCone3D` constraints.
+- Added exponential-cone support for exact exponential-family atoms and
+  scalar, vector, and matrix `cp.ExpCone` constraints.
 
 ## 0.4
 

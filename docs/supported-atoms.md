@@ -28,6 +28,12 @@ its own row.
   - $\left\langle\operatorname{sort}(\operatorname{vec}x),
     \operatorname{sort}(\operatorname{vec}W)\right\rangle$
   - LP
+* - `cp.entr(x)`
+  - $-x\log x$ elementwise
+  - EXP
+* - `cp.exp(x)`
+  - $e^x$ elementwise
+  - EXP
 * - `cp.geo_mean(x, p=..., approx=True)`
   - $\displaystyle\prod_i x_i^{w_i}$, where
     $w=p/(\mathbf{1}^{\mathsf T}p)$
@@ -35,6 +41,21 @@ its own row.
 * - `cp.huber(x, M)`
   - $\begin{cases}x^2,&|x|\leq M,\\2M|x|-M^2,&|x|>M\end{cases}$
   - SOC
+* - `cp.kl_div(x, y)`
+  - $x\log(x/y)-x+y$ elementwise
+  - EXP
+* - `cp.log(x)`
+  - $\log x$ elementwise
+  - EXP
+* - `cp.log1p(x)`
+  - $\log(1+x)$ elementwise
+  - EXP
+* - `cp.log_sum_exp(x, axis=..., keepdims=...)`
+  - $\log\left(\sum_i e^{x_i}\right)$
+  - EXP
+* - `cp.logistic(x)`
+  - $\log(1+e^x)$ elementwise
+  - EXP
 * - `cp.max(x, axis=...)`
   - $\max_i x_i$
   - LP
@@ -73,9 +94,15 @@ its own row.
 * - `cp.quad_over_lin(x, y)`
   - $\|x\|_2^2/y$
   - SOC
+* - `cp.rel_entr(x, y)`
+  - $x\log(x/y)$ elementwise
+  - EXP
 * - `cp.sum_largest(x, k)`
   - $\displaystyle\sum_{i=1}^k x_{[i]}$
   - LP
+* - `cp.xexp(x)`
+  - $xe^x$ elementwise
+  - EXP / SOC
 ```
 
 Vector-valued expressions are flattened where needed. Sorting in `dotsort`
@@ -99,3 +126,18 @@ vectorized `cp.PowCone3D` constraints are also supported. Exact `cp.geo_mean`
 and direct `cp.PowConeND` constraints produce generalized power cones and
 remain unsupported. Convenience wrappers that do not expose an `approx`
 argument keep their normal CVXPY representation.
+
+## Exponential representations
+
+The listed exponential-family atoms use exact exponential-cone graphs.
+BLVPY also supports direct scalar, vector, and matrix `cp.ExpCone`
+constraints. Vector and matrix entries become three-row exponential-cone
+blocks in CVXPY's canonical element order.
+
+BLVPY audits exactness from the constructed expression graph. Convenience
+functions such as `cp.loggamma` and `cp.log_normcdf` return compositions of
+primitive atoms rather than distinct source nodes, so BLVPY evaluates those
+compositions according to their constituent atoms. Any approximation embodied
+in such a composition remains part of the modeled expression. Explicit
+quadrature constraints such as `RelEntrConeQuad` and `OpRelEntrConeQuad`
+remain unsupported.
