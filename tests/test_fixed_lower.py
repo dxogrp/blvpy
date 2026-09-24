@@ -37,3 +37,32 @@ def test_fixed_lower_solution_is_complete_immutable_and_does_not_touch_lifted_st
         solution.source_values[y.id][0] = 0.0
     with pytest.raises(TypeError):
         solution.source_values[y.id] = np.zeros(2)  # type: ignore[index]
+
+
+def test_fixed_lower_returns_power_cone_primal_dual_certificate() -> None:
+    x = cp.Variable(name="x", bounds=[0.25, 1.5])
+    y = cp.Variable(nonneg=True, name="y")
+    lower = LowerProblem(
+        cp.Minimize(cp.power(y, np.sqrt(2.0), approx=False)),
+        [y >= x],
+        parameters=[x],
+    )
+    model = BilevelProblem(cp.Minimize(cp.square(x - 0.7) + cp.square(y - 0.7)), lower)
+    model.validate()
+    linked_parameter = next(iter(model._parameter_links))
+    x.value = 0.7
+    linked_parameter.value = 0.7
+
+    solution = solve_fixed_lower(
+        model,
+        cp.CLARABEL,
+        {},
+        False,
+    )
+
+    layout = model.canonicalize().cone_layout
+    assert layout.power_3d
+    assert float(solution.source_values[y.id]) == pytest.approx(0.7, abs=1e-7)
+    assert layout.primal_distance(solution.slack) <= 1e-7
+    assert layout.dual_distance(solution.dual) <= 1e-7
+    assert abs(layout.complementarity(solution.slack, solution.dual)) <= 1e-7

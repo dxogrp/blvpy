@@ -7,9 +7,10 @@ import cvxpy as cp
 import numpy as np
 import pytest
 import scipy.sparse as sp
-from cvxpy.atoms.elementwise.power import PowerApprox
+from cvxpy.atoms.elementwise.power import Power, PowerApprox
 from cvxpy.atoms.geo_mean import GeoMeanApprox
-from cvxpy.atoms.pnorm import PnormApprox
+from cvxpy.atoms.pnorm import Pnorm, PnormApprox
+from cvxpy.constraints.power import PowCone3DApprox
 
 from blvpy.canonicalization import (
     CanonicalData,
@@ -588,6 +589,54 @@ def test_exact_power_families_match_direct_cvxpy_at_linked_values(kind: str) -> 
 
 
 @pytest.mark.parametrize(
+    ("kind", "exponent", "expected_alpha"),
+    [
+        ("convex_irrational", np.sqrt(2.0), 1.0 / np.sqrt(2.0)),
+        ("concave", Fraction(2, 3), 2.0 / 3.0),
+        ("negative", -1, 0.5),
+    ],
+)
+def test_exact_power_cone_atoms_match_direct_cvxpy_at_linked_values(
+    kind: str,
+    exponent: float | Fraction,
+    expected_alpha: float,
+) -> None:
+    parameter = cp.Parameter(nonneg=True, name=f"exact_power_limit_{kind}", value=1.0)
+    linked = cp.Variable(nonneg=True, name=f"linked_exact_power_limit_{kind}")
+    source = cp.Variable(nonneg=True, name=f"exact_power_source_{kind}")
+    atom = cp.power(source, exponent, approx=False)
+    values = (0.75, 2.25)
+
+    if kind == "convex_irrational":
+        objective = atom
+        constraints = [source >= parameter]
+        expected_objectives = tuple(value ** float(exponent) for value in values)
+    elif kind == "concave":
+        objective = -atom
+        constraints = [source <= parameter]
+        expected_objectives = tuple(-(value ** float(exponent)) for value in values)
+    else:
+        objective = atom
+        constraints = [source <= parameter, source >= 0.25]
+        expected_objectives = tuple(value ** float(exponent) for value in values)
+
+    assert isinstance(atom, Power)
+    assert atom.approx_error == 0.0
+    canonical = _assert_parameterized_atom_matches_direct(
+        cp.Problem(cp.Minimize(objective), constraints),
+        parameter,
+        linked,
+        source,
+        tuple(
+            (value, value, expected_objective)
+            for value, expected_objective in zip(values, expected_objectives, strict=True)
+        ),
+    )
+
+    np.testing.assert_allclose(canonical.cone_layout.p3d, (expected_alpha,))
+
+
+@pytest.mark.parametrize(
     "kind",
     ["convex_pnorm", "concave_pnorm", "harmonic_mean"],
 )
@@ -637,6 +686,99 @@ def test_exact_rational_pnorm_families_match_direct_cvxpy_at_linked_values(kind:
     )
 
     assert canonical.cone_layout.second_order
+
+
+@pytest.mark.parametrize(
+    ("kind", "exponent", "expected_alpha"),
+    [
+        ("convex_irrational", np.sqrt(2.0), 1.0 / np.sqrt(2.0)),
+        ("euclidean", 2, None),
+        ("concave", Fraction(1, 2), 0.5),
+    ],
+)
+def test_exact_power_cone_pnorms_match_direct_cvxpy_at_linked_values(
+    kind: str,
+    exponent: float | Fraction,
+    expected_alpha: float | None,
+) -> None:
+    parameter = cp.Parameter(nonneg=True, name=f"exact_pnorm_bound_{kind}", value=1.0)
+    linked = cp.Variable(nonneg=True, name=f"linked_exact_pnorm_bound_{kind}")
+    source = cp.Variable(3, nonneg=True, name=f"exact_pnorm_source_{kind}")
+    atom = cp.pnorm(source, exponent, approx=False)
+    values = (0.8, 2.0)
+
+    if kind == "concave":
+        objective = -atom
+        constraints = [source <= parameter]
+        expected_sources = tuple(np.full(3, value) for value in values)
+        expected_objectives = tuple(-9.0 * value for value in values)
+    else:
+        objective = atom
+        constraints = [source == cp.hstack([parameter, 0.3, 0.4])]
+        expected_sources = tuple(np.array([value, 0.3, 0.4]) for value in values)
+        expected_objectives = tuple(
+            float(np.linalg.norm(expected_source, ord=float(exponent))) for expected_source in expected_sources
+        )
+
+    assert isinstance(atom, Pnorm)
+    assert atom.approx_error == 0.0
+    canonical = _assert_parameterized_atom_matches_direct(
+        cp.Problem(cp.Minimize(objective), constraints),
+        parameter,
+        linked,
+        source,
+        tuple(
+            (value, expected_source, expected_objective)
+            for value, expected_source, expected_objective in zip(
+                values,
+                expected_sources,
+                expected_objectives,
+                strict=True,
+            )
+        ),
+        atol=1e-4,
+    )
+
+    if expected_alpha is None:
+        assert canonical.cone_layout.p3d == ()
+        assert canonical.cone_layout.second_order == (4,)
+    else:
+        np.testing.assert_allclose(canonical.cone_layout.p3d, np.full(3, expected_alpha))
+
+
+@pytest.mark.parametrize(
+    ("alpha", "target"),
+    [
+        (0.3, 1.0),
+        (np.array([0.25, 0.7]), np.array([1.0, 1.5])),
+    ],
+    ids=["scalar", "vectorized"],
+)
+def test_direct_power_cone_constraints_preserve_blocks_and_recovery(
+    alpha: float | np.ndarray,
+    target: float | np.ndarray,
+) -> None:
+    shape = np.shape(target)
+    x = cp.Variable(shape=shape, name="power_x")
+    y = cp.Variable(shape=shape, name="power_y")
+    z = cp.Variable(shape=shape, name="power_z")
+    problem = cp.Problem(
+        cp.Minimize(cp.sum(x) + cp.sum(y)),
+        [cp.PowCone3D(x, y, z, alpha), z >= target],
+    )
+
+    canonical = _canonicalize_lower(problem, {})
+    expected_alphas = np.broadcast_to(np.asarray(alpha, dtype=float), shape or (1,)).reshape(-1, order="F")
+    np.testing.assert_allclose(canonical.cone_layout.p3d, expected_alphas)
+
+    _, primal, canonical_objective = _solve_canonical(canonical, {})
+    recovered = canonical.recover_numeric(primal)
+    direct_objective = problem.solve(solver=cp.CLARABEL)
+
+    assert problem.status in cp.settings.SOLUTION_PRESENT
+    assert canonical_objective == pytest.approx(direct_objective, abs=1e-5)
+    for variable in (x, y, z):
+        np.testing.assert_allclose(recovered[variable.id], variable.value, atol=5e-5)
 
 
 @pytest.mark.parametrize("axis", [0, 1])
@@ -697,17 +839,41 @@ def test_dotsort_matches_direct_cvxpy_data_and_recovery() -> None:
     [
         cp.Problem(cp.Minimize(cp.trace(cp.Variable((2, 2), PSD=True)))),
         cp.Problem(cp.Minimize(cp.exp(cp.Variable()))),
-        cp.Problem(cp.Minimize(cp.power(cp.Variable(), 1.5, approx=False))),
         cp.Problem(
             cp.Minimize(-cp.geo_mean(cp.Variable(3, nonneg=True), approx=False)),
-        ),
-        cp.Problem(
-            cp.Minimize(cp.pnorm(cp.Variable(3), Fraction(3, 2), approx=False)),
         ),
     ],
 )
 def test_unsupported_cones_are_rejected(problem: cp.Problem) -> None:
     with pytest.raises(UnsupportedConeError):
+        _canonicalize_lower(problem, {})
+
+
+def test_direct_n_dimensional_power_cone_remains_rejected() -> None:
+    weights = cp.Variable(3, name="pnd_weights")
+    geometric_mean = cp.Variable(name="pnd_geometric_mean")
+    problem = cp.Problem(
+        cp.Minimize(cp.sum(weights)),
+        [
+            cp.PowConeND(weights, geometric_mean, np.full(3, 1.0 / 3.0)),
+            geometric_mean == 1.0,
+        ],
+    )
+
+    with pytest.raises(UnsupportedConeError, match="N-dimensional power"):
+        _canonicalize_lower(problem, {})
+
+
+def test_approximate_3d_power_cone_constraint_is_rejected_explicitly() -> None:
+    x = cp.Variable(name="approximate_power_x")
+    y = cp.Variable(name="approximate_power_y")
+    z = cp.Variable(name="approximate_power_z")
+    problem = cp.Problem(
+        cp.Minimize(x + y),
+        [PowCone3DApprox(x, y, z, np.sqrt(2.0) / 2.0), z == 1.0],
+    )
+
+    with pytest.raises(ApproximateCanonicalizationError, match="PowCone3DApprox.*SOC approximation"):
         _canonicalize_lower(problem, {})
 
 

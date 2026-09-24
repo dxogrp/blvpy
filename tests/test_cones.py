@@ -1,3 +1,5 @@
+import math
+from fractions import Fraction
 from types import SimpleNamespace
 
 import cvxpy as cp
@@ -30,12 +32,37 @@ def test_layout_preserves_canonical_block_order() -> None:
     ]
 
 
+def test_layout_appends_power_cones_and_exposes_cvxpy_aliases() -> None:
+    layout = ConeLayout(2, 3, (3, 4), (0.2, 0.75))
+
+    assert layout.size == 18
+    assert layout.p3d == layout.power_3d == (0.2, 0.75)
+    assert layout.power_3d_slices == layout.p3d_slices == (slice(12, 15), slice(15, 18))
+    assert [(block.kind, block.index, block.slice) for block in layout.blocks] == [
+        ("zero", 0, slice(0, 2)),
+        ("nonnegative", 0, slice(2, 5)),
+        ("second_order", 0, slice(5, 8)),
+        ("second_order", 1, slice(8, 12)),
+        ("power_3d", 0, slice(12, 15)),
+        ("power_3d", 1, slice(15, 18)),
+    ]
+
+
 def test_layout_reads_cvxpy_dimensions_and_rejects_unsupported_cones() -> None:
-    dims = SimpleNamespace(zero=1, nonneg=2, soc=[3], exp=0, psd=[], p3d=[], pnd=[])
-    assert ConeLayout.from_dims(dims) == ConeLayout(1, 2, (3,))
+    dims = SimpleNamespace(zero=1, nonneg=2, soc=[3], exp=0, psd=[], p3d=[0.25, 0.8], pnd=[])
+    assert ConeLayout.from_dims(dims) == ConeLayout(1, 2, (3,), (0.25, 0.8))
+
+    for alias in ("power_3d", "p3d", "p3"):
+        mapping_dims = {"f": 1, "l": 2, "q": [3], alias: [0.4], "pnd": []}
+        assert ConeLayout.from_dims(mapping_dims) == ConeLayout(1, 2, (3,), (0.4,))
 
     dims.exp = 1
     with pytest.raises(ValueError, match="exponential"):
+        ConeLayout.from_dims(dims)
+
+    dims.exp = 0
+    dims.pnd = [[0.25, 0.75]]
+    with pytest.raises(ValueError, match="N-dimensional power"):
         ConeLayout.from_dims(dims)
 
 
@@ -55,6 +82,31 @@ def test_primal_and_dual_constraints_use_the_expected_blocks() -> None:
     dual.value = np.array([-100.0, 1.0, 2.0, 2.0, 1.0, 1.0])
     assert all(np.max(constraint.violation()) <= 1e-12 for constraint in primal_constraints)
     assert all(np.max(constraint.violation()) <= 1e-12 for constraint in dual_constraints)
+
+
+def test_power_cone_constraints_are_exact_dcp_and_dnlp_memberships() -> None:
+    alpha = 0.25
+    layout = ConeLayout(power_3d=(alpha,))
+    primal = cp.Variable(3)
+    dual = cp.Variable(3)
+    primal_constraints = layout.primal_constraints(primal)
+    dual_constraints = layout.dual_constraints(dual)
+    problem = cp.Problem(cp.Minimize(cp.sum(primal) + cp.sum(dual)), [*primal_constraints, *dual_constraints])
+
+    assert len(primal_constraints) == len(dual_constraints) == 3
+    assert problem.is_dcp()
+    assert problem.is_dnlp()
+
+    primal.value = np.array([1.0, 1.0, 1.0])
+    dual.value = np.array([alpha, 1.0 - alpha, -1.0])
+    assert all(np.max(constraint.violation()) <= 1e-12 for constraint in primal_constraints)
+    assert all(np.max(constraint.violation()) <= 1e-12 for constraint in dual_constraints)
+    assert float(primal.value @ dual.value) == pytest.approx(0.0, abs=1e-15)
+
+    primal.value = np.array([1.0, 1.0, 1.1])
+    dual.value = np.array([alpha, 1.0 - alpha, 1.1])
+    assert np.max(primal_constraints[-1].violation()) > 0.0
+    assert np.max(dual_constraints[-1].violation()) > 0.0
 
 
 def test_multiple_soc_blocks_accept_boundary_points_in_canonical_order() -> None:
@@ -98,6 +150,31 @@ def test_multiple_soc_blocks_accept_boundary_points_in_canonical_order() -> None
 )
 def test_soc_distance_covers_projection_regions(point: list[float], expected: float) -> None:
     assert soc_distance(point) == pytest.approx(expected)
+
+
+def test_power_cone_distance_covers_membership_polar_and_zero_tail_regions() -> None:
+    alpha = 0.25
+    layout = ConeLayout(power_3d=(alpha,))
+    inside = np.array([1.0, 1.0, -1.0])
+    dual_inside = np.array([alpha, 1.0 - alpha, 1.0])
+    polar = np.array([-alpha, -(1.0 - alpha), 1.0])
+    zero_tail = np.array([-2.0, 3.0, 0.0])
+
+    assert layout.primal_distance(inside) == pytest.approx(0.0, abs=1e-15)
+    assert layout.dual_distance(dual_inside) == pytest.approx(0.0, abs=1e-15)
+    assert layout.primal_distance(polar) == pytest.approx(np.linalg.norm(polar), rel=1e-14)
+    assert layout.primal_distance(zero_tail) == pytest.approx(2.0, rel=1e-14)
+
+
+@pytest.mark.parametrize("scale", [1e-250, 1e-120, 1e120, 1e250])
+def test_power_cone_distance_is_scale_normalized(scale: float) -> None:
+    layout = ConeLayout(power_3d=(0.3,))
+    point = np.array([-0.01, -0.01, 1.0])
+    primal_reference = layout.primal_distance(point)
+    dual_reference = layout.dual_distance(point)
+
+    assert layout.primal_distance(scale * point) / scale == pytest.approx(primal_reference, rel=2e-13)
+    assert layout.dual_distance(scale * point) / scale == pytest.approx(dual_reference, rel=2e-13)
 
 
 def test_product_cone_distances_distinguish_zero_cone_dual() -> None:
@@ -170,6 +247,34 @@ def test_layout_rejects_invalid_dimensions(kwargs: dict[str, object], message: s
         ConeLayout(**kwargs)
 
 
+@pytest.mark.parametrize(
+    "power_3d",
+    [
+        0.5,
+        (False,),
+        (0.0,),
+        (1.0,),
+        (-0.1,),
+        (1.1,),
+        (np.nan,),
+        (np.inf,),
+        (1.0 + 0.0j,),
+        ("0.5",),
+        ([0.5],),
+    ],
+)
+def test_layout_rejects_invalid_power_cone_exponents(power_3d: object) -> None:
+    with pytest.raises(ValueError, match="power_3d"):
+        ConeLayout(power_3d=power_3d)  # type: ignore[arg-type]
+
+
+def test_layout_normalizes_real_power_cone_exponents() -> None:
+    layout = ConeLayout(power_3d=(Fraction(1, 4), np.float64(0.75)))
+
+    assert layout.power_3d == (0.25, 0.75)
+    assert all(type(alpha) is float for alpha in layout.power_3d)
+
+
 def test_cone_operations_reject_wrong_vector_sizes() -> None:
     layout = ConeLayout(zero=1, nonnegative=1, second_order=(3,))
 
@@ -208,14 +313,17 @@ def test_cone_operations_reject_complex_vectors() -> None:
 
 @pytest.mark.parametrize("nonfinite", [np.nan, np.inf, -np.inf])
 def test_nonfinite_constrained_blocks_have_infinite_distance(nonfinite: float) -> None:
-    layout = ConeLayout(zero=1, nonnegative=1, second_order=(3,))
-    nonnegative_nonfinite = np.array([0.0, nonfinite, 2.0, 0.0, 0.0])
-    soc_nonfinite = np.array([0.0, 0.0, 2.0, nonfinite, 0.0])
+    layout = ConeLayout(zero=1, nonnegative=1, second_order=(3,), power_3d=(0.3,))
+    nonnegative_nonfinite = np.array([0.0, nonfinite, 2.0, 0.0, 0.0, 1.0, 1.0, 0.0])
+    soc_nonfinite = np.array([0.0, 0.0, 2.0, nonfinite, 0.0, 1.0, 1.0, 0.0])
+    power_nonfinite = np.array([0.0, 0.0, 2.0, 0.0, 0.0, 1.0, nonfinite, 0.0])
 
     assert np.isinf(layout.primal_distance(nonnegative_nonfinite))
     assert np.isinf(layout.dual_distance(nonnegative_nonfinite))
     assert np.isinf(layout.primal_distance(soc_nonfinite))
     assert np.isinf(layout.dual_distance(soc_nonfinite))
+    assert np.isinf(layout.primal_distance(power_nonfinite))
+    assert np.isinf(layout.dual_distance(power_nonfinite))
     assert np.isinf(soc_distance([2.0, nonfinite]))
 
 
@@ -236,6 +344,30 @@ def _independent_product_cone_distance(point: np.ndarray, *, dual: bool) -> floa
     return float(np.sqrt(max(float(problem.value), 0.0)))
 
 
+def _independent_power_cone_distance(point: np.ndarray, alpha: float, *, dual: bool) -> float:
+    projected = cp.Variable(3)
+    if dual:
+        constraint = cp.PowCone3D(
+            projected[0] / alpha,
+            projected[1] / (1.0 - alpha),
+            projected[2],
+            alpha,
+        )
+    else:
+        constraint = cp.PowCone3D(projected[0], projected[1], projected[2], alpha)
+    problem = cp.Problem(cp.Minimize(cp.sum_squares(projected - point)), [constraint])
+
+    problem.solve(
+        solver=cp.CLARABEL,
+        tol_gap_abs=1e-10,
+        tol_gap_rel=1e-10,
+        tol_feas=1e-10,
+    )
+
+    assert problem.status in cp.settings.SOLUTION_PRESENT
+    return float(np.sqrt(max(float(problem.value), 0.0)))
+
+
 def test_product_cone_distances_match_independent_cvxpy_projections() -> None:
     layout = ConeLayout(zero=2, nonnegative=3, second_order=(3, 4))
     points = np.random.default_rng(90210).normal(size=(6, layout.size))
@@ -249,6 +381,61 @@ def test_product_cone_distances_match_independent_cvxpy_projections() -> None:
             _independent_product_cone_distance(point, dual=True),
             abs=2e-6,
         )
+
+
+@pytest.mark.parametrize("alpha", [0.02, 0.2, 0.5, 0.8, 0.98])
+def test_power_cone_distances_match_independent_clarabel_projections(alpha: float) -> None:
+    layout = ConeLayout(power_3d=(alpha,))
+    points = np.random.default_rng(round(alpha * 10_000)).normal(size=(5, 3))
+
+    for point in points:
+        assert layout.primal_distance(point) == pytest.approx(
+            _independent_power_cone_distance(point, alpha, dual=False),
+            abs=3e-6,
+        )
+        assert layout.dual_distance(point) == pytest.approx(
+            _independent_power_cone_distance(point, alpha, dual=True),
+            abs=3e-6,
+        )
+
+
+def test_power_cone_dual_distance_uses_moreau_decomposition() -> None:
+    rng = np.random.default_rng(1138)
+    for alpha in (0.001, 0.2, 0.5, 0.95, 0.999):
+        layout = ConeLayout(power_3d=(alpha,))
+        for point in rng.normal(size=(8, 3)):
+            primal_distance = layout.primal_distance(point)
+            dual_distance_of_negative = layout.dual_distance(-point)
+            assert math.hypot(primal_distance, dual_distance_of_negative) == pytest.approx(
+                np.linalg.norm(point),
+                rel=2e-12,
+                abs=2e-12,
+            )
+
+
+@pytest.mark.parametrize("alpha", [1e-8, 1.0 - 1e-8])
+def test_power_cone_projection_handles_near_endpoint_exponents(alpha: float) -> None:
+    point = np.array([-1.3, 0.9, 0.45])
+    reflected = np.array([point[1], point[0], -point[2]])
+    layout = ConeLayout(power_3d=(alpha,))
+    reflected_layout = ConeLayout(power_3d=(1.0 - alpha,))
+
+    primal_distance = layout.primal_distance(point)
+    dual_distance = layout.dual_distance(point)
+    assert np.isfinite(primal_distance) and primal_distance > 0.0
+    assert np.isfinite(dual_distance) and dual_distance > 0.0
+    assert primal_distance == pytest.approx(reflected_layout.primal_distance(reflected), rel=2e-9)
+    assert dual_distance == pytest.approx(reflected_layout.dual_distance(reflected), rel=2e-9)
+    assert layout.primal_distance(np.array([*point[:2], -point[2]])) == pytest.approx(primal_distance, rel=1e-13)
+    assert layout.dual_distance(np.array([*point[:2], -point[2]])) == pytest.approx(dual_distance, rel=1e-13)
+
+
+def test_mixed_product_distance_aggregates_power_blocks_in_canonical_order() -> None:
+    layout = ConeLayout(zero=1, nonnegative=1, second_order=(3,), power_3d=(0.5,))
+    point = np.array([3.0, -4.0, 0.0, 1.0, 0.0, -1.0, -1.0, -1.0])
+
+    assert layout.primal_distance(point) == pytest.approx(np.sqrt(28.5), rel=1e-14)
+    assert layout.dual_distance(point) == pytest.approx(np.sqrt(19.5), rel=1e-14)
 
 
 def test_complementarity_uses_unmodified_canonical_order() -> None:

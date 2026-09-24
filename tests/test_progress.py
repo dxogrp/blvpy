@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
+
 import blvpy.progress as progress
 from blvpy.progress import ProgressReporter
 from blvpy.result import BilevelResult, IterationRecord, PolishResult, Residuals, RunRecord
@@ -30,6 +32,7 @@ def _problem(
     *,
     best_of: int | None = 3,
     requested_runs: int = 3,
+    power_3d: tuple[float, ...] = (),
 ) -> None:
     reporter.problem(
         upper_dimension=2,
@@ -39,6 +42,7 @@ def _problem(
         zero=1,
         nonnegative=2,
         soc=(2, 3),
+        power_3d=power_3d,
         lower_solver="CLARABEL",
         nonlinear_solver="IPOPT",
         best_of=best_of,
@@ -92,6 +96,7 @@ def test_problem_transcript_uses_stderr_and_stable_plain_sections(capfd) -> None
     assert "canonical_variables=4" in dimensions
     assert "canonical_constraints=8" in dimensions
     assert "Cones: zero=1 | nonnegative=2 | soc=[2, 3]" in captured.err
+    assert "power3d=" not in captured.err
     assert "Search: mode=random | best_of=3" in captured.err
     assert "Epsilon: initial=1.000e-01 | target=1.000e-06 | contraction=1.000e-01" in captured.err
     assert "\x1b" not in captured.err
@@ -107,6 +112,17 @@ def test_problem_transcript_distinguishes_deterministic_search(capfd) -> None:
     transcript = capfd.readouterr().err
     assert "Search: mode=deterministic | runs=1" in transcript
     assert "best_of=" not in transcript
+
+
+def test_problem_transcript_reports_power_cones_only_when_present(capfd) -> None:
+    reporter = ProgressReporter(enabled=True)
+
+    _problem(reporter, power_3d=(0.25, np.sqrt(0.5)))
+
+    transcript = capfd.readouterr().err
+    cones = _event_block(transcript, "Cones:")
+    assert "power3d=[2.500e-01, 7.071e-01]" in cones
+    assert all(len(line) <= 79 for line in transcript.splitlines())
 
 
 def test_run_and_attempt_lines_are_one_based_and_complete(capfd) -> None:

@@ -1,4 +1,4 @@
-"""Lossless DPP-to-SOCP canonicalization for lower-level problems.
+"""Lossless DPP-to-conic canonicalization for lower-level problems.
 
 This module deliberately stops at CVXPY's pre-solver conic representation.
 The returned matrices use the solver convention ``A @ u + s == b``; no
@@ -24,17 +24,18 @@ from cvxpy.atoms.elementwise.abs import abs as abs_atom
 from cvxpy.atoms.elementwise.huber import huber
 from cvxpy.atoms.elementwise.maximum import maximum
 from cvxpy.atoms.elementwise.minimum import minimum
-from cvxpy.atoms.elementwise.power import PowerApprox
+from cvxpy.atoms.elementwise.power import Power, PowerApprox
 from cvxpy.atoms.geo_mean import GeoMeanApprox
 from cvxpy.atoms.max import max as max_atom
 from cvxpy.atoms.min import min as min_atom
 from cvxpy.atoms.norm1 import norm1
 from cvxpy.atoms.norm_inf import norm_inf
-from cvxpy.atoms.pnorm import PnormApprox
+from cvxpy.atoms.pnorm import Pnorm, PnormApprox
 from cvxpy.atoms.quad_form import QuadForm
 from cvxpy.atoms.quad_over_lin import quad_over_lin
 from cvxpy.atoms.sum_largest import sum_largest
 from cvxpy.constraints.exponential import OpRelEntrConeQuad, RelEntrConeQuad
+from cvxpy.constraints.power import PowCone3DApprox
 from cvxpy.reductions.solution import Solution
 from numpy.typing import ArrayLike, NDArray
 
@@ -50,7 +51,7 @@ from .errors import (
 
 ParameterTransform = Literal["identity", "symmetric", "diagonal", "sparse"]
 
-# This is intentionally narrower than “anything CVXPY can turn into an SOCP”.
+# This is intentionally narrower than “anything CVXPY can turn into a cone program”.
 # Each nonlinear entry below has an exact epigraph/hypograph graph whose
 # pointwise projection is preserved by CVXPY's Dcp2Cone reduction.  Affine
 # atoms are audited as a class because their graph and recovery are identities.
@@ -67,7 +68,9 @@ _AUDITED_NONLINEAR_ATOMS = frozenset(
         minimum,
         norm1,
         norm_inf,
+        Pnorm,
         PnormApprox,
+        Power,
         PowerApprox,
         QuadForm,
         quad_over_lin,
@@ -428,7 +431,7 @@ class _DataAffineMap:
 
 @dataclass(frozen=True, slots=True)
 class CanonicalLowerProblem:
-    """Fixed exact SOCP canonicalization of a lower problem.
+    """Fixed exact conic canonicalization of a lower problem.
 
     Instances are produced and cached by
     :meth:`blvpy.BilevelProblem.canonicalize`.
@@ -442,7 +445,7 @@ class CanonicalLowerProblem:
         Read-only mapping from each CVXPY canonical variable ID to its
         starting canonical column.
     cone_layout : ConeLayout
-        Ordered zero, nonnegative, and second-order cone blocks.
+        Ordered zero, nonnegative, second-order, and 3D power-cone blocks.
     canonical_size : int
         Length of the canonical primal vector ``u``.
     constraint_size : int
@@ -691,7 +694,7 @@ def _validate_lower(
     lower_problem: cp.Problem,
     parameter_links: Mapping[cp.Parameter, cp.Expression],
 ) -> None:
-    """Validate the source-level requirements of an SOCP lower model."""
+    """Validate the source-level requirements of a supported conic lower model."""
 
     if not isinstance(lower_problem, cp.Problem):
         raise ValidationError("lower_problem must be a cvxpy.Problem.")
@@ -880,6 +883,10 @@ def _reject_approximate_source_nodes(problem: cp.Problem) -> None:
                 )
         stack.extend(getattr(expression, "args", ()))
     for constraint in problem.constraints:
+        if isinstance(constraint, PowCone3DApprox):
+            raise ApproximateCanonicalizationError(
+                f"Constraint {type(constraint).__name__} uses an SOC approximation of a 3D power cone."
+            )
         if isinstance(constraint, (RelEntrConeQuad, OpRelEntrConeQuad)):
             raise ApproximateCanonicalizationError(
                 f"Constraint {type(constraint).__name__} uses quadrature approximation."
@@ -951,7 +958,7 @@ def _safe_metadata_repr(value: Any) -> str:
 
 
 def _audit_source_atoms(problem: cp.Problem) -> None:
-    """Enforce the explicit pointwise-graph atom allowlist for SOCP mode."""
+    """Enforce the explicit pointwise-graph atom allowlist for conic mode."""
 
     expressions = [problem.objective.expr]
     expressions.extend(argument for constraint in problem.constraints for argument in constraint.args)
@@ -966,7 +973,7 @@ def _audit_source_atoms(problem: cp.Problem) -> None:
             atom_type = type(expression)
             if atom_type not in _AUDITED_NONLINEAR_ATOMS:
                 raise UnsupportedModelError(
-                    f"Atom {atom_type.__name__} is not in BLVPY's audited exact SOCP canonicalization allowlist."
+                    f"Atom {atom_type.__name__} is not in BLVPY's audited exact conic canonicalization allowlist."
                 )
         stack.extend(getattr(expression, "args", ()))
 

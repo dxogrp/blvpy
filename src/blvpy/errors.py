@@ -42,16 +42,16 @@ class UnsupportedModelError(ValidationError):
 class UnsupportedConeError(UnsupportedModelError):
     """Raised when lower canonicalization produces an unsupported cone.
 
-    BLVPY 0.1 supports zero, nonnegative, and second-order cones. PSD,
-    exponential, and power-cone blocks trigger this exception before nonlinear
-    solving.
+    BLVPY supports zero, nonnegative, second-order, and 3D power cones. PSD,
+    exponential, and N-dimensional power-cone blocks trigger this exception
+    before nonlinear solving.
     """
 
 
 class ApproximateCanonicalizationError(UnsupportedModelError):
     """Raised when a source expression has only an approximate cone graph.
 
-    The SOCP reformulation requires an audited pointwise-exact
+    The supported affine-conic reformulation requires an audited pointwise-exact
     canonicalization; approximation-based atoms and constraints are rejected.
     """
 

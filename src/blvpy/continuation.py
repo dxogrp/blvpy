@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .backends import solve_conic, solve_dnlp
+from .cones import _power_3d_dual_scale
 from .errors import InitializationError, SolveError, SolverUnavailableError
 from .fixed_lower import FixedLowerSolveError, solve_fixed_lower
 from .progress import ProgressReporter
@@ -132,6 +133,7 @@ def _solve_bilevel(
         zero=layout.zero,
         nonnegative=layout.nonnegative,
         soc=layout.second_order,
+        power_3d=layout.power_3d,
         lower_solver=str(settings.conic_solver),
         nonlinear_solver=str(settings.solver),
         best_of=best_of,
@@ -925,6 +927,20 @@ def _relaxed_cone_constraints(
             [
                 cp.norm(slack[block.start + 1 : block.stop], 2) <= slack[block.start] + radius,
                 cp.norm(dual[block.start + 1 : block.stop], 2) <= dual[block.start] + radius,
+            ]
+        )
+    for block, alpha in zip(layout.power_3d_slices, layout.power_3d, strict=True):
+        slack_heads = slack[block.start : block.start + 2] + radius
+        dual_heads = dual[block.start : block.start + 2] + radius
+        weights = (alpha, 1.0 - alpha)
+        dual_scale = _power_3d_dual_scale(alpha)
+        constraints.extend(
+            [
+                slack_heads >= 0,
+                cp.abs(slack[block.start + 2]) <= cp.geo_mean(slack_heads, p=weights, approx=False) + radius,
+                dual_heads >= 0,
+                dual_scale * cp.abs(dual[block.start + 2])
+                <= cp.geo_mean(dual_heads, p=weights, approx=False) + dual_scale * radius,
             ]
         )
     return tuple(constraints)
