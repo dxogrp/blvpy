@@ -636,6 +636,23 @@ def test_exact_power_cone_atoms_match_direct_cvxpy_at_linked_values(
     np.testing.assert_allclose(canonical.cone_layout.p3d, (expected_alpha,))
 
 
+def test_exact_power_with_large_exponent_preserves_endpoint_power_cone() -> None:
+    exponent = 1e20
+    source = cp.Variable(nonneg=True, name="large_exponent_source")
+    atom = cp.power(source, exponent, approx=False)
+    problem = cp.Problem(cp.Minimize(atom), [source >= 1.0])
+
+    assert isinstance(atom, Power)
+    assert atom.approx_error == 0.0
+    canonical = _canonicalize_lower(problem, {})
+    _assert_data_equal(canonical.apply_numeric({}), _direct_data(problem))
+
+    assert canonical.cone_layout.exponential == 0
+    assert len(canonical.cone_layout.p3d) == 1
+    assert canonical.cone_layout.p3d[0] == 1.0 / exponent
+    assert 0.0 < canonical.cone_layout.p3d[0] < np.finfo(float).eps
+
+
 @pytest.mark.parametrize(
     "kind",
     ["convex_pnorm", "concave_pnorm", "harmonic_mean"],
@@ -1001,6 +1018,73 @@ def test_direct_exponential_cones_preserve_interleaved_blocks_and_recovery(
     assert canonical_objective == pytest.approx(direct_objective, abs=1e-5)
     for variable in (x, y, z):
         np.testing.assert_allclose(recovered[variable.id], variable.value, atol=1e-4)
+
+
+def test_mixed_exponential_and_power_cones_follow_cvxpy_row_order() -> None:
+    alpha = 0.25
+    exp_x = 0.2
+    exp_y = 1.0
+    power_z = 1.2
+    source = cp.Variable(6, name="mixed_cone_source")
+    problem = cp.Problem(
+        cp.Minimize(source[2] + source[3] + source[4]),
+        [
+            # Declare P3D first to ensure the canonical layout comes from
+            # CVXPY's row order rather than the source-constraint order.
+            cp.PowCone3D(source[3], source[4], source[5], alpha),
+            cp.ExpCone(source[0], source[1], source[2]),
+            source[0] == exp_x,
+            source[1] == exp_y,
+            source[5] == power_z,
+        ],
+    )
+
+    canonical = _canonicalize_lower(problem, {})
+    assert canonical.cone_layout.zero == 3
+    assert canonical.cone_layout.nonnegative == 0
+    assert canonical.cone_layout.second_order == ()
+    assert canonical.cone_layout.exponential == 1
+    assert canonical.cone_layout.p3d == (alpha,)
+    assert tuple(block.kind for block in canonical.cone_layout.blocks) == (
+        "zero",
+        "exponential",
+        "power_3d",
+    )
+
+    data, primal, canonical_objective = _solve_canonical(canonical, {})
+    _assert_data_equal(data, _direct_data(problem))
+    recovered = canonical.recover_numeric(primal)[source.id]
+    slack = np.asarray(data.b - data.A @ primal, dtype=float)
+
+    power_scale = power_z / (alpha**alpha * (1.0 - alpha) ** (1.0 - alpha))
+    expected = np.array(
+        [
+            exp_x,
+            exp_y,
+            np.exp(exp_x / exp_y) * exp_y,
+            alpha * power_scale,
+            (1.0 - alpha) * power_scale,
+            power_z,
+        ]
+    )
+    np.testing.assert_allclose(slack[canonical.cone_layout.zero_slice], 0.0, atol=2e-8)
+    np.testing.assert_allclose(
+        slack[canonical.cone_layout.exponential_slices[0]],
+        expected[:3],
+        atol=2e-7,
+    )
+    np.testing.assert_allclose(
+        slack[canonical.cone_layout.power_3d_slices[0]],
+        expected[3:],
+        atol=2e-6,
+    )
+    np.testing.assert_allclose(recovered, expected, atol=2e-6)
+    assert canonical_objective == pytest.approx(float(expected[2:5].sum()), abs=2e-6)
+
+    direct_objective = problem.solve(solver=cp.CLARABEL)
+    assert problem.status in cp.settings.SOLUTION_PRESENT
+    assert canonical_objective == pytest.approx(direct_objective, abs=1e-4)
+    np.testing.assert_allclose(source.value, expected, atol=2e-4)
 
 
 @pytest.mark.parametrize("axis", [0, 1])
