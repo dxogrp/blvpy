@@ -15,6 +15,7 @@ import blvpy.continuation as continuation
 import blvpy.problem as problem_module
 from blvpy._canonicalization import affine, audit, parameters, recovery
 from blvpy._cones import power
+from blvpy._continuation import residuals, restoration, sampling, state
 
 
 def test_cone_public_objects_remain_defined_by_the_facade() -> None:
@@ -186,6 +187,77 @@ def test_canonicalization_facade_preserves_private_helper_aliases() -> None:
     )
 
 
+def test_continuation_facade_preserves_types_signatures_and_exports() -> None:
+    expected_signatures = {
+        "_SolveSettings": (
+            "(epsilon_initial: 'float' = 0.1, epsilon_target: 'float' = 1e-06, contraction: 'float' = 0.1, "
+            "best_of: 'int | None' = None, feasibility_tolerance: 'float' = 1e-07, "
+            "seed: 'int | np.random.Generator | None' = None, solver: 'str' = 'IPOPT', "
+            "conic_solver: 'str' = 'CLARABEL', solver_options: 'Mapping[str, Any] | None' = None, "
+            "conic_solver_options: 'Mapping[str, Any] | None' = None, restoration: 'bool' = True, "
+            "max_retries: 'int' = 8, verbose: 'bool' = True, solver_verbose: 'bool' = False) -> None"
+        ),
+        "compute_residuals": "(model: 'BilevelProblem', epsilon: 'float | None' = None) -> 'Residuals'",
+        "solve_bilevel": "(model: 'BilevelProblem', settings: '_SolveSettings') -> 'BilevelResult'",
+    }
+
+    assert continuation._RunOutcome.__module__ == "blvpy.continuation"
+    assert continuation._SolveSettings.__module__ == "blvpy.continuation"
+    assert continuation.compute_residuals.__module__ == "blvpy.continuation"
+    assert continuation.solve_bilevel.__module__ == "blvpy.continuation"
+    assert tuple(field.name for field in fields(continuation._RunOutcome)) == (
+        "record",
+        "state",
+        "accepted_initial",
+        "reached_target",
+    )
+    assert tuple(field.name for field in fields(continuation._SolveSettings)) == (
+        "epsilon_initial",
+        "epsilon_target",
+        "contraction",
+        "best_of",
+        "feasibility_tolerance",
+        "seed",
+        "solver",
+        "conic_solver",
+        "solver_options",
+        "conic_solver_options",
+        "restoration",
+        "max_retries",
+        "verbose",
+        "solver_verbose",
+    )
+    assert {name: str(inspect.signature(getattr(continuation, name))) for name in expected_signatures} == (
+        expected_signatures
+    )
+    assert continuation.__all__ == ["compute_residuals"]
+
+
+def test_continuation_facade_preserves_private_helper_aliases() -> None:
+    expected_aliases = {
+        "_compute_residuals": residuals.compute_residuals,
+        "_constraint_violation": residuals._constraint_violation,
+        "_finite_constraint_violation": residuals._finite_constraint_violation,
+        "_infinite_residuals": residuals._infinite_residuals,
+        "_norm": residuals._norm,
+        "_required_vector": residuals._required_vector,
+        "_relax_constraint": restoration._relax_constraint,
+        "_relaxed_cone_constraints": restoration._relaxed_cone_constraints,
+        "_generate_upper_initializations": sampling._generate_upper_initializations,
+        "_project_variable_value": sampling._project_variable_value,
+        "_validated_sample_bounds": sampling._validated_sample_bounds,
+        "_variable_bounds": sampling._variable_bounds,
+        "_assign_values": state._assign_values,
+        "_numeric_value": state._numeric_value,
+        "_restore_state": state._restore_state,
+        "_snapshot_state": state._snapshot_state,
+        "_sync_linked_parameters": state._sync_linked_parameters,
+    }
+
+    assert continuation.compute_residuals is not residuals.compute_residuals
+    assert all(getattr(continuation, name) is implementation for name, implementation in expected_aliases.items())
+
+
 def test_retired_root_private_cone_modules_are_not_importable() -> None:
     assert importlib.util.find_spec("blvpy._cone_numeric") is None
     assert importlib.util.find_spec("blvpy._exponential_cone") is None
@@ -294,5 +366,59 @@ assert canonicalization._symbolic_matrix_combination is affine._symbolic_matrix_
 assert canonicalization._validate_lower is audit._validate_lower
 assert problem._canonicalize_lower is canonicalization._canonicalize_lower
 assert problem._validate_lower is canonicalization._validate_lower
+"""
+    subprocess.run([sys.executable, "-W", "error", "-c", script], check=True, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize(
+    "modules",
+    [
+        (
+            "blvpy",
+            "blvpy.continuation",
+            "blvpy.problem",
+            "blvpy._continuation.state",
+            "blvpy._continuation.sampling",
+            "blvpy._continuation.residuals",
+            "blvpy._continuation.restoration",
+        ),
+        (
+            "blvpy._continuation.state",
+            "blvpy._continuation.residuals",
+            "blvpy._continuation.sampling",
+            "blvpy._continuation.restoration",
+            "blvpy.continuation",
+            "blvpy.problem",
+            "blvpy",
+        ),
+        (
+            "blvpy.problem",
+            "blvpy.continuation",
+            "blvpy._continuation.restoration",
+            "blvpy._continuation.sampling",
+            "blvpy._continuation.residuals",
+            "blvpy._continuation.state",
+            "blvpy",
+        ),
+    ],
+    ids=("public-first", "private-first", "problem-first"),
+)
+def test_continuation_modules_import_cleanly_in_fresh_processes(modules: tuple[str, ...]) -> None:
+    script = f"""
+import importlib
+
+for module in {modules!r}:
+    importlib.import_module(module)
+
+import blvpy.continuation as continuation
+from blvpy._continuation import residuals, restoration, sampling, state
+
+assert continuation._SolveSettings.__module__ == "blvpy.continuation"
+assert continuation.compute_residuals.__module__ == "blvpy.continuation"
+assert continuation.__all__ == ["compute_residuals"]
+assert continuation._compute_residuals is residuals.compute_residuals
+assert continuation._generate_upper_initializations is sampling._generate_upper_initializations
+assert continuation._relaxed_cone_constraints is restoration._relaxed_cone_constraints
+assert continuation._snapshot_state is state._snapshot_state
 """
     subprocess.run([sys.executable, "-W", "error", "-c", script], check=True, capture_output=True, text=True)
