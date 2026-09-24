@@ -1,9 +1,9 @@
 """Product-cone utilities for BLVPY's supported conic form.
 
 CVXPY orders the supported conic rows as zero, nonnegative, second-order,
-and then three-dimensional power-cone blocks. :class:`ConeLayout` records
-that order once and uses it for both symbolic membership constraints and
-numerical diagnostics.
+exponential, and then three-dimensional power-cone blocks. :class:`ConeLayout`
+records that order once and uses it for both symbolic membership constraints
+and numerical diagnostics.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import brentq
 
-ConeKind = Literal["zero", "nonnegative", "second_order", "power_3d"]
+ConeKind = Literal["zero", "nonnegative", "second_order", "exponential", "power_3d"]
 
 _FLOAT_EPSILON = np.finfo(np.float64).eps
 _LOG_SMALLEST_SUBNORMAL = math.log(float(np.nextafter(0.0, 1.0)))
@@ -31,7 +31,7 @@ class ConeBlock:
 
     Parameters
     ----------
-    kind : {"zero", "nonnegative", "second_order", "power_3d"}
+    kind : {"zero", "nonnegative", "second_order", "exponential", "power_3d"}
         Cone represented by the block.
     start : int
         Inclusive zero-based row offset.
@@ -53,7 +53,7 @@ class ConeBlock:
     index: int = 0
 
     def __post_init__(self) -> None:
-        if self.kind not in {"zero", "nonnegative", "second_order", "power_3d"}:
+        if self.kind not in {"zero", "nonnegative", "second_order", "exponential", "power_3d"}:
             raise ValueError(f"Unknown cone kind {self.kind!r}.")
         if self.start < 0 or self.stop <= self.start:
             raise ValueError("A cone block must be a nonempty forward slice.")
@@ -89,6 +89,10 @@ class ConeLayout:
     power_3d : tuple of float, optional
         Exponent ``alpha`` for each three-dimensional power-cone block. Every
         exponent must be finite and lie strictly between zero and one.
+    exponential : int, default=0
+        Number of three-dimensional exponential-cone blocks. This field is
+        declared after ``power_3d`` to preserve existing positional calls,
+        while its rows precede power-cone rows in canonical order.
 
     Raises
     ------
@@ -98,19 +102,22 @@ class ConeLayout:
     Notes
     -----
     Rows follow CVXPY's canonical order: zero, nonnegative, each SOC in
-    sequence, and each 3D power cone in sequence. The associated dual cone is
-    unrestricted on zero-cone rows and self-dual on nonnegative and SOC rows.
-    A power cone with exponent ``alpha`` has the scaled power cone as its dual.
+    sequence, each exponential cone, and each 3D power cone in sequence. The
+    associated dual cone is unrestricted on zero-cone rows and self-dual on
+    nonnegative and SOC rows. Exponential and power cones use their respective
+    nonsymmetric duals.
     """
 
     zero: int = 0
     nonnegative: int = 0
     second_order: tuple[int, ...] = ()
     power_3d: tuple[float, ...] = ()
+    exponential: int = 0
 
     def __post_init__(self) -> None:
         zero = _dimension(self.zero, "zero")
         nonnegative = _dimension(self.nonnegative, "nonnegative")
+        exponential = _dimension(self.exponential, "exponential")
         try:
             second_order = tuple(
                 _dimension(size, f"second_order[{position}]") for position, size in enumerate(self.second_order)
@@ -129,6 +136,7 @@ class ConeLayout:
         object.__setattr__(self, "nonnegative", nonnegative)
         object.__setattr__(self, "second_order", second_order)
         object.__setattr__(self, "power_3d", power_3d)
+        object.__setattr__(self, "exponential", exponential)
 
     @classmethod
     def from_dims(cls, dims: object) -> ConeLayout:
@@ -149,7 +157,7 @@ class ConeLayout:
         ------
         ValueError
             If ``dims`` is ``None``, contains invalid dimensions, or declares
-            nonempty PSD, exponential, or N-dimensional power cones.
+            nonempty PSD or N-dimensional power cones.
         """
 
         if dims is None:
@@ -159,10 +167,10 @@ class ConeLayout:
         nonnegative = _dim_value(dims, ("nonnegative", "nonneg", "l"), 0)
         second_order = _dim_value(dims, ("second_order", "soc", "q"), ())
         power_3d = _dim_value(dims, ("power_3d", "p3d", "p3"), ())
+        exponential = _dim_value(dims, ("exponential", "exp", "ep"), 0)
 
         unsupported: list[str] = []
         for label, names in (
-            ("exponential", ("exp", "ep")),
             ("positive-semidefinite", ("psd", "s")),
             ("N-dimensional power", ("pnd",)),
         ):
@@ -178,6 +186,7 @@ class ConeLayout:
             nonnegative=nonnegative,
             second_order=tuple(second_order or ()),
             power_3d=power_3d if power_3d is not None else (),
+            exponential=exponential,
         )
 
     @property
@@ -199,10 +208,16 @@ class ConeLayout:
         return self.power_3d
 
     @property
+    def exp(self) -> int:
+        """int: CVXPY-compatible alias for ``exponential``."""
+
+        return self.exponential
+
+    @property
     def size(self) -> int:
         """int: Total number of scalar product-cone rows."""
 
-        return self.zero + self.nonnegative + sum(self.second_order) + 3 * len(self.power_3d)
+        return self.zero + self.nonnegative + sum(self.second_order) + 3 * self.exponential + 3 * len(self.power_3d)
 
     @property
     def zero_slice(self) -> slice:
@@ -243,7 +258,7 @@ class ConeLayout:
     def power_3d_slices(self) -> tuple[slice, ...]:
         """tuple of slice: Ordered three-dimensional power-cone row slices."""
 
-        start = self.zero + self.nonnegative + sum(self.second_order)
+        start = self.zero + self.nonnegative + sum(self.second_order) + 3 * self.exponential
         return tuple(slice(start + 3 * position, start + 3 * (position + 1)) for position in range(len(self.power_3d)))
 
     @property
@@ -251,6 +266,19 @@ class ConeLayout:
         """tuple of slice: Alias for ``power_3d_slices``."""
 
         return self.power_3d_slices
+
+    @property
+    def exponential_slices(self) -> tuple[slice, ...]:
+        """tuple of slice: Ordered three-dimensional exponential-cone rows."""
+
+        start = self.zero + self.nonnegative + sum(self.second_order)
+        return tuple(slice(start + 3 * position, start + 3 * (position + 1)) for position in range(self.exponential))
+
+    @property
+    def exp_slices(self) -> tuple[slice, ...]:
+        """tuple of slice: Alias for ``exponential_slices``."""
+
+        return self.exponential_slices
 
     @property
     def blocks(self) -> tuple[ConeBlock, ...]:
@@ -272,6 +300,10 @@ class ConeLayout:
             for position, block in enumerate(self.second_order_slices)
         )
         blocks.extend(
+            ConeBlock("exponential", block.start, block.stop, position)
+            for position, block in enumerate(self.exponential_slices)
+        )
+        blocks.extend(
             ConeBlock("power_3d", block.start, block.stop, position)
             for position, block in enumerate(self.power_3d_slices)
         )
@@ -289,8 +321,8 @@ class ConeLayout:
         -------
         tuple of cvxpy.Constraint
             Zero equalities, nonnegative inequalities, scalar-form SOC
-            inequalities, and exact 3D power-cone constraints in canonical
-            block order.
+            inequalities, and exact exponential- and 3D power-cone constraints
+            in canonical block order.
 
         Raises
         ------
@@ -305,6 +337,8 @@ class ConeLayout:
         if self.nonnegative:
             constraints.append(vector[self.nonnegative_slice] >= 0)
         constraints.extend(_soc_constraint(vector, block) for block in self.second_order_slices)
+        for block in self.exponential_slices:
+            constraints.extend(_exponential_constraints(vector, block, dual=False))
         for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True):
             constraints.extend(_power_3d_constraints(vector, block, alpha, dual=False))
         return tuple(constraints)
@@ -320,9 +354,9 @@ class ConeLayout:
         Returns
         -------
         tuple of cvxpy.Constraint
-            Nonnegative, SOC, and dual 3D power-cone membership constraints.
-            Zero-cone dual rows are unrestricted and therefore add no
-            constraints.
+            Nonnegative, SOC, dual exponential-cone, and dual 3D power-cone
+            membership constraints. Zero-cone dual rows are unrestricted and
+            therefore add no constraints.
 
         Raises
         ------
@@ -335,6 +369,8 @@ class ConeLayout:
         if self.nonnegative:
             constraints.append(vector[self.nonnegative_slice] >= 0)
         constraints.extend(_soc_constraint(vector, block) for block in self.second_order_slices)
+        for block in self.exponential_slices:
+            constraints.extend(_exponential_constraints(vector, block, dual=True))
         for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True):
             constraints.extend(_power_3d_constraints(vector, block, alpha, dual=True))
         return tuple(constraints)
@@ -365,6 +401,8 @@ class ConeLayout:
         squared_distance += _nonnegative_squared_distance(vector[self.nonnegative_slice])
         squared_distance += sum(_soc_squared_distance(vector[block]) for block in self.second_order_slices)
         distance = float(np.sqrt(squared_distance))
+        for block in self.exponential_slices:
+            distance = math.hypot(distance, _exponential_distance(vector[block], dual=False))
         for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True):
             distance = math.hypot(distance, _power_3d_distance(vector[block], alpha, dual=False))
         return distance
@@ -393,6 +431,8 @@ class ConeLayout:
         squared_distance = _nonnegative_squared_distance(vector[self.nonnegative_slice])
         squared_distance += sum(_soc_squared_distance(vector[block]) for block in self.second_order_slices)
         distance = float(np.sqrt(squared_distance))
+        for block in self.exponential_slices:
+            distance = math.hypot(distance, _exponential_distance(vector[block], dual=True))
         for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True):
             distance = math.hypot(distance, _power_3d_distance(vector[block], alpha, dual=True))
         return distance
@@ -466,6 +506,25 @@ def _soc_constraint(vector: cp.Expression, block: slice) -> cp.Constraint:
     # Keep this in DNLP-compliant scalar form.  CVXPY's native SOC
     # Constraint does not itself implement ``is_dnlp`` in CVXPY 1.9.
     return cp.norm(vector[block.start + 1 : block.stop], 2) <= vector[block.start]
+
+
+def _exponential_constraints(
+    vector: cp.Expression,
+    block: slice,
+    *,
+    dual: bool,
+) -> tuple[cp.Constraint, ...]:
+    """Construct exact scalar membership constraints for one EXP block."""
+
+    x = vector[block.start]
+    y = vector[block.start + 1]
+    z = vector[block.start + 2]
+    # Native ExpCone constraints do not implement is_dnlp in CVXPY 1.9.
+    # Relative entropy gives exact closed-cone descriptions that are both DCP
+    # and DNLP, including the y=0 (or, dually, x=0) closure faces.
+    if dual:
+        return x <= 0, z >= 0, cp.rel_entr(-x, z) <= y - x
+    return y >= 0, z >= 0, cp.rel_entr(y, z) <= -x
 
 
 def _power_3d_constraints(
@@ -593,6 +652,329 @@ def _soc_squared_distance(vector: NDArray[np.float64]) -> float:
         return head * head + tail_norm * tail_norm
     distance = (tail_norm - head) / np.sqrt(2.0)
     return float(distance * distance)
+
+
+def _exponential_distance(
+    vector: NDArray[np.float64],
+    *,
+    dual: bool,
+) -> float:
+    """Return Euclidean distance to one primal or dual exponential cone."""
+
+    if not np.all(np.isfinite(vector)):
+        return float("inf")
+    scale = float(np.max(np.abs(vector)))
+    if scale == 0.0:
+        return 0.0
+    normalized = vector / scale
+    if dual:
+        # Moreau: dist(v, K*) = ||projection_K(-v)||.  The usual coordinate
+        # representation K* = {(-y, -x, e*z) in K} is not an isometry.
+        projected = _project_exponential_unit(-normalized)
+        if projected is None:
+            return float("inf")
+        normalized_distance = math.hypot(float(projected[0]), float(projected[1]), float(projected[2]))
+    else:
+        projected = _project_exponential_unit(normalized)
+        if projected is None:
+            return float("inf")
+        difference = normalized - projected
+        normalized_distance = math.hypot(float(difference[0]), float(difference[1]), float(difference[2]))
+    if normalized_distance == 0.0:
+        return 0.0
+    distance = scale * normalized_distance
+    return distance if math.isfinite(distance) else float("inf")
+
+
+def _project_exponential_unit(vector: NDArray[np.float64]) -> NDArray[np.float64] | None:
+    """Project a finite, unit-scaled vector onto the exponential cone.
+
+    The nontrivial smooth-boundary case uses Friberg's monotonically
+    increasing scalar equation in ``rho = x / y``.  Its sign is evaluated
+    after logarithmic scaling, so neither ``exp(rho)`` nor ``exp(-rho)`` is
+    formed during root finding.
+    """
+
+    x_value, y_value, z_value = (float(entry) for entry in vector)
+    comparison_tolerance = 32.0 * _FLOAT_EPSILON
+
+    if _in_exponential_primal(x_value, y_value, z_value, comparison_tolerance):
+        return vector.copy()
+    if _in_exponential_polar(x_value, y_value, z_value, comparison_tolerance):
+        return np.zeros(3, dtype=np.float64)
+
+    # The closest point is on the nonsmooth perspective face throughout this
+    # region; this is also the limiting case of the smooth-boundary formula.
+    if x_value <= 0.0 and y_value <= 0.0:
+        return np.array([x_value, 0.0, max(z_value, 0.0)], dtype=np.float64)
+
+    lower, upper = _exponential_rho_domain(x_value, y_value)
+    if not lower < upper:
+        return None
+
+    def coefficients(rho: float) -> tuple[float, float]:
+        # Factored forms avoid cancellation at finite domain endpoints.
+        if x_value == 0.0:
+            a_value = y_value
+        else:
+            a_endpoint = 1.0 - y_value / x_value
+            if math.isfinite(a_endpoint):
+                if x_value > 0.0:
+                    a_value = x_value * (rho - a_endpoint)
+                else:
+                    a_value = (-x_value) * (a_endpoint - rho)
+            else:
+                a_value = math.fsum((rho * x_value, y_value, -x_value))
+
+        if y_value == 0.0:
+            b_value = x_value
+        else:
+            b_endpoint = x_value / y_value
+            if math.isfinite(b_endpoint):
+                if y_value > 0.0:
+                    b_value = y_value * (b_endpoint - rho)
+                else:
+                    b_value = (-y_value) * (rho - b_endpoint)
+            else:
+                b_value = math.fsum((x_value, -rho * y_value))
+        return a_value, b_value
+
+    def boundary_residual(rho: float) -> float:
+        a_value, b_value = coefficients(rho)
+        if not a_value > 0.0 or not b_value > 0.0:
+            return float("nan")
+        log_d = _exponential_log_quadratic(rho)
+        signed_logs = [
+            (1.0, math.log(a_value) + rho),
+            (-1.0, math.log(b_value) - rho),
+        ]
+        if z_value != 0.0:
+            signed_logs.append((-math.copysign(1.0, z_value), log_d + math.log(abs(z_value))))
+        largest_log = max(log_value for _, log_value in signed_logs)
+        return math.fsum(sign * math.exp(log_value - largest_log) for sign, log_value in signed_logs)
+
+    bracket = _exponential_root_bracket(boundary_residual, lower, upper)
+    if bracket is None:
+        return _exponential_heuristic_projection(vector)
+    left, right = bracket
+    if left == right:
+        root = left
+    else:
+        try:
+            root = brentq(
+                boundary_residual,
+                left,
+                right,
+                xtol=float(np.nextafter(0.0, 1.0)),
+                rtol=8.0 * _FLOAT_EPSILON,
+                maxiter=256,
+            )
+        except (RuntimeError, ValueError, OverflowError, ZeroDivisionError):
+            return None
+
+    a_value, b_value = coefficients(root)
+    if not a_value > 0.0 or not b_value > 0.0:
+        return None
+    log_d = _exponential_log_quadratic(root)
+    log_y = math.log(a_value) - log_d
+    projected_y = _exp_or_zero(log_y)
+    projected_z = _exp_or_zero(root + log_y)
+    projected_x = root * projected_y
+    projected = np.array([projected_x, projected_y, projected_z], dtype=np.float64)
+    if not np.all(np.isfinite(projected)):
+        return None
+
+    # Certify the KKT geometry before using an extreme-ratio root.  The
+    # difference is the polar projection in Moreau's decomposition.
+    if _certifies_exponential_projection(vector, projected):
+        return projected
+    return _exponential_heuristic_projection(vector)
+
+
+def _in_exponential_primal(x_value: float, y_value: float, z_value: float, tolerance: float) -> bool:
+    """Test membership in the closed primal EXP cone without exponentiating."""
+
+    if y_value < -tolerance or z_value < -tolerance:
+        return False
+    if y_value <= 0.0:
+        return x_value <= tolerance and z_value >= -tolerance
+    log_boundary_z = math.log(y_value) + x_value / y_value
+    available_z = z_value + tolerance
+    if available_z > 0.0 and log_boundary_z <= math.log(available_z):
+        return True
+    if z_value <= 0.0:
+        return False
+    boundary_x = y_value * (math.log(z_value) - math.log(y_value))
+    return x_value <= boundary_x + tolerance
+
+
+def _in_exponential_polar(x_value: float, y_value: float, z_value: float, tolerance: float) -> bool:
+    """Test membership in the polar of the EXP cone in logarithmic form."""
+
+    if x_value < -tolerance or z_value > tolerance:
+        return False
+    if x_value <= 0.0:
+        return y_value <= tolerance and z_value <= tolerance
+    log_boundary_minus_z = math.log(x_value) + y_value / x_value - 1.0
+    available_minus_z = -z_value + tolerance
+    if available_minus_z > 0.0 and log_boundary_minus_z <= math.log(available_minus_z):
+        return True
+    if z_value >= 0.0:
+        return False
+    boundary_y = x_value * (1.0 + math.log(-z_value) - math.log(x_value))
+    return y_value <= boundary_y + tolerance
+
+
+def _exponential_heuristic_projection(vector: NDArray[np.float64]) -> NDArray[np.float64] | None:
+    """Return a certified limiting projection when ``rho`` is unresolvable."""
+
+    x_value, y_value, z_value = (float(entry) for entry in vector)
+    candidates = [np.array([min(x_value, 0.0), 0.0, max(z_value, 0.0)], dtype=np.float64)]
+    if y_value > 0.0:
+        log_boundary_z = math.log(y_value) + x_value / y_value
+        if log_boundary_z <= math.log(np.finfo(np.float64).max):
+            boundary_z = _exp_or_zero(log_boundary_z)
+            candidates.append(np.array([x_value, y_value, max(z_value, boundary_z)], dtype=np.float64))
+
+    certified = [candidate for candidate in candidates if _certifies_exponential_projection(vector, candidate)]
+    if not certified:
+        return None
+    return min(certified, key=lambda candidate: float(np.linalg.norm(vector - candidate)))
+
+
+def _certifies_exponential_projection(
+    vector: NDArray[np.float64],
+    projected: NDArray[np.float64],
+) -> bool:
+    """Check approximate primal feasibility and Moreau optimality."""
+
+    certification_tolerance = 2e-10
+    polar = vector - projected
+    if not _in_exponential_primal(*projected, certification_tolerance):
+        return False
+    if not _in_exponential_polar(*polar, certification_tolerance):
+        return False
+    pairing = float(projected @ polar)
+    scale = max(1.0, float(np.linalg.norm(projected)) * float(np.linalg.norm(polar)))
+    return abs(pairing) <= certification_tolerance * scale
+
+
+def _exponential_rho_domain(x_value: float, y_value: float) -> tuple[float, float]:
+    """Return the open interval where Friberg's two linear factors are positive."""
+
+    lower = float("-inf")
+    upper = float("inf")
+    if x_value > 0.0:
+        lower = max(lower, 1.0 - y_value / x_value)
+    elif x_value < 0.0:
+        upper = min(upper, 1.0 - y_value / x_value)
+    elif y_value <= 0.0:
+        return 0.0, 0.0
+
+    if y_value > 0.0:
+        upper = min(upper, x_value / y_value)
+    elif y_value < 0.0:
+        lower = max(lower, x_value / y_value)
+    elif x_value <= 0.0:
+        return 0.0, 0.0
+    return lower, upper
+
+
+def _exponential_root_bracket(
+    function: Any,
+    lower: float,
+    upper: float,
+) -> tuple[float, float] | None:
+    """Bracket the increasing EXP projection equation on an open interval."""
+
+    if lower < 0.0 < upper:
+        center = 0.0
+    elif math.isfinite(lower) and lower >= 0.0:
+        width = upper - lower
+        offset = min(1.0, 0.5 * width) if math.isfinite(width) else 1.0
+        center = lower + offset
+        if center <= lower or center >= upper:
+            center = math.nextafter(lower, upper)
+    elif math.isfinite(upper) and upper <= 0.0:
+        width = upper - lower
+        offset = min(1.0, 0.5 * width) if math.isfinite(width) else 1.0
+        center = upper - offset
+        if center <= lower or center >= upper:
+            center = math.nextafter(upper, lower)
+    else:
+        center = 0.0
+
+    center_value = function(center)
+    if not math.isfinite(center_value):
+        # Move toward the middle of the open interval until both linear
+        # factors are representably positive.
+        for _ in range(64):
+            if math.isfinite(lower) and math.isfinite(upper):
+                center = math.nextafter(center, upper)
+            elif math.isfinite(lower):
+                center = center + max(1.0, abs(center)) * _FLOAT_EPSILON
+            else:
+                center = center - max(1.0, abs(center)) * _FLOAT_EPSILON
+            center_value = function(center)
+            if math.isfinite(center_value):
+                break
+        else:
+            return None
+    if center_value == 0.0:
+        return center, center
+
+    if center_value > 0.0:
+        right = center
+        left = center
+        step = max(1.0, 0.5 * abs(center))
+        for _ in range(1024):
+            candidate = left - step
+            reached_endpoint = math.isfinite(lower) and candidate <= lower
+            if reached_endpoint:
+                candidate = math.nextafter(lower, upper)
+            if not math.isfinite(candidate):
+                return None
+            value = function(candidate)
+            if math.isfinite(value) and value < 0.0:
+                return candidate, right
+            if reached_endpoint:
+                return None
+            left = candidate
+            step *= 2.0
+            if not math.isfinite(step):
+                return None
+        return None
+
+    left = center
+    right = center
+    step = max(1.0, 0.5 * abs(center))
+    for _ in range(1024):
+        candidate = right + step
+        reached_endpoint = math.isfinite(upper) and candidate >= upper
+        if reached_endpoint:
+            candidate = math.nextafter(upper, lower)
+        if not math.isfinite(candidate):
+            return None
+        value = function(candidate)
+        if math.isfinite(value) and value > 0.0:
+            return left, candidate
+        if reached_endpoint:
+            return None
+        right = candidate
+        step *= 2.0
+        if not math.isfinite(step):
+            return None
+    return None
+
+
+def _exponential_log_quadratic(rho: float) -> float:
+    """Evaluate ``log(rho**2 - rho + 1)`` without overflow."""
+
+    absolute = abs(rho)
+    if absolute < 1e150:
+        return math.log(rho * (rho - 1.0) + 1.0)
+    inverse = 1.0 / rho
+    return 2.0 * math.log(absolute) + math.log1p(-inverse + inverse * inverse)
 
 
 def _power_3d_distance(

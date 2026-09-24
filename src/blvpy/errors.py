@@ -42,8 +42,8 @@ class UnsupportedModelError(ValidationError):
 class UnsupportedConeError(UnsupportedModelError):
     """Raised when lower canonicalization produces an unsupported cone.
 
-    BLVPY supports zero, nonnegative, second-order, and 3D power cones. PSD,
-    exponential, and N-dimensional power-cone blocks trigger this exception
+    BLVPY supports zero, nonnegative, second-order, exponential, and 3D power
+    cones. PSD and N-dimensional power-cone blocks trigger this exception
     before nonlinear solving.
     """
 

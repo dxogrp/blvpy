@@ -230,8 +230,7 @@ class BilevelProblem:
             If the lower problem is not a supported DCP/DPP optimization
             problem.
         UnsupportedConeError
-            If canonicalization contains PSD, exponential, or N-dimensional
-            power cones.
+            If canonicalization contains PSD or N-dimensional power cones.
         CanonicalizationError
             If the fixed Clarabel-compatible reduction cannot be extracted.
 

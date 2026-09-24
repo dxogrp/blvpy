@@ -74,6 +74,7 @@ class ProgressReporter:
         zero: int,
         nonnegative: int,
         soc: tuple[int, ...],
+        exp: int = 0,
         power_3d: tuple[float, ...] = (),
         lower_solver: str,
         nonlinear_solver: str,
@@ -99,6 +100,8 @@ class ProgressReporter:
             )
             soc_text = "[" + ", ".join(str(dimension) for dimension in soc) + "]"
             cone_fields = [f"zero={zero}", f"nonnegative={nonnegative}", f"soc={soc_text}"]
+            if exp:
+                cone_fields.append(f"exp={exp}")
             if power_3d:
                 power_3d_text = "[" + ", ".join(_number(alpha) for alpha in power_3d) + "]"
                 cone_fields.append(f"power3d={power_3d_text}")

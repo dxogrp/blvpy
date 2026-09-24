@@ -781,6 +781,228 @@ def test_direct_power_cone_constraints_preserve_blocks_and_recovery(
         np.testing.assert_allclose(recovered[variable.id], variable.value, atol=5e-5)
 
 
+@pytest.mark.parametrize(
+    ("kind", "expected_exp", "expected_soc"),
+    [
+        ("exp", 1, ()),
+        ("log", 1, ()),
+        ("log1p", 1, ()),
+        ("entr", 1, ()),
+        ("rel_entr", 1, ()),
+        ("kl_div", 1, ()),
+        ("log_sum_exp", 3, ()),
+        ("logistic", 2, ()),
+        ("xexp", 1, (3,)),
+    ],
+)
+def test_exact_exponential_atoms_match_direct_cvxpy_at_linked_values(
+    kind: str,
+    expected_exp: int,
+    expected_soc: tuple[int, ...],
+) -> None:
+    parameter = cp.Parameter(nonneg=True, name=f"exp_parameter_{kind}", value=0.4)
+    linked = cp.Variable(nonneg=True, name=f"linked_exp_parameter_{kind}")
+    values = (0.4, 1.1)
+
+    if kind == "exp":
+        source = cp.Variable(name="exp_source")
+        objective = cp.exp(source)
+        constraints = [source >= parameter]
+        expected_sources = values
+        expected_objectives = tuple(float(np.exp(value)) for value in values)
+    elif kind == "log":
+        source = cp.Variable(nonneg=True, name="log_source")
+        objective = -cp.log(source)
+        constraints = [source <= parameter]
+        expected_sources = values
+        expected_objectives = tuple(float(-np.log(value)) for value in values)
+    elif kind == "log1p":
+        source = cp.Variable(nonneg=True, name="log1p_source")
+        objective = -cp.log1p(source)
+        constraints = [source <= parameter]
+        expected_sources = values
+        expected_objectives = tuple(float(-np.log1p(value)) for value in values)
+    elif kind == "entr":
+        source = cp.Variable(nonneg=True, name="entr_source")
+        objective = -cp.entr(source)
+        constraints = [source == parameter]
+        expected_sources = values
+        expected_objectives = tuple(float(value * np.log(value)) for value in values)
+    elif kind == "rel_entr":
+        source = cp.Variable(nonneg=True, name="rel_entr_source")
+        objective = cp.rel_entr(source, 2.0)
+        constraints = [source == parameter]
+        expected_sources = values
+        expected_objectives = tuple(float(value * np.log(value / 2.0)) for value in values)
+    elif kind == "kl_div":
+        source = cp.Variable(nonneg=True, name="kl_div_source")
+        objective = cp.kl_div(source, 2.0)
+        constraints = [source == parameter]
+        expected_sources = values
+        expected_objectives = tuple(float(value * np.log(value / 2.0) - value + 2.0) for value in values)
+    elif kind == "log_sum_exp":
+        source = cp.Variable(3, name="log_sum_exp_source")
+        base = np.array([-0.4, 0.1, 0.6])
+        objective = cp.log_sum_exp(source)
+        constraints = [source == base + parameter]
+        expected_sources = tuple(base + value for value in values)
+        expected_objectives = tuple(float(np.log(np.sum(np.exp(value)))) for value in expected_sources)
+    elif kind == "logistic":
+        source = cp.Variable(name="logistic_source")
+        objective = cp.logistic(source)
+        constraints = [source == parameter]
+        expected_sources = values
+        expected_objectives = tuple(float(np.logaddexp(0.0, value)) for value in values)
+    else:
+        source = cp.Variable(nonneg=True, name="xexp_source")
+        objective = cp.xexp(source)
+        constraints = [source == parameter]
+        expected_sources = values
+        expected_objectives = tuple(float(value * np.exp(value)) for value in values)
+
+    canonical = _assert_parameterized_atom_matches_direct(
+        cp.Problem(cp.Minimize(objective), constraints),
+        parameter,
+        linked,
+        source,
+        tuple(
+            (value, expected_source, expected_objective)
+            for value, expected_source, expected_objective in zip(
+                values,
+                expected_sources,
+                expected_objectives,
+                strict=True,
+            )
+        ),
+        atol=1e-4,
+    )
+
+    assert canonical.cone_layout.exponential == expected_exp
+    assert canonical.cone_layout.exp == expected_exp
+    assert canonical.cone_layout.second_order == expected_soc
+    assert canonical.cone_layout.p3d == ()
+
+
+def test_elementwise_exponential_atoms_broadcast_linked_scalar_over_matrix() -> None:
+    parameter = cp.Parameter(name="broadcast_shift", value=-0.2)
+    linked = cp.Variable(name="linked_broadcast_shift")
+    source = cp.Variable((2, 3), name="broadcast_source")
+    base = np.array([[-0.4, 0.1, 0.6], [0.8, -0.2, 0.3]])
+    target = base + parameter
+    problem = cp.Problem(
+        cp.Minimize(cp.sum(cp.exp(source) + cp.logistic(source))),
+        [source == target],
+    )
+    cases = []
+    for value in (-0.2, 0.35):
+        expected = base + value
+        objective = float(np.sum(np.exp(expected) + np.logaddexp(0.0, expected)))
+        cases.append((value, expected, objective))
+
+    canonical = _assert_parameterized_atom_matches_direct(
+        problem,
+        parameter,
+        linked,
+        source,
+        tuple(cases),
+        atol=1e-4,
+    )
+
+    assert canonical.cone_layout.exponential == 18
+    assert canonical.cone_layout.second_order == ()
+    assert canonical.cone_layout.p3d == ()
+
+
+@pytest.mark.parametrize(
+    ("axis", "keepdims", "expected_shape"),
+    [
+        (None, False, ()),
+        (None, True, (1, 1)),
+        (0, False, (3,)),
+        (0, True, (1, 3)),
+        (1, False, (2,)),
+        (1, True, (2, 1)),
+    ],
+)
+def test_log_sum_exp_axes_keepdims_and_recovery(
+    axis: int | None,
+    keepdims: bool,
+    expected_shape: tuple[int, ...],
+) -> None:
+    parameter = cp.Parameter(name=f"lse_shift_{axis}_{keepdims}", value=-0.25)
+    linked = cp.Variable(name=f"linked_lse_shift_{axis}_{keepdims}")
+    source = cp.Variable((2, 3), name=f"lse_source_{axis}_{keepdims}")
+    base = np.array([[-0.6, 0.2, 0.7], [0.9, -0.3, 0.4]])
+    slope = np.array([[0.5, -0.25, 0.75], [1.0, 0.25, -0.5]])
+    target = base + parameter * slope
+    atom = cp.log_sum_exp(source, axis=axis, keepdims=keepdims)
+    problem = cp.Problem(cp.Minimize(cp.sum(atom)), [source == target])
+    cases = []
+    for value in (-0.25, 0.5):
+        expected = base + value * slope
+        reduced = np.log(np.sum(np.exp(expected), axis=axis, keepdims=keepdims))
+        cases.append((value, expected, float(np.sum(reduced))))
+
+    assert atom.shape == expected_shape
+    canonical = _assert_parameterized_atom_matches_direct(
+        problem,
+        parameter,
+        linked,
+        source,
+        tuple(cases),
+        atol=1e-4,
+    )
+
+    assert canonical.cone_layout.exponential == source.size
+    assert canonical.cone_layout.second_order == ()
+    assert canonical.cone_layout.p3d == ()
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        0.2,
+        np.array([-0.3, 0.1, 0.6]),
+        np.array([[-0.4, 0.2], [0.5, -0.1]]),
+    ],
+    ids=["scalar", "vector", "matrix"],
+)
+def test_direct_exponential_cones_preserve_interleaved_blocks_and_recovery(
+    target: float | np.ndarray,
+) -> None:
+    shape = np.shape(target)
+    x = cp.Variable(shape=shape, name="direct_exp_x")
+    y = cp.Variable(shape=shape, name="direct_exp_y")
+    z = cp.Variable(shape=shape, name="direct_exp_z")
+    problem = cp.Problem(
+        cp.Minimize(cp.sum(z)),
+        [cp.ExpCone(x, y, z), x == target, y == 1.0],
+    )
+
+    canonical = _canonicalize_lower(problem, {})
+    flattened_target = np.asarray(target, dtype=float).reshape(-1, order="F")
+    expected_z = np.exp(flattened_target)
+    assert canonical.cone_layout.exponential == flattened_target.size
+    assert len(canonical.cone_layout.exponential_slices) == flattened_target.size
+
+    data, primal, canonical_objective = _solve_canonical(canonical, {})
+    slack = np.asarray(data.b - data.A @ primal, dtype=float)
+    for index, cone_slice in enumerate(canonical.cone_layout.exponential_slices):
+        np.testing.assert_allclose(
+            slack[cone_slice],
+            [flattened_target[index], 1.0, expected_z[index]],
+            atol=1e-4,
+        )
+
+    recovered = canonical.recover_numeric(primal)
+    direct_objective = problem.solve(solver=cp.CLARABEL)
+    assert problem.status in cp.settings.SOLUTION_PRESENT
+    assert canonical_objective == pytest.approx(float(np.sum(expected_z)), abs=1e-5)
+    assert canonical_objective == pytest.approx(direct_objective, abs=1e-5)
+    for variable in (x, y, z):
+        np.testing.assert_allclose(recovered[variable.id], variable.value, atol=1e-4)
+
+
 @pytest.mark.parametrize("axis", [0, 1])
 def test_cummax_axes_match_direct_cvxpy_data_and_recovery(axis: int) -> None:
     parameter = cp.Parameter(name=f"shift_axis_{axis}", value=-0.25)
@@ -838,7 +1060,6 @@ def test_dotsort_matches_direct_cvxpy_data_and_recovery() -> None:
     "problem",
     [
         cp.Problem(cp.Minimize(cp.trace(cp.Variable((2, 2), PSD=True)))),
-        cp.Problem(cp.Minimize(cp.exp(cp.Variable()))),
         cp.Problem(
             cp.Minimize(-cp.geo_mean(cp.Variable(3, nonneg=True), approx=False)),
         ),
@@ -846,6 +1067,33 @@ def test_dotsort_matches_direct_cvxpy_data_and_recovery() -> None:
 )
 def test_unsupported_cones_are_rejected(problem: cp.Problem) -> None:
     with pytest.raises(UnsupportedConeError):
+        _canonicalize_lower(problem, {})
+
+
+def test_psd_dependent_log_det_remains_rejected() -> None:
+    matrix = cp.Variable((2, 2), PSD=True)
+    problem = cp.Problem(cp.Maximize(cp.log_det(matrix)), [cp.trace(matrix) <= 2.0])
+
+    with pytest.raises(UnsupportedConeError, match="positive-semidefinite"):
+        _canonicalize_lower(problem, {})
+
+
+@pytest.mark.parametrize("kind", ["perspective", "support_function"])
+def test_atoms_with_hidden_conic_subgraphs_remain_rejected(kind: str) -> None:
+    source = cp.Variable(2, name=f"hidden_source_{kind}")
+    if kind == "perspective":
+        scale = cp.Variable(nonneg=True, name="perspective_scale")
+        atom = cp.perspective(cp.sum_squares(source), scale)
+        constraints = [scale == 1.0]
+        expected = "perspective"
+    else:
+        hidden = cp.Variable(2, name="support_set_variable")
+        atom = cp.suppfunc(hidden, [cp.norm(hidden) <= 1.0])(source)
+        constraints = [source == 1.0]
+        expected = "SuppFuncAtom"
+    problem = cp.Problem(cp.Minimize(atom), constraints)
+
+    with pytest.raises(UnsupportedModelError, match=expected):
         _canonicalize_lower(problem, {})
 
 
@@ -957,14 +1205,26 @@ def test_dpp_is_checked_only_with_respect_to_mapped_parameters() -> None:
     assert fixed.id in canonical.fixed_parameter_values
 
 
-def test_quadrature_approximation_is_rejected_before_cone_solving() -> None:
-    x = cp.Variable(nonneg=True)
-    y = cp.Variable(nonneg=True)
-    z = cp.Variable()
-    problem = cp.Problem(
-        cp.Minimize(z),
-        [cp.RelEntrConeQuad(x, y, z, m=3, k=2)],
-    )
+@pytest.mark.parametrize("kind", ["rel_entr", "exp_as_quad", "op_rel_entr"])
+def test_quadrature_approximation_is_rejected_before_cone_solving(kind: str) -> None:
+    if kind == "op_rel_entr":
+        x = cp.Variable((2, 2), symmetric=True)
+        y = cp.Variable((2, 2), symmetric=True)
+        z = cp.Variable((2, 2), symmetric=True)
+        constraint = cp.OpRelEntrConeQuad(x, y, z, m=3, k=2)
+        problem = cp.Problem(cp.Minimize(cp.trace(z)), [constraint])
+    else:
+        x = cp.Variable(nonneg=True)
+        y = cp.Variable(nonneg=True)
+        z = cp.Variable()
+        if kind == "rel_entr":
+            constraint = cp.RelEntrConeQuad(x, y, z, m=3, k=2)
+        else:
+            constraint = cp.ExpCone(-z, x, y).as_quad_approx(m=3, k=2)
+        problem = cp.Problem(cp.Minimize(z), [constraint])
 
-    with pytest.raises(ApproximateCanonicalizationError, match="quadrature"):
+    with pytest.raises(
+        ApproximateCanonicalizationError,
+        match=rf"{type(constraint).__name__}.*quadrature",
+    ):
         _canonicalize_lower(problem, {})

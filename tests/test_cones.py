@@ -48,6 +48,25 @@ def test_layout_appends_power_cones_and_exposes_cvxpy_aliases() -> None:
     ]
 
 
+def test_layout_places_exponential_cones_before_power_cones() -> None:
+    layout = ConeLayout(2, 3, (3, 4), (0.2, 0.75), 2)
+
+    assert layout.size == 24
+    assert layout.exp == layout.exponential == 2
+    assert layout.exponential_slices == layout.exp_slices == (slice(12, 15), slice(15, 18))
+    assert layout.power_3d_slices == (slice(18, 21), slice(21, 24))
+    assert [(block.kind, block.index, block.slice) for block in layout.blocks] == [
+        ("zero", 0, slice(0, 2)),
+        ("nonnegative", 0, slice(2, 5)),
+        ("second_order", 0, slice(5, 8)),
+        ("second_order", 1, slice(8, 12)),
+        ("exponential", 0, slice(12, 15)),
+        ("exponential", 1, slice(15, 18)),
+        ("power_3d", 0, slice(18, 21)),
+        ("power_3d", 1, slice(21, 24)),
+    ]
+
+
 def test_layout_reads_cvxpy_dimensions_and_rejects_unsupported_cones() -> None:
     dims = SimpleNamespace(zero=1, nonneg=2, soc=[3], exp=0, psd=[], p3d=[0.25, 0.8], pnd=[])
     assert ConeLayout.from_dims(dims) == ConeLayout(1, 2, (3,), (0.25, 0.8))
@@ -57,12 +76,19 @@ def test_layout_reads_cvxpy_dimensions_and_rejects_unsupported_cones() -> None:
         assert ConeLayout.from_dims(mapping_dims) == ConeLayout(1, 2, (3,), (0.4,))
 
     dims.exp = 1
-    with pytest.raises(ValueError, match="exponential"):
-        ConeLayout.from_dims(dims)
+    assert ConeLayout.from_dims(dims) == ConeLayout(1, 2, (3,), (0.25, 0.8), 1)
 
-    dims.exp = 0
+    for alias in ("exponential", "exp", "ep"):
+        mapping_dims = {"f": 1, "l": 2, "q": [3], alias: 2}
+        assert ConeLayout.from_dims(mapping_dims) == ConeLayout(1, 2, (3,), (), 2)
+
     dims.pnd = [[0.25, 0.75]]
     with pytest.raises(ValueError, match="N-dimensional power"):
+        ConeLayout.from_dims(dims)
+
+    dims.pnd = []
+    dims.psd = [2]
+    with pytest.raises(ValueError, match="positive-semidefinite"):
         ConeLayout.from_dims(dims)
 
 
@@ -107,6 +133,52 @@ def test_power_cone_constraints_are_exact_dcp_and_dnlp_memberships() -> None:
     dual.value = np.array([alpha, 1.0 - alpha, 1.1])
     assert np.max(primal_constraints[-1].violation()) > 0.0
     assert np.max(dual_constraints[-1].violation()) > 0.0
+
+
+def test_exponential_cone_constraints_are_exact_dcp_and_dnlp_memberships() -> None:
+    layout = ConeLayout(exponential=1)
+    primal = cp.Variable(3)
+    dual = cp.Variable(3)
+    primal_constraints = layout.primal_constraints(primal)
+    dual_constraints = layout.dual_constraints(dual)
+    problem = cp.Problem(cp.Minimize(cp.sum(primal) + cp.sum(dual)), [*primal_constraints, *dual_constraints])
+
+    assert len(primal_constraints) == len(dual_constraints) == 3
+    assert problem.is_dcp()
+    assert problem.is_dnlp()
+    assert all(constraint.is_dnlp() for constraint in (*primal_constraints, *dual_constraints))
+
+    primal.value = np.array([0.0, 1.0, 1.0])
+    dual.value = np.array([-1.0, -1.0, 1.0])
+    assert all(np.max(constraint.violation()) <= 1e-12 for constraint in primal_constraints)
+    assert all(np.max(constraint.violation()) <= 1e-12 for constraint in dual_constraints)
+    assert float(primal.value @ dual.value) == pytest.approx(0.0, abs=1e-15)
+
+    primal.value = np.array([1.0, 1.0, 1.0])
+    dual.value = np.array([-1.0, -2.0, 1.0])
+    assert np.max(primal_constraints[-1].violation()) > 0.0
+    assert np.max(dual_constraints[-1].violation()) > 0.0
+
+
+@pytest.mark.parametrize(
+    ("primal", "dual"),
+    [
+        (np.array([-1.0, 0.0, 2.0]), np.array([0.0, 1.0, 2.0])),
+        (np.array([0.0, 1.0, 2.0]), np.array([-1.0, 0.0, 1.0])),
+    ],
+)
+def test_exponential_cone_constraints_include_closure_and_interior(
+    primal: np.ndarray,
+    dual: np.ndarray,
+) -> None:
+    layout = ConeLayout(exponential=1)
+    primal_variable = cp.Variable(3)
+    dual_variable = cp.Variable(3)
+    primal_variable.value = primal
+    dual_variable.value = dual
+
+    assert all(np.max(constraint.violation()) <= 1e-12 for constraint in layout.primal_constraints(primal_variable))
+    assert all(np.max(constraint.violation()) <= 1e-12 for constraint in layout.dual_constraints(dual_variable))
 
 
 def test_multiple_soc_blocks_accept_boundary_points_in_canonical_order() -> None:
@@ -164,6 +236,58 @@ def test_power_cone_distance_covers_membership_polar_and_zero_tail_regions() -> 
     assert layout.dual_distance(dual_inside) == pytest.approx(0.0, abs=1e-15)
     assert layout.primal_distance(polar) == pytest.approx(np.linalg.norm(polar), rel=1e-14)
     assert layout.primal_distance(zero_tail) == pytest.approx(2.0, rel=1e-14)
+
+
+def test_exponential_cone_distance_covers_projection_regions() -> None:
+    layout = ConeLayout(exponential=1)
+    inside = np.array([0.0, 1.0, 1.0])
+    dual_inside = np.array([-1.0, -1.0, 1.0])
+    polar = np.array([1.0, -1.0, -1.0])
+    face_region = np.array([-2.0, -3.0, 4.0])
+
+    assert layout.primal_distance(inside) == pytest.approx(0.0, abs=1e-15)
+    assert layout.dual_distance(dual_inside) == pytest.approx(0.0, abs=1e-15)
+    assert layout.primal_distance(polar) == pytest.approx(np.linalg.norm(polar), rel=1e-14)
+    assert layout.primal_distance(face_region) == pytest.approx(3.0, rel=1e-14)
+
+
+def test_exponential_cone_projection_has_analytic_smooth_boundary_solution() -> None:
+    layout = ConeLayout(exponential=1)
+    point = np.array([math.e + 1.0, 1.0, math.e - 1.0])
+
+    assert layout.primal_distance(point) == pytest.approx(math.sqrt(math.e**2 + 1.0), rel=2e-14)
+    # The dual projection of (1, 1, -2) is (0, 1, 0).
+    assert layout.dual_distance(np.array([1.0, 1.0, -2.0])) == pytest.approx(math.sqrt(5.0), rel=2e-14)
+
+
+@pytest.mark.parametrize("scale", [1e-200, 1e-100, 1e100, 1e200])
+def test_exponential_cone_distance_is_scale_normalized(scale: float) -> None:
+    layout = ConeLayout(exponential=1)
+    point = np.array([0.3, -0.5, 0.7])
+    primal_reference = layout.primal_distance(point)
+    dual_reference = layout.dual_distance(point)
+
+    assert layout.primal_distance(scale * point) / scale == pytest.approx(primal_reference, rel=3e-14)
+    assert layout.dual_distance(scale * point) / scale == pytest.approx(dual_reference, rel=3e-14)
+
+
+@pytest.mark.parametrize(
+    "point",
+    [
+        np.array([1e-300, -1.0, 1.0]),
+        np.array([-1.0, 1e-300, -1.0]),
+        np.array([1.0, -1e-300, 1.0]),
+        np.array([0.05, -1.0, 0.9]),
+        np.array([6.41904613e-6, -1.03027122e-7, 1.0]),
+        np.array([2.76619574e-140, 1.0, -1.67004426e-121]),
+        np.array([1.0, 1.68256427e-185, 8.83517680e-244]),
+    ],
+)
+def test_exponential_cone_projection_handles_extreme_ratios(point: np.ndarray) -> None:
+    layout = ConeLayout(exponential=1)
+
+    assert np.isfinite(layout.primal_distance(point))
+    assert np.isfinite(layout.dual_distance(point))
 
 
 @pytest.mark.parametrize("scale", [1e-250, 1e-120, 1e120, 1e250])
@@ -238,6 +362,9 @@ def test_empty_cone_layout_has_no_constraints_or_distance() -> None:
     [
         ({"zero": -1}, "zero must be a nonnegative integer"),
         ({"nonnegative": 1.5}, "nonnegative must be a nonnegative integer"),
+        ({"exponential": True}, "exponential must be a nonnegative integer"),
+        ({"exponential": -1}, "exponential must be a nonnegative integer"),
+        ({"exponential": 1.5}, "exponential must be a nonnegative integer"),
         ({"second_order": (1,)}, "dimension at least 2"),
         ({"second_order": 3}, "second_order must be a sequence"),
     ],
@@ -327,6 +454,17 @@ def test_nonfinite_constrained_blocks_have_infinite_distance(nonfinite: float) -
     assert np.isinf(soc_distance([2.0, nonfinite]))
 
 
+@pytest.mark.parametrize("nonfinite", [np.nan, np.inf, -np.inf])
+def test_nonfinite_exponential_blocks_have_infinite_distance(nonfinite: float) -> None:
+    layout = ConeLayout(exponential=1)
+
+    for position in range(3):
+        point = np.zeros(3)
+        point[position] = nonfinite
+        assert np.isinf(layout.primal_distance(point))
+        assert np.isinf(layout.dual_distance(point))
+
+
 def _independent_product_cone_distance(point: np.ndarray, *, dual: bool) -> float:
     projected = cp.Variable(12)
     constraints: list[cp.Constraint] = [
@@ -368,6 +506,25 @@ def _independent_power_cone_distance(point: np.ndarray, alpha: float, *, dual: b
     return float(np.sqrt(max(float(problem.value), 0.0)))
 
 
+def _independent_exponential_cone_distance(point: np.ndarray, *, dual: bool) -> float:
+    projected = cp.Variable(3)
+    if dual:
+        constraint = cp.ExpCone(-projected[1], -projected[0], math.e * projected[2])
+    else:
+        constraint = cp.ExpCone(projected[0], projected[1], projected[2])
+    problem = cp.Problem(cp.Minimize(cp.sum_squares(projected - point)), [constraint])
+
+    problem.solve(
+        solver=cp.CLARABEL,
+        tol_gap_abs=1e-10,
+        tol_gap_rel=1e-10,
+        tol_feas=1e-10,
+    )
+
+    assert problem.status in cp.settings.SOLUTION_PRESENT
+    return float(np.sqrt(max(float(problem.value), 0.0)))
+
+
 def test_product_cone_distances_match_independent_cvxpy_projections() -> None:
     layout = ConeLayout(zero=2, nonnegative=3, second_order=(3, 4))
     points = np.random.default_rng(90210).normal(size=(6, layout.size))
@@ -380,6 +537,30 @@ def test_product_cone_distances_match_independent_cvxpy_projections() -> None:
         assert layout.dual_distance(point) == pytest.approx(
             _independent_product_cone_distance(point, dual=True),
             abs=2e-6,
+        )
+
+
+def test_exponential_cone_distances_match_independent_clarabel_projections() -> None:
+    layout = ConeLayout(exponential=1)
+    random_points = np.random.default_rng(271828).normal(size=(40, 3))
+    extreme_points = np.array(
+        [
+            [1e-12, -1.0, 0.75],
+            [-1.0, 1e-12, -0.5],
+            [0.05, -1.0, 0.9],
+            [6.41904613e-6, -1.03027122e-7, 1.0],
+            [1.0, 0.0, -1.0],
+        ]
+    )
+
+    for point in np.vstack([random_points, extreme_points]):
+        assert layout.primal_distance(point) == pytest.approx(
+            _independent_exponential_cone_distance(point, dual=False),
+            abs=3e-6,
+        )
+        assert layout.dual_distance(point) == pytest.approx(
+            _independent_exponential_cone_distance(point, dual=True),
+            abs=3e-6,
         )
 
 
@@ -411,6 +592,31 @@ def test_power_cone_dual_distance_uses_moreau_decomposition() -> None:
                 rel=2e-12,
                 abs=2e-12,
             )
+
+
+def test_exponential_cone_dual_distance_uses_moreau_decomposition() -> None:
+    layout = ConeLayout(exponential=1)
+    points = np.vstack(
+        [
+            np.random.default_rng(161803).normal(size=(20, 3)),
+            np.array(
+                [
+                    [1e-12, -1.0, 0.75],
+                    [-1.0, 1e-12, -0.5],
+                    [0.05, -1.0, 0.9],
+                ]
+            ),
+        ]
+    )
+
+    for point in points:
+        primal_distance = layout.primal_distance(point)
+        dual_distance_of_negative = layout.dual_distance(-point)
+        assert math.hypot(primal_distance, dual_distance_of_negative) == pytest.approx(
+            np.linalg.norm(point),
+            rel=2e-10,
+            abs=2e-10,
+        )
 
 
 @pytest.mark.parametrize("alpha", [1e-8, 1.0 - 1e-8])

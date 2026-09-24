@@ -133,6 +133,7 @@ def _solve_bilevel(
         zero=layout.zero,
         nonnegative=layout.nonnegative,
         soc=layout.second_order,
+        exp=layout.exponential,
         power_3d=layout.power_3d,
         lower_solver=str(settings.conic_solver),
         nonlinear_solver=str(settings.solver),
@@ -886,7 +887,10 @@ def _restore_feasibility(
 ) -> None:
     lifted = model._lifted_problem
     radius = cp.Variable(nonneg=True, name="blvpy_restoration_radius")
-    radius.value = max(1.0, _constraint_violation(lifted.problem.constraints))
+    initial_violation = _constraint_violation(lifted.problem.constraints)
+    if not np.isfinite(initial_violation):
+        initial_violation = _finite_constraint_violation(lifted.problem.constraints)
+    radius.value = max(1.0, initial_violation)
     constraints: list[cp.Constraint] = []
     for constraint in lifted.upper_constraints:
         constraints.extend(_relax_constraint(constraint, radius))
@@ -927,6 +931,19 @@ def _relaxed_cone_constraints(
             [
                 cp.norm(slack[block.start + 1 : block.stop], 2) <= slack[block.start] + radius,
                 cp.norm(dual[block.start + 1 : block.stop], 2) <= dual[block.start] + radius,
+            ]
+        )
+    for block in layout.exponential_slices:
+        primal_x, primal_y, primal_z = slack[block.start : block.stop]
+        dual_u, dual_v, dual_w = dual[block.start : block.stop]
+        constraints.extend(
+            [
+                primal_y + radius >= 0,
+                primal_z + radius >= 0,
+                cp.rel_entr(primal_y + radius, primal_z + radius) <= -primal_x + radius,
+                -dual_u + radius >= 0,
+                dual_w + radius >= 0,
+                cp.rel_entr(-dual_u + radius, dual_w + radius) <= dual_v - dual_u + 2.0 * radius,
             ]
         )
     for block, alpha in zip(layout.power_3d_slices, layout.power_3d, strict=True):
@@ -1195,6 +1212,20 @@ def _constraint_violation(constraints) -> float:
         except Exception:
             return float("inf")
         violation = max(violation, _norm(value))
+    return violation
+
+
+def _finite_constraint_violation(constraints) -> float:
+    """Return the largest finite violation when another constraint is outside its domain."""
+
+    violation = 0.0
+    for constraint in constraints:
+        try:
+            value = _norm(np.asarray(constraint.violation(), dtype=float))
+        except Exception:
+            continue
+        if np.isfinite(value):
+            violation = max(violation, value)
     return violation
 
 

@@ -32,6 +32,7 @@ def _problem(
     *,
     best_of: int | None = 3,
     requested_runs: int = 3,
+    exponential: int = 0,
     power_3d: tuple[float, ...] = (),
 ) -> None:
     reporter.problem(
@@ -42,6 +43,7 @@ def _problem(
         zero=1,
         nonnegative=2,
         soc=(2, 3),
+        exp=exponential,
         power_3d=power_3d,
         lower_solver="CLARABEL",
         nonlinear_solver="IPOPT",
@@ -96,6 +98,7 @@ def test_problem_transcript_uses_stderr_and_stable_plain_sections(capfd) -> None
     assert "canonical_variables=4" in dimensions
     assert "canonical_constraints=8" in dimensions
     assert "Cones: zero=1 | nonnegative=2 | soc=[2, 3]" in captured.err
+    assert "exp=" not in captured.err
     assert "power3d=" not in captured.err
     assert "Search: mode=random | best_of=3" in captured.err
     assert "Epsilon: initial=1.000e-01 | target=1.000e-06 | contraction=1.000e-01" in captured.err
@@ -122,6 +125,18 @@ def test_problem_transcript_reports_power_cones_only_when_present(capfd) -> None
     transcript = capfd.readouterr().err
     cones = _event_block(transcript, "Cones:")
     assert "power3d=[2.500e-01, 7.071e-01]" in cones
+    assert all(len(line) <= 79 for line in transcript.splitlines())
+
+
+def test_problem_transcript_reports_exponential_cones_before_power_cones(capfd) -> None:
+    reporter = ProgressReporter(enabled=True)
+
+    _problem(reporter, exponential=3, power_3d=(0.25,))
+
+    transcript = capfd.readouterr().err
+    cones = _event_block(transcript, "Cones:")
+    assert "exp=3" in cones
+    assert cones.index("exp=3") < cones.index("power3d=[2.500e-01]")
     assert all(len(line) <= 79 for line in transcript.splitlines())
 
 

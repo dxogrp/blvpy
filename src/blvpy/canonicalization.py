@@ -21,11 +21,20 @@ from cvxpy.atoms.atom import Atom
 from cvxpy.atoms.cummax import cummax
 from cvxpy.atoms.dotsort import dotsort
 from cvxpy.atoms.elementwise.abs import abs as abs_atom
+from cvxpy.atoms.elementwise.entr import entr
+from cvxpy.atoms.elementwise.exp import exp
 from cvxpy.atoms.elementwise.huber import huber
+from cvxpy.atoms.elementwise.kl_div import kl_div
+from cvxpy.atoms.elementwise.log import log
+from cvxpy.atoms.elementwise.log1p import log1p
+from cvxpy.atoms.elementwise.logistic import logistic
 from cvxpy.atoms.elementwise.maximum import maximum
 from cvxpy.atoms.elementwise.minimum import minimum
 from cvxpy.atoms.elementwise.power import Power, PowerApprox
+from cvxpy.atoms.elementwise.rel_entr import rel_entr
+from cvxpy.atoms.elementwise.xexp import xexp
 from cvxpy.atoms.geo_mean import GeoMeanApprox
+from cvxpy.atoms.log_sum_exp import log_sum_exp
 from cvxpy.atoms.max import max as max_atom
 from cvxpy.atoms.min import min as min_atom
 from cvxpy.atoms.norm1 import norm1
@@ -60,8 +69,15 @@ _AUDITED_NONLINEAR_ATOMS = frozenset(
         abs_atom,
         cummax,
         dotsort,
+        entr,
+        exp,
         GeoMeanApprox,
         huber,
+        kl_div,
+        log,
+        log1p,
+        logistic,
+        log_sum_exp,
         max_atom,
         maximum,
         min_atom,
@@ -74,7 +90,9 @@ _AUDITED_NONLINEAR_ATOMS = frozenset(
         PowerApprox,
         QuadForm,
         quad_over_lin,
+        rel_entr,
         sum_largest,
+        xexp,
     }
 )
 _AUDITED_REDUCTION_CHAIN = (
@@ -445,7 +463,8 @@ class CanonicalLowerProblem:
         Read-only mapping from each CVXPY canonical variable ID to its
         starting canonical column.
     cone_layout : ConeLayout
-        Ordered zero, nonnegative, second-order, and 3D power-cone blocks.
+        Ordered zero, nonnegative, second-order, exponential, and 3D
+        power-cone blocks.
     canonical_size : int
         Length of the canonical primal vector ``u``.
     constraint_size : int
