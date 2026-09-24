@@ -48,6 +48,12 @@ with the gallery.
   designs material rebates for a constrained producer, rejects a coarse
   polished response, tightens continuation, and explicitly adopts the
   candidate that passes a quantitative deployment gate.
+- [Clean-equipment rebates](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/clean_equipment_rebate.py)
+  uses a three-dimensional power cone to design a rebate while anticipating
+  a producer's clean and fossil input choices under Cobb--Douglas production.
+- [Carbon-tax abatement](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/carbon_tax_abatement.py)
+  sets a carbon tax while anticipating sector-level abatement with
+  exponential costs represented by exponential cones.
 
 Browse all [repository examples](https://github.com/dxogrp/blvpy/tree/main/examples).
 
