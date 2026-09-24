@@ -26,7 +26,9 @@ separate layers. The exception identifies which layer failed.
 - {class}`blvpy.ApproximateCanonicalizationError` means an atom has nonzero or
   nonfinite approximation error, or a constraint uses a quadrature
   approximation. Accepted rational representations must report finite
-  `approx_error` equal to zero.
+  `approx_error` equal to zero. `PowCone3DApprox` is rejected because it uses
+  an SOC approximation; use the native `cp.PowCone3D` constraint when the
+  model requires an exact three-dimensional power cone.
 
 ### Canonical-form checks
 

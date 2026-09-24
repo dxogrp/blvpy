@@ -6,6 +6,11 @@
   atoms and direct `cp.PowCone3D` constraints.
 - Added exponential-cone support for exact exponential-family atoms and
   scalar, vector, and matrix `cp.ExpCone` constraints.
+- Extended {class}`blvpy.ConeLayout` inspection with the `exponential` and
+  `exp` counts plus the `exponential_slices` and `exp_slices` row selectors.
+- Added advanced clean-equipment rebate and carbon-tax abatement examples,
+  demonstrating 3D power-cone and exponential-cone lower models,
+  respectively.
 
 ## 0.4
 
