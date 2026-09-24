@@ -45,11 +45,13 @@ The complete model must satisfy **all** of the following:
   constant-only lower problems are not supported.
 - The lower problem is DCP and DPP with respect to every linked upper variable.
 - Every unlinked CVXPY parameter already has a finite value.
-- CVXPY produces only zero, nonnegative, and second-order cone blocks when
-  canonicalization is requested with a linear conic objective.
+- CVXPY produces only zero, nonnegative, second-order, and 3D power-cone
+  blocks when canonicalization is requested with a linear conic objective.
 
 This includes linear programs, quadratic programs that CVXPY converts exactly
-to the accepted conic form, and second-order cone programs.
+to the accepted conic form, second-order cone programs, and models whose exact
+`cp.power(..., approx=False)` or `cp.pnorm(..., approx=False)` graphs use 3D
+power cones.
 
 Call {meth}`blvpy.BilevelProblem.validate` to obtain a specific exception for an unsupported model.
 See {doc}`troubleshooting` for the exception categories.

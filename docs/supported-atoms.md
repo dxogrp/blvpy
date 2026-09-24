@@ -57,9 +57,16 @@ its own row.
   - $\begin{cases}(\sum_i |x_i|^p)^{1/p},&p>1,\\
     (\sum_i x_i^p)^{1/p},&p<1,\ x\geq0\end{cases}$
   - SOC
+* - `cp.pnorm(x, p, approx=False)`
+  - $\begin{cases}(\sum_i |x_i|^p)^{1/p},&p>1,\\
+    (\sum_i x_i^p)^{1/p},&p<1,\ x\geq0\end{cases}$
+  - LP / SOC / P3D
 * - `cp.power(x, p, approx=True)`
   - $x^p$ elementwise
   - SOC
+* - `cp.power(x, p, approx=False)`
+  - $x^p$ elementwise
+  - Affine / SOC / P3D
 * - `cp.quad_form(x, P)`
   - $x^TPx$
   - SOC
@@ -85,6 +92,10 @@ representations. BLVPY accepts them only when CVXPY reports a finite
 `approx_error` exactly equal to zero. A tiny nonzero value is still an
 approximation and is rejected without a numerical tolerance.
 
-Note that using `approx=False` selects CVXPY's exact power-cone representation instead.
-However, power cones are outside BLVPY's current cone policy, so those forms remain
-unsupported even though they do not use rational approximation.
+Using `approx=False` for `cp.power` or `cp.pnorm` selects CVXPY's exact
+representation, which uses 3D power cones for the general case and simpler
+cones for special exponents. BLVPY supports those forms. Direct scalar and
+vectorized `cp.PowCone3D` constraints are also supported. Exact `cp.geo_mean`
+and direct `cp.PowConeND` constraints produce generalized power cones and
+remain unsupported. Convenience wrappers that do not expose an `approx`
+argument keep their normal CVXPY representation.

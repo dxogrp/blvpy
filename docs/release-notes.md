@@ -1,5 +1,10 @@
 # Release notes
 
+## 0.5
+
+- Added exact 3D power-cone support, including exact `cp.power` and `cp.pnorm`
+  atoms and direct `cp.PowCone3D` constraints.
+
 ## 0.4
 
 - Added {meth}`blvpy.BilevelProblem.polish`, a non-mutating fixed-upper lower
