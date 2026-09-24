@@ -12,7 +12,7 @@ import cvxpy as cp
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._power_cone import _power_3d_dual_scale
+from ._cones.power import _power_3d_dual_scale
 from .backends import solve_conic, solve_dnlp
 from .errors import InitializationError, SolveError, SolverUnavailableError
 from .fixed_lower import FixedLowerSolveError, solve_fixed_lower

@@ -10,7 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import brentq
 
-from ._cone_numeric import (
+from .numeric import (
     _FLOAT_EPSILON,
     _LOG_SMALLEST_SUBNORMAL,
     _SMALLEST_SUBNORMAL,

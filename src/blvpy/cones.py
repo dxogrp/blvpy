@@ -18,8 +18,8 @@ import cvxpy as cp
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._exponential_cone import _exponential_distance
-from ._power_cone import _power_3d_distance, _power_3d_dual_scale
+from ._cones.exponential import _exponential_distance
+from ._cones.power import _power_3d_distance, _power_3d_dual_scale
 
 ConeKind = Literal["zero", "nonnegative", "second_order", "exponential", "power_3d"]
 
