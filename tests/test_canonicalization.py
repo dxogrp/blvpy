@@ -15,6 +15,8 @@ from cvxpy.constraints.power import PowCone3DApprox
 from blvpy.canonicalization import (
     CanonicalData,
     CanonicalLowerProblem,
+    ParameterSpec,
+    RecoverySpec,
     _canonicalize_lower,
     _symbolic_matrix_combination,
     _symbolic_vector_combination,
@@ -160,6 +162,19 @@ def test_symbolic_affine_helpers_preserve_empty_output_shapes() -> None:
     assert np.asarray(matrix.value).shape == (0, 3)
     assert vector.shape == (0,)
     assert np.asarray(vector.value).shape == (0,)
+
+
+def test_private_extractors_construct_public_parameter_and_recovery_records() -> None:
+    parameter = cp.Parameter(name="parameter", value=1.0)
+    source = cp.Variable(name="source")
+    problem = cp.Problem(cp.Minimize(cp.square(source - parameter)))
+
+    canonical = _canonicalize_lower(problem, {parameter: cp.Variable(name="upper")})
+
+    assert canonical.parameter_specs
+    assert canonical.recovery_specs
+    assert all(type(spec) is ParameterSpec for spec in canonical.parameter_specs)
+    assert all(type(spec) is RecoverySpec for spec in canonical.recovery_specs)
 
 
 def test_affine_data_matches_cvxpy_for_parameter_dependent_A_b_c() -> None:
