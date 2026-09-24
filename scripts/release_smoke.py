@@ -11,6 +11,51 @@ import numpy as np
 import blvpy as bp
 
 
+def _smoke_cone_canonicalization() -> None:
+    exp_x = cp.Variable(name="smoke_exp_x")
+    exp_y = cp.Variable(name="smoke_exp_y")
+    exp_z = cp.Variable(name="smoke_exp_z")
+    exp_lower = bp.LowerProblem(
+        cp.Minimize(exp_z),
+        [cp.ExpCone(exp_x, exp_y, exp_z), exp_x == 0.0, exp_y == 1.0],
+    )
+    exp_canonical = bp.BilevelProblem(cp.Minimize(exp_z), exp_lower).canonicalize()
+    exp_layout = exp_canonical.cone_layout
+    if exp_layout.exponential != 1 or exp_layout.p3d:
+        raise RuntimeError("Release smoke EXP lower model produced an unexpected cone layout.")
+
+    exp_value = np.zeros(exp_layout.size)
+    exp_value[exp_layout.exponential_slices[0]] = [1.0, 1.0, 1.0]
+    exp_distances = np.array(
+        [exp_layout.primal_distance(exp_value), exp_layout.dual_distance(exp_value)],
+        dtype=float,
+    )
+    if not np.isfinite(exp_distances).all() or not np.all(exp_distances > 0.0):
+        raise RuntimeError(f"Release smoke EXP cone distances are invalid: {exp_distances}.")
+
+    power_x = cp.Variable(name="smoke_power_x")
+    power_y = cp.Variable(name="smoke_power_y")
+    power_z = cp.Variable(name="smoke_power_z")
+    power_alpha = 0.35
+    power_lower = bp.LowerProblem(
+        cp.Minimize(power_x + power_y),
+        [cp.PowCone3D(power_x, power_y, power_z, power_alpha), power_z >= 1.0],
+    )
+    power_canonical = bp.BilevelProblem(cp.Minimize(power_x + power_y), power_lower).canonicalize()
+    power_layout = power_canonical.cone_layout
+    if power_layout.exponential or len(power_layout.p3d) != 1 or power_layout.p3d[0] != power_alpha:
+        raise RuntimeError("Release smoke P3D lower model produced an unexpected cone layout.")
+
+    power_value = np.zeros(power_layout.size)
+    power_value[power_layout.power_3d_slices[0]] = [-1.0, 1.0, 2.0]
+    power_distances = np.array(
+        [power_layout.primal_distance(power_value), power_layout.dual_distance(power_value)],
+        dtype=float,
+    )
+    if not np.isfinite(power_distances).all() or not np.all(power_distances > 0.0):
+        raise RuntimeError(f"Release smoke P3D cone distances are invalid: {power_distances}.")
+
+
 def _smoke_minimize() -> None:
     x = cp.Variable(name="x")
     y = cp.Variable(name="y")
@@ -124,6 +169,7 @@ def main() -> int:
     if bp.__version__ != expected_version:
         raise RuntimeError(f"Installed BLVPY version is {bp.__version__!r}, expected {expected_version!r}.")
 
+    _smoke_cone_canonicalization()
     _smoke_minimize()
     _smoke_maximize()
     return 0
