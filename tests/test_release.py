@@ -41,18 +41,28 @@ def _source_tree(root: Path) -> Path:
         encoding="utf-8",
     )
     (source / "problem.py").write_text("class BilevelProblem: ...\n", encoding="utf-8")
+    private = source / "_private"
+    private.mkdir()
+    (private / "__init__.py").write_text("", encoding="utf-8")
+    (private / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
     return source
 
 
-def _wheel(dist: Path, *, version: str = "0.1.0", metadata_version: str | None = None) -> Path:
+def _wheel(
+    dist: Path,
+    source: Path,
+    *,
+    version: str = "0.1.0",
+    metadata_version: str | None = None,
+    omit_source: str | None = None,
+) -> Path:
     path = dist / f"blvpy-{version}-py3-none-any.whl"
     metadata = metadata_version or version
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr(
-            "blvpy/__init__.py",
-            'from importlib.metadata import version\n\n__version__ = version("blvpy")\n',
-        )
-        archive.writestr("blvpy/problem.py", "class BilevelProblem: ...\n")
+        for path_source in sorted(source.rglob("*.py")):
+            relative = path_source.relative_to(source).as_posix()
+            if relative != omit_source:
+                archive.writestr(f"blvpy/{relative}", path_source.read_bytes())
         archive.writestr(
             f"blvpy-{version}.dist-info/METADATA",
             f"Metadata-Version: 2.4\nName: blvpy\nVersion: {metadata}\nRequires-Python: >=3.12\n\n",
@@ -71,7 +81,14 @@ def _add_tar_bytes(archive: tarfile.TarFile, name: str, data: bytes) -> None:
     archive.addfile(info, io.BytesIO(data))
 
 
-def _sdist(dist: Path, source: Path, *, version: str = "0.1.0", extra: str | None = None) -> Path:
+def _sdist(
+    dist: Path,
+    source: Path,
+    *,
+    version: str = "0.1.0",
+    extra: str | None = None,
+    omit_source: str | None = None,
+) -> Path:
     path = dist / f"blvpy-{version}.tar.gz"
     root = f"blvpy-{version}"
     pyproject = f'[project]\nname = "blvpy"\nversion = "{version}"\n'
@@ -84,8 +101,10 @@ def _sdist(dist: Path, source: Path, *, version: str = "0.1.0", extra: str | Non
         )
         _add_tar_bytes(archive, f"{root}/README.md", b"# BLVPY\n")
         _add_tar_bytes(archive, f"{root}/pyproject.toml", pyproject.encode())
-        for path_source in source.glob("*.py"):
-            _add_tar_bytes(archive, f"{root}/src/blvpy/{path_source.name}", path_source.read_bytes())
+        for path_source in sorted(source.rglob("*.py")):
+            relative = path_source.relative_to(source).as_posix()
+            if relative != omit_source:
+                _add_tar_bytes(archive, f"{root}/src/blvpy/{relative}", path_source.read_bytes())
         if extra is not None:
             _add_tar_bytes(archive, f"{root}/{extra}", b"unexpected\n")
     return path
@@ -133,7 +152,7 @@ def test_release_distributions_and_checksums(tmp_path: Path) -> None:
     source = _source_tree(tmp_path)
     dist = tmp_path / "dist"
     dist.mkdir()
-    wheel = _wheel(dist)
+    wheel = _wheel(dist, source)
     sdist = _sdist(dist, source)
 
     assert verify_distributions(dist, "0.1.0", source) == (wheel, sdist)
@@ -152,7 +171,7 @@ def test_release_verifier_rejects_inconsistent_wheel_metadata(tmp_path: Path) ->
     source = _source_tree(tmp_path)
     dist = tmp_path / "dist"
     dist.mkdir()
-    _wheel(dist, metadata_version="0.2.0")
+    _wheel(dist, source, metadata_version="0.2.0")
     _sdist(dist, source)
 
     with pytest.raises(ValueError, match="wrong project version"):
@@ -163,10 +182,32 @@ def test_release_verifier_rejects_development_files_in_sdist(tmp_path: Path) -> 
     source = _source_tree(tmp_path)
     dist = tmp_path / "dist"
     dist.mkdir()
-    _wheel(dist)
+    _wheel(dist, source)
     _sdist(dist, source, extra="tests/test_release.py")
 
     with pytest.raises(ValueError, match="development-only path 'tests'"):
+        verify_distributions(dist, "0.1.0", source)
+
+
+def test_release_verifier_rejects_wheel_missing_nested_package_source(tmp_path: Path) -> None:
+    source = _source_tree(tmp_path)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    _wheel(dist, source, omit_source="_private/helper.py")
+    _sdist(dist, source)
+
+    with pytest.raises(ValueError, match="missing package source 'blvpy/_private/helper.py'"):
+        verify_distributions(dist, "0.1.0", source)
+
+
+def test_release_verifier_rejects_sdist_missing_nested_package_source(tmp_path: Path) -> None:
+    source = _source_tree(tmp_path)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    _wheel(dist, source)
+    _sdist(dist, source, omit_source="_private/helper.py")
+
+    with pytest.raises(ValueError, match="missing required files: src/blvpy/_private/helper.py"):
         verify_distributions(dist, "0.1.0", source)
 
 
