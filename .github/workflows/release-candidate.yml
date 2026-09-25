@@ -72,6 +72,10 @@ jobs:
       - name: Run warning-as-error tests
         run: uv run --frozen --group dev python -W error -m pytest tests
 
+      - name: Run nonlinear-cone stress audit
+        timeout-minutes: 5
+        run: uv run --frozen --group dev python scripts/stress_cones.py --preset full
+
       - name: Check source formatting and lint
         run: |
           uv run --frozen --group dev ruff check .
