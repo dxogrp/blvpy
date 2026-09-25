@@ -1,9 +1,15 @@
 [
   {
     "name": "latest",
-    "version": "0.4",
+    "version": "0.5",
     "url": "https://dxogrp.github.io/blvpy/",
     "preferred": true
+  },
+  {
+    "name": "0.5",
+    "version": "0.5",
+    "url": "https://dxogrp.github.io/blvpy/version/0.5/",
+    "preferred": false
   },
   {
     "name": "0.4",
