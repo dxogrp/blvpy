@@ -80,8 +80,8 @@ def _solve_dnlp(
                 verbose=solver_verbose,
                 **options,
             )
-    except Exception:
-        _replay_warnings(caught_warnings)
+    except Exception as error:
+        _replay_warnings(caught_warnings, primary_error=error)
         raise
 
     suppress = (
@@ -101,17 +101,25 @@ def _replay_warnings(
     caught_warnings: list[warnings.WarningMessage],
     *,
     suppress: warnings.WarningMessage | None = None,
+    primary_error: Exception | None = None,
 ) -> None:
     for warning in caught_warnings:
         if warning is suppress:
             continue
-        warnings.warn_explicit(
-            warning.message,
-            warning.category,
-            warning.filename,
-            warning.lineno,
-            source=warning.source,
-        )
+        try:
+            warnings.warn_explicit(
+                warning.message,
+                warning.category,
+                warning.filename,
+                warning.lineno,
+                source=warning.source,
+            )
+        except Exception as replay_error:
+            if primary_error is None:
+                raise
+            primary_error.add_note(
+                f"Captured warning before solver failure: {type(replay_error).__name__}: {replay_error}"
+            )
 
 
 def _solver_unavailable_error(solver: str, *, detail: str | None = None) -> SolverUnavailableError:

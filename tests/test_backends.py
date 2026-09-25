@@ -176,6 +176,25 @@ def test_missing_solver_error_is_translated(solver: str, message: str) -> None:
     assert raised.value.__cause__ is original
 
 
+def test_warning_as_error_does_not_mask_missing_solver_error() -> None:
+    original = cp.SolverError("The solver CUSTOM is not installed.")
+    problem = Mock(spec=cp.Problem)
+
+    def solve(**_options: object) -> None:
+        warnings.warn("solver warning", UserWarning, stacklevel=1)
+        raise original
+
+    problem.solve.side_effect = solve
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(SolverUnavailableError) as raised:
+            solve_dnlp(problem, solver="CUSTOM", options={}, solver_verbose=False)
+
+    assert raised.value.__cause__ is original
+    assert getattr(original, "__notes__", None)
+
+
 @pytest.mark.parametrize(
     "original",
     [
