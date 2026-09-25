@@ -33,6 +33,11 @@ def test_documented_public_types_remain_defined_by_their_facades() -> None:
             assert facade_object.__module__ == facade.__name__, name
 
 
+def test_canonicalization_preserves_legacy_error_aliases() -> None:
+    assert canonicalization.ValidationError is blvpy.ValidationError
+    assert canonicalization.ApproximateCanonicalizationError is blvpy.ApproximateCanonicalizationError
+
+
 def test_public_cone_records_preserve_positional_field_order() -> None:
     assert tuple(field.name for field in fields(cones.ConeBlock)) == (
         "kind",

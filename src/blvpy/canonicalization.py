@@ -66,11 +66,15 @@ from ._canonicalization.recovery import (
 )
 from .cones import ConeLayout
 from .errors import (
+    ApproximateCanonicalizationError as ApproximateCanonicalizationError,
+)
+from .errors import (
     CanonicalizationError,
     ParameterMappingError,
     UnsupportedConeError,
     UnsupportedModelError,
 )
+from .errors import ValidationError as ValidationError
 
 
 @dataclass(frozen=True, slots=True)
