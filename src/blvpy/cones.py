@@ -387,9 +387,10 @@ class ConeLayout:
         float
             Numerical Euclidean product-cone distance. Zero, nonnegative, and
             second-order contributions are analytic. Exponential and 3D
-            power-cone contributions are auxiliary-solver estimates. Exact
-            membership contributes zero; unusable projection estimates are
-            retried before a conservative finite upper bound is returned.
+            power-cone contributions are numerical estimates. Exact membership
+            contributes zero, and uncertain solver results may be retried. If
+            no usable positive estimate is available, a conservative finite
+            upper bound is returned.
             With finite zero-cone entries, nonfinite entries in a constrained
             block produce positive infinity; NaN in a zero-cone block
             propagates to the result.
@@ -425,10 +426,10 @@ class ConeLayout:
         float
             Numerical Euclidean product-cone distance, with zero-cone dual
             rows unrestricted. Exponential and 3D power-cone contributions
-            are auxiliary-solver estimates. Exact membership contributes
-            zero; unusable projection estimates are retried before a
-            conservative finite upper bound is returned. Nonfinite
-            constrained entries produce positive infinity.
+            are numerical estimates. Exact membership contributes zero, and
+            uncertain solver results may be retried. If no usable positive
+            estimate is available, a conservative finite upper bound is
+            returned. Nonfinite constrained entries produce positive infinity.
 
         Raises
         ------

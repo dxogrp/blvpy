@@ -75,16 +75,16 @@ best-of search.
 
 ## Nonlinear cone residuals are unexpectedly large
 
-Exponential- and 3D power-cone residual distances are numerical projection
-estimates. Scale a cone triple to a moderate common magnitude and, when an
+Exponential- and 3D power-cone residual distances are numerical estimates.
+Scale a cone triple to a moderate common magnitude and, when an
 equivalent formulation permits it, avoid extreme ratios between its
-components. BLVPY removes a shared power-of-two scale exactly. Estimates near
-solver resolution are retried or replaced by a conservative upper bound
-rather than reported as zero.
+components. BLVPY attempts an exact shared power-of-two normalization.
+Uncertain solver results may be retried or replaced by a conservative upper
+bound rather than reported as zero.
 
-If BLVPY cannot obtain a validated projection, it reports the distance to the
-cone's zero element as a conservative upper bound. This fail-closed result can
-cause an otherwise acceptable iterate to fail its residual check. See
+If BLVPY cannot obtain a usable positive estimate, it reports the distance to
+the cone's zero element as a conservative upper bound. This fail-closed result
+can cause an otherwise acceptable iterate to fail its residual check. See
 {ref}`nonlinear-cone-distance-estimates` for the numerical contract.
 
 ## Diagnostics fail

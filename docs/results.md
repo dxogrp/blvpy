@@ -185,11 +185,9 @@ satisfies this canonical system and the original bilevel model:
 Algebraic residuals and zero-, nonnegative-, and second-order-cone distances
 are evaluated directly. For exponential and 3D power cones, the reported
 distances are numerical estimates. BLVPY reports zero only after an exact
-membership check. Otherwise, it uses internal projection solvers, retries
-uncertain results, and accepts only finite, positive estimates that pass
-geometric validation.
+membership check and retries uncertain solver results when possible.
 
-If no validated estimate is available, BLVPY reports the distance to the
+If no usable positive estimate is available, BLVPY reports the distance to the
 cone's zero element. This conservative upper bound can make a residual check
 fail, but it cannot cause a known nonmember to be reported as zero.
 

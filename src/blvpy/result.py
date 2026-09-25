@@ -31,11 +31,11 @@ class Residuals:
         linked-variable domain constraints.
     primal_cone : float
         Numerical distance diagnostic from ``s`` to the primal product cone.
-        Exponential and 3D power-cone contributions are auxiliary-solver
+        Exponential and 3D power-cone contributions are numerical
         estimates with a conservative upper-bound fallback.
     dual_cone : float
         Numerical distance diagnostic from ``lambda`` to the dual product
-        cone. Exponential and 3D power-cone contributions are auxiliary-solver
+        cone. Exponential and 3D power-cone contributions are numerical
         estimates with a conservative upper-bound fallback.
     complementarity : float
         Raw canonical pairing ``s.T @ lambda``. It may be slightly negative at
@@ -55,9 +55,9 @@ class Residuals:
     All fields except ``complementarity`` are nonnegative. Infinite residuals
     are retained to represent missing or nonfinite numerical solver output.
     Zero, nonnegative, and second-order cone distances are analytic. Nonlinear
-    cone diagnostics reserve zero for exact membership and retry unusable
-    projection estimates before replacing them with a conservative upper
-    bound; the auxiliary-solver estimates are not mathematical certificates.
+    cone diagnostics reserve zero for exact membership and may retry uncertain
+    solver results. If no usable positive estimate is available, they use a
+    conservative upper bound; numerical estimates are not certificates.
     """
 
     primal_equality: float
