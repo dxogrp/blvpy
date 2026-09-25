@@ -289,6 +289,22 @@ def test_exponential_cone_ordinary_projection_matches_clarabel_at_binary_scales(
         assert layout.dual_distance(-scaled) / scale == pytest.approx(expected_dual, abs=3e-6)
 
 
+@pytest.mark.filterwarnings("error")
+@pytest.mark.parametrize("exponent", [0, 500])
+def test_exponential_face_distance_below_scs_resolution_is_rescaled(exponent: int) -> None:
+    layout = ConeLayout(exponential=1)
+    point = np.array([-1.0, -4e-7, 1.0])
+    scale = math.ldexp(1.0, exponent)
+
+    with cone_projection._collect_projection_stats() as statistics:
+        distance = layout.primal_distance(np.ldexp(point, exponent))
+
+    assert distance == pytest.approx(4e-7 * scale, rel=2e-3)
+    assert statistics.clarabel_retries == 1
+    assert statistics.clarabel_accepts == 1
+    assert statistics.fallbacks == 0
+
+
 def test_exact_nonlinear_membership_bypasses_projection_solver(monkeypatch: pytest.MonkeyPatch) -> None:
     def unexpected_solver(*args, **kwargs):
         raise AssertionError("exact members must not invoke a projection solver")
@@ -675,6 +691,16 @@ def test_projection_failure_uses_saturated_zero_point_bound(monkeypatch: pytest.
     assert statistics.fallbacks == 2
 
 
+def test_invalid_projection_candidates_use_zero_point_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    def invalid_solve(requests, *, solver):
+        return [np.full(3, 10.0)] * len(requests)
+
+    monkeypatch.setattr(cone_projection, "_solve_projection_batch", invalid_solve)
+    point = np.array([1.0, -1.0, -1.0])
+
+    assert ConeLayout(exponential=1).primal_distance(point) == math.hypot(*point)
+
+
 @pytest.mark.filterwarnings("error")
 @pytest.mark.parametrize("failure", ["warning", "exception", "unusable_status"])
 def test_solver_failures_are_contained_and_use_fallback(
@@ -712,6 +738,42 @@ def test_power_endpoint_limits_bypass_solver(alpha: float, expected: float) -> N
     assert distance == pytest.approx(expected, abs=2e-7)
     assert statistics.endpoint_limits == 1
     assert statistics.scs_batches == 0
+
+
+@pytest.mark.filterwarnings("error")
+def test_zero_power_endpoint_distance_retries_projection_solvers() -> None:
+    layout = ConeLayout(power_3d=(1e-9,))
+
+    with cone_projection._collect_projection_stats() as statistics:
+        distance = layout.primal_distance(np.array([0.0, 1.0, 1.0]))
+
+    assert np.isfinite(distance) and distance > 0.0
+    assert statistics.endpoint_limits == 1
+    assert statistics.scs_batches == 1
+    assert statistics.clarabel_retries == 1
+    assert statistics.clarabel_accepts == 1
+    assert statistics.fallbacks == 0
+
+
+def test_zero_power_endpoint_distance_uses_fallback_for_zero_solver_estimates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def failed_solve(requests, *, solver):
+        calls.append(solver)
+        return [request.target.copy() for request in requests]
+
+    monkeypatch.setattr(cone_projection, "_solve_projection_batch", failed_solve)
+    point = np.array([0.0, 1.0, 1.0])
+
+    with cone_projection._collect_projection_stats() as statistics:
+        distance = ConeLayout(power_3d=(1e-9,)).primal_distance(point)
+
+    assert distance == math.hypot(*point)
+    assert calls == ["SCS", "CLARABEL"]
+    assert statistics.endpoint_limits == 1
+    assert statistics.fallbacks == 1
 
 
 def test_resolved_power_exponent_uses_projection_solver() -> None:
@@ -966,6 +1028,22 @@ def test_power_cone_projection_handles_near_endpoint_exponents(alpha: float) -> 
     assert dual_distance == pytest.approx(reflected_layout.dual_distance(reflected), rel=2e-6)
     assert layout.primal_distance(np.array([*point[:2], -point[2]])) == pytest.approx(primal_distance, rel=2e-6)
     assert layout.dual_distance(np.array([*point[:2], -point[2]])) == pytest.approx(dual_distance, rel=2e-6)
+
+
+@pytest.mark.filterwarnings("error")
+def test_power_cone_small_positive_distance_survives_inaccurate_warning() -> None:
+    layout = ConeLayout(power_3d=(1e-8,))
+    point = np.array([0.0, 1.0, 1.0])
+
+    with cone_projection._collect_projection_stats() as statistics:
+        distance = layout.primal_distance(point)
+    scaled_distance = layout.primal_distance(0.1 * point)
+
+    assert distance == pytest.approx(1.261e-7, rel=2e-3)
+    assert 10.0 * scaled_distance == pytest.approx(distance, rel=2e-3)
+    assert statistics.clarabel_retries == 1
+    assert statistics.clarabel_accepts == 1
+    assert statistics.fallbacks == 0
 
 
 @pytest.mark.filterwarnings("error")

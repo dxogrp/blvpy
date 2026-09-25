@@ -32,6 +32,10 @@ from .power import (
 _SCS_EPSILON = 1e-9
 _CLARABEL_EPSILON = 1e-10
 _VALIDATION_FACTOR = 100.0
+_INACCURATE_SOLUTION_WARNING = (
+    "Solution may be inaccurate. Try another solver, adjusting the solver settings, "
+    "or solve with verbose=True for more information."
+)
 
 
 @dataclass(slots=True)
@@ -104,8 +108,12 @@ def _nonlinear_cone_distance(
             distance = _saturated_hypot(distance, _fallback_distance(vector))
         elif _power_3d_uses_endpoint_limit(alpha):
             projected = _project_power_3d_endpoint(request.target, alpha)
-            distance = _saturated_hypot(distance, _request_distance(request, projected))
             _increment_statistic("endpoint_limits")
+            endpoint_distance = _request_distance(request, projected)
+            if endpoint_distance > 0.0:
+                distance = _saturated_hypot(distance, endpoint_distance)
+            else:
+                requests.append(request)
         else:
             requests.append(request)
 
@@ -114,14 +122,23 @@ def _nonlinear_cone_distance(
 
     primary = _solve_projection_batch(requests, solver="SCS")
     for request, projected in zip(requests, primary, strict=True):
-        if projected is not None and _valid_projection(request, projected, _SCS_EPSILON):
-            block_distance = _request_distance(request, projected, solver_epsilon=_SCS_EPSILON)
-        else:
+        block_distance = None
+        if (
+            projected is not None
+            and _valid_projection(request, projected, _SCS_EPSILON)
+            and _distance_exceeds_resolution(request, projected, _SCS_EPSILON)
+        ):
+            candidate_distance = _request_distance(request, projected)
+            if candidate_distance > 0.0:
+                block_distance = candidate_distance
+        if block_distance is None:
             retry = _solve_projection_batch((request,), solver="CLARABEL")[0]
             if retry is not None and _valid_projection(request, retry, _CLARABEL_EPSILON):
-                block_distance = _request_distance(request, retry, solver_epsilon=_CLARABEL_EPSILON)
-                _increment_statistic("clarabel_accepts")
-            else:
+                candidate_distance = _request_distance(request, retry)
+                if candidate_distance > 0.0:
+                    block_distance = candidate_distance
+                    _increment_statistic("clarabel_accepts")
+            if block_distance is None:
                 block_distance = _fallback_distance(request.original)
         distance = _saturated_hypot(distance, block_distance)
     return distance
@@ -207,12 +224,21 @@ def _solve_projection_batch(
             "max_iter": 500,
         }
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
+        with warnings.catch_warnings(record=True) as caught_warnings:
+            warnings.simplefilter("always")
             objective = problem.solve(warm_start=False, verbose=False, **options)
     except Exception:
         return [None] * len(requests)
-    if problem.status not in {cp.OPTIMAL, cp.OPTIMAL_INACCURATE}:
+    allowed_statuses = {cp.OPTIMAL} if solver == "SCS" else {cp.OPTIMAL, cp.OPTIMAL_INACCURATE}
+    if problem.status not in allowed_statuses:
+        return [None] * len(requests)
+    if caught_warnings and not (
+        problem.status == cp.OPTIMAL_INACCURATE
+        and all(
+            issubclass(warning.category, UserWarning) and str(warning.message) == _INACCURATE_SOLUTION_WARNING
+            for warning in caught_warnings
+        )
+    ):
         return [None] * len(requests)
     if objective is None or not math.isfinite(float(objective)):
         return [None] * len(requests)
@@ -258,21 +284,31 @@ def _valid_projection(
 def _request_distance(
     request: _ProjectionRequest,
     projected: NDArray[np.float64],
-    *,
-    solver_epsilon: float | None = None,
 ) -> float:
-    normalized_distance = _finite_norm(projected) if request.dual else _finite_norm(request.target - projected)
-    if solver_epsilon is not None:
-        residual = request.target - projected
-        tolerance = _projection_tolerance(
-            _finite_norm(request.target),
-            _finite_norm(projected),
-            _finite_norm(residual),
-            solver_epsilon,
-        )
-        if normalized_distance <= tolerance:
-            return 0.0
+    normalized_distance = _normalized_request_distance(request, projected)
     return _binary_rescale(normalized_distance, request.exponent)
+
+
+def _distance_exceeds_resolution(
+    request: _ProjectionRequest,
+    projected: NDArray[np.float64],
+    solver_epsilon: float,
+) -> bool:
+    residual = request.target - projected
+    tolerance = _projection_tolerance(
+        _finite_norm(request.target),
+        _finite_norm(projected),
+        _finite_norm(residual),
+        solver_epsilon,
+    )
+    return _normalized_request_distance(request, projected) > tolerance
+
+
+def _normalized_request_distance(
+    request: _ProjectionRequest,
+    projected: NDArray[np.float64],
+) -> float:
+    return _finite_norm(projected) if request.dual else _finite_norm(request.target - projected)
 
 
 def _projection_tolerance(

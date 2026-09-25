@@ -693,6 +693,7 @@ def test_exact_geometric_mean_and_rational_power_lower_problem() -> None:
 
 
 def test_exact_exp_lower_problem_uses_multiple_exponential_cones_end_to_end() -> None:
+    projection_tolerance = 5e-5
     offsets = np.array([-0.6, 0.0, 0.5])
     target = 0.2
     x = cp.Variable(name="x", bounds=[-0.5, 1.0])
@@ -712,7 +713,13 @@ def test_exact_exp_lower_problem_uses_multiple_exponential_cones_end_to_end() ->
     assert canonical.cone_layout.exponential == 3
     assert canonical.cone_layout.second_order == ()
     assert canonical.cone_layout.power_3d == ()
-    result = _solve(model, epsilon_initial=1e-5, epsilon_target=1e-5, seed=61)
+    result = _solve(
+        model,
+        epsilon_initial=1e-5,
+        epsilon_target=1e-5,
+        feasibility_tolerance=projection_tolerance,
+        seed=61,
+    )
 
     assert float(x.value) == pytest.approx(target, abs=_ANALYTIC_ATOL)
     np.testing.assert_allclose(y.value, expected_y, atol=_ANALYTIC_ATOL)
@@ -726,8 +733,18 @@ def test_exact_exp_lower_problem_uses_multiple_exponential_cones_end_to_end() ->
     )
     polished = model.polish(result, solver=cp.CLARABEL, verbose=False)
     assert polished.feasible
-    assert polished.residuals.primal_cone <= 1e-7
-    assert polished.residuals.dual_cone <= 1e-7
+    assert (
+        max(
+            polished.residuals.primal_equality,
+            polished.residuals.dual_equality,
+            polished.residuals.recovery,
+            polished.residuals.upper_constraints,
+            polished.residuals.gap_violation,
+        )
+        <= 1e-7
+    )
+    assert polished.residuals.primal_cone <= projection_tolerance
+    assert polished.residuals.dual_cone <= projection_tolerance
     np.testing.assert_allclose(polished.variable_values[y], float(polished.variable_values[x]) + offsets, atol=1e-7)
 
 
@@ -817,6 +834,7 @@ def test_exponential_cone_infeasible_start_uses_real_ipopt_restoration(
 
 
 def test_exact_power_lower_problem_uses_power_cone_end_to_end() -> None:
+    projection_tolerance = 5e-5
     x = cp.Variable(name="x", bounds=[0.25, 1.5])
     y = cp.Variable(nonneg=True, name="y")
     lower = LowerProblem(
@@ -831,7 +849,13 @@ def test_exact_power_lower_problem_uses_power_cone_end_to_end() -> None:
 
     canonical = model.canonicalize()
     assert canonical.cone_layout.power_3d
-    result = _solve(model, epsilon_initial=1e-5, epsilon_target=1e-5, seed=43)
+    result = _solve(
+        model,
+        epsilon_initial=1e-5,
+        epsilon_target=1e-5,
+        feasibility_tolerance=projection_tolerance,
+        seed=43,
+    )
 
     np.testing.assert_allclose([x.value, y.value], [1.0, 1.0], atol=_ANALYTIC_ATOL)
     assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
@@ -843,8 +867,18 @@ def test_exact_power_lower_problem_uses_power_cone_end_to_end() -> None:
     )
     polished = model.polish(result, solver=cp.CLARABEL, verbose=False)
     assert polished.feasible
-    assert polished.residuals.primal_cone <= 1e-7
-    assert polished.residuals.dual_cone <= 1e-7
+    assert (
+        max(
+            polished.residuals.primal_equality,
+            polished.residuals.dual_equality,
+            polished.residuals.recovery,
+            polished.residuals.upper_constraints,
+            polished.residuals.gap_violation,
+        )
+        <= 1e-7
+    )
+    assert polished.residuals.primal_cone <= projection_tolerance
+    assert polished.residuals.dual_cone <= projection_tolerance
     assert float(polished.variable_values[y]) == pytest.approx(float(polished.variable_values[x]), abs=1e-7)
 
 
