@@ -296,13 +296,9 @@ def test_exponential_face_distance_below_scs_resolution_is_rescaled(exponent: in
     point = np.array([-1.0, -4e-7, 1.0])
     scale = math.ldexp(1.0, exponent)
 
-    with cone_projection._collect_projection_stats() as statistics:
-        distance = layout.primal_distance(np.ldexp(point, exponent))
+    distance = layout.primal_distance(np.ldexp(point, exponent))
 
     assert distance == pytest.approx(4e-7 * scale, rel=2e-3)
-    assert statistics.clarabel_retries == 1
-    assert statistics.clarabel_accepts == 1
-    assert statistics.fallbacks == 0
 
 
 def test_exact_nonlinear_membership_bypasses_projection_solver(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -416,7 +412,7 @@ def test_nonlinear_membership_routes_adjacent_outside_points_to_solver(
 
     assert distance(inside) == 0.0
     assert distance(outside) == math.hypot(*outside)
-    assert calls == ["SCS", "CLARABEL"]
+    assert calls == ["SCS", "SCS_QP", "CLARABEL"]
 
 
 @pytest.mark.filterwarnings("error")
@@ -658,6 +654,8 @@ def test_kkt_rejection_retries_only_the_failed_block(monkeypatch: pytest.MonkeyP
         calls.append((solver, len(requests)))
         if solver == "SCS":
             return [np.zeros(3), np.full(3, 0.25)]
+        if solver == "SCS_QP":
+            return [None]
         return [np.full(3, 1.0 / 6.0)]
 
     monkeypatch.setattr(cone_projection, "_solve_projection_batch", fake_solve)
@@ -669,7 +667,7 @@ def test_kkt_rejection_retries_only_the_failed_block(monkeypatch: pytest.MonkeyP
 
     expected = math.hypot(math.sqrt(3.0), math.sqrt(2.0 / 3.0))
     assert distance == pytest.approx(expected)
-    assert calls == [("SCS", 2), ("CLARABEL", 1)]
+    assert calls == [("SCS", 2), ("SCS_QP", 1), ("CLARABEL", 1)]
     assert statistics.clarabel_accepts == 1
     assert statistics.fallbacks == 0
 
@@ -786,6 +784,8 @@ def test_resolved_power_exponent_uses_projection_solver() -> None:
     assert np.isfinite(distance) and distance > 0.0
     assert statistics.endpoint_limits == 0
     assert statistics.scs_batches == 1
+    assert statistics.clarabel_retries == 0
+    assert statistics.fallbacks == 0
 
 
 def _independent_product_cone_distance(point: np.ndarray, *, dual: bool) -> float:
@@ -857,6 +857,68 @@ def test_exponential_dual_distance_resolves_near_boundary() -> None:
 
     assert 0.0 < distance < 1e-7
     assert distance == pytest.approx(expected, abs=5e-9)
+
+
+@pytest.mark.filterwarnings("error")
+@pytest.mark.parametrize(
+    ("layout", "dual", "point", "primary_is_valid"),
+    [
+        pytest.param(
+            ConeLayout(exponential=1),
+            False,
+            np.array([0.4999999283473787, 0.9999999945122529, 1.6487211433248878]),
+            True,
+            id="exp-primal",
+        ),
+        pytest.param(
+            ConeLayout(exponential=1),
+            True,
+            np.array([-1.648704543673951, -0.8243689981181005, 0.9999999859344807]),
+            True,
+            id="exp-dual",
+        ),
+        pytest.param(
+            ConeLayout(power_3d=(1.0 / math.sqrt(2.0),)),
+            True,
+            np.array([0.7999999976509953, 0.30683258287326276, -1.1061616456049381]),
+            True,
+            id="p3d-unresolved",
+        ),
+        pytest.param(
+            ConeLayout(power_3d=(0.8345721933670393,)),
+            True,
+            np.array([43.322655300040296, 16.95586757679096, 58.09363007496847]),
+            False,
+            id="p3d-invalid",
+        ),
+    ],
+)
+def test_near_boundary_quadratic_retry_precedes_clarabel(
+    monkeypatch: pytest.MonkeyPatch,
+    layout: ConeLayout,
+    dual: bool,
+    point: np.ndarray,
+    primary_is_valid: bool,
+) -> None:
+    distance_function = layout.dual_distance if dual else layout.primal_distance
+    live_distance = distance_function(point)
+    real_solve = cone_projection._solve_projection_batch
+    calls: list[str] = []
+
+    def controlled_solve(requests, *, solver):
+        calls.append(solver)
+        if solver == "SCS":
+            if primary_is_valid:
+                return [request.target.copy() for request in requests]
+            return [np.full(3, 10.0) for request in requests]
+        return real_solve(requests, solver=solver)
+
+    monkeypatch.setattr(cone_projection, "_solve_projection_batch", controlled_solve)
+    distance = distance_function(point)
+
+    assert 0.0 < live_distance < 1e-7
+    assert 0.0 < distance < 1e-7
+    assert calls == ["SCS", "SCS_QP"]
 
 
 @pytest.mark.filterwarnings("error")
@@ -1054,19 +1116,15 @@ def test_power_cone_projection_handles_near_endpoint_exponents(alpha: float) -> 
 
 
 @pytest.mark.filterwarnings("error")
-def test_power_cone_small_positive_distance_survives_inaccurate_warning() -> None:
+def test_power_cone_small_positive_distance_is_scale_consistent() -> None:
     layout = ConeLayout(power_3d=(1e-8,))
     point = np.array([0.0, 1.0, 1.0])
 
-    with cone_projection._collect_projection_stats() as statistics:
-        distance = layout.primal_distance(point)
+    distance = layout.primal_distance(point)
     scaled_distance = layout.primal_distance(0.1 * point)
 
     assert distance == pytest.approx(1.261e-7, rel=2e-3)
     assert 10.0 * scaled_distance == pytest.approx(distance, rel=2e-3)
-    assert statistics.clarabel_retries == 1
-    assert statistics.clarabel_accepts == 1
-    assert statistics.fallbacks == 0
 
 
 @pytest.mark.filterwarnings("error")

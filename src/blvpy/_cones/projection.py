@@ -31,6 +31,7 @@ from .power import (
 )
 
 _SCS_EPSILON = 1e-9
+_SCS_QP_EPSILON = 1e-12
 _CLARABEL_EPSILON = 1e-10
 _VALIDATION_FACTOR = 100.0
 _INACCURATE_SOLUTION_WARNING = (
@@ -124,14 +125,25 @@ def _nonlinear_cone_distance(
     primary = _solve_projection_batch(requests, solver="SCS")
     for request, projected in zip(requests, primary, strict=True):
         block_distance = None
-        if (
-            projected is not None
-            and _valid_projection(request, projected, _SCS_EPSILON)
-            and _distance_exceeds_resolution(request, projected, _SCS_EPSILON)
-        ):
-            candidate_distance = _request_distance(request, projected)
-            if candidate_distance > 0.0:
-                block_distance = candidate_distance
+        primary_is_valid = projected is not None and _valid_projection(request, projected, _SCS_EPSILON)
+        if primary_is_valid:
+            if _distance_exceeds_resolution(request, projected, _SCS_EPSILON):
+                candidate_distance = _request_distance(request, projected)
+                if candidate_distance > 0.0:
+                    block_distance = candidate_distance
+        can_refine = request.kind == "exponential" or (
+            request.alpha is not None and not _power_3d_uses_endpoint_limit(request.alpha)
+        )
+        if block_distance is None and can_refine:
+            refinement = _solve_projection_batch((request,), solver="SCS_QP")[0]
+            if (
+                refinement is not None
+                and _valid_projection(request, refinement, _SCS_QP_EPSILON)
+                and _distance_exceeds_resolution(request, refinement, _SCS_QP_EPSILON)
+            ):
+                candidate_distance = _request_distance(request, refinement)
+                if candidate_distance > 0.0:
+                    block_distance = candidate_distance
         if block_distance is None:
             retry = _solve_projection_batch((request,), solver="CLARABEL")[0]
             if retry is not None and _valid_projection(request, retry, _CLARABEL_EPSILON):
@@ -184,13 +196,20 @@ def _is_power_3d_member(
 def _solve_projection_batch(
     requests: Sequence[_ProjectionRequest],
     *,
-    solver: Literal["SCS", "CLARABEL"],
+    solver: Literal["SCS", "SCS_QP", "CLARABEL"],
 ) -> list[NDArray[np.float64] | None]:
     """Solve one normalized primal- or dual-cone projection problem."""
 
     if not requests:
         return []
-    if solver == "SCS":
+    if solver == "SCS_QP":
+        if len(requests) != 1:
+            return [None] * len(requests)
+        request = requests[0]
+        if request.kind == "power_3d" and (request.alpha is None or _power_3d_uses_endpoint_limit(request.alpha)):
+            return [None]
+
+    if solver in {"SCS", "SCS_QP"}:
         _increment_statistic("scs_batches")
         _increment_statistic("scs_blocks", len(requests))
     else:
@@ -228,15 +247,19 @@ def _solve_projection_batch(
         variables.append((power_indices, projected))
 
     difference = differences[0] if len(differences) == 1 else cp.hstack(differences)
-    problem = cp.Problem(cp.Minimize(cp.norm(difference, 2)), constraints)
+    objective_expression = 0.5 * cp.sum_squares(difference) if solver == "SCS_QP" else cp.norm(difference, 2)
+    problem = cp.Problem(cp.Minimize(objective_expression), constraints)
     options: dict[str, object]
-    if solver == "SCS":
+    if solver in {"SCS", "SCS_QP"}:
+        epsilon = _SCS_QP_EPSILON if solver == "SCS_QP" else _SCS_EPSILON
         options = {
             "solver": cp.SCS,
-            "eps_abs": _SCS_EPSILON,
-            "eps_rel": _SCS_EPSILON,
+            "eps_abs": epsilon,
+            "eps_rel": epsilon,
             "max_iters": 20_000,
         }
+        if solver == "SCS_QP":
+            options["use_quad_obj"] = True
     else:
         options = {
             "solver": cp.CLARABEL,
@@ -248,10 +271,10 @@ def _solve_projection_batch(
     try:
         with warnings.catch_warnings(record=True) as caught_warnings:
             warnings.simplefilter("always")
-            objective = problem.solve(warm_start=False, verbose=False, **options)
+            objective_value = problem.solve(warm_start=False, verbose=False, **options)
     except Exception:
         return [None] * len(requests)
-    allowed_statuses = {cp.OPTIMAL} if solver == "SCS" else {cp.OPTIMAL, cp.OPTIMAL_INACCURATE}
+    allowed_statuses = {cp.OPTIMAL} if solver in {"SCS", "SCS_QP"} else {cp.OPTIMAL, cp.OPTIMAL_INACCURATE}
     if problem.status not in allowed_statuses:
         return [None] * len(requests)
     if caught_warnings and not (
@@ -262,7 +285,7 @@ def _solve_projection_batch(
         )
     ):
         return [None] * len(requests)
-    if objective is None or not math.isfinite(float(objective)):
+    if objective_value is None or not math.isfinite(float(objective_value)):
         return [None] * len(requests)
 
     result: list[NDArray[np.float64] | None] = [None] * len(requests)
