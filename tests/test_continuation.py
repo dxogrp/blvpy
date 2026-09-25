@@ -374,6 +374,123 @@ def test_compile_probe_evaluates_solver_neutral_first_order_oracles(
         np.testing.assert_array_equal(point, evaluations[0][1])
 
 
+def test_power_cone_restoration_is_exact_relaxable_and_dnlp_compilable() -> None:
+    from cvxpy.reductions.dnlp2smooth.dnlp2smooth import Dnlp2Smooth
+    from cvxpy.reductions.solvers.nlp_solvers.nlp_solver import Bounds, Oracles
+
+    x = cp.Variable(name="x", bounds=[0.25, 1.5])
+    heads = cp.Variable(2, name="heads")
+    tail = cp.Variable(name="tail")
+    alpha = 0.25
+    lower = LowerProblem(
+        cp.Maximize(tail),
+        [heads[0] == x, heads[1] == 1.0, cp.PowCone3D(heads[0], heads[1], tail, alpha)],
+        parameters=[x],
+    )
+    model = BilevelProblem(cp.Minimize(cp.square(x) + cp.sum_squares(heads) + cp.square(tail)), lower)
+    lifted = model._lifted_problem
+    layout = model.canonicalize().cone_layout
+    assert layout.power_3d == (alpha,)
+    block = layout.power_3d_slices[0]
+
+    slack = np.zeros(layout.size)
+    dual = np.zeros(layout.size)
+    slack[block] = (1.0, 1.0, 1.0)
+    dual[block] = (alpha, 1.0 - alpha, -1.0)
+    lifted.slack.value = slack
+    lifted.dual.value = dual
+    radius = cp.Variable(nonneg=True, name="test_power_restoration_radius")
+    radius.value = 0.0
+    constraints = continuation._relaxed_cone_constraints(model, radius)
+
+    def max_violation() -> float:
+        return max(float(np.linalg.norm(np.asarray(item.violation(), dtype=float))) for item in constraints)
+
+    assert max_violation() <= 1e-12
+
+    slack[block] = (0.0, 0.0, 1.0)
+    dual[block] = (0.0, 0.0, 1.0)
+    lifted.slack.value = slack
+    lifted.dual.value = dual
+    radius.value = 0.0
+    assert max_violation() > 0.1
+    radius.value = 1.0
+    assert max_violation() <= 1e-12
+
+    restoration = cp.Problem(cp.Minimize(radius), constraints)
+    assert restoration.is_dnlp()
+    smooth, _ = Dnlp2Smooth().apply(restoration)
+    bounds = Bounds(smooth)
+    oracles = Oracles(bounds.new_problem, verbose=False, use_hessian=False)
+    evaluations = (
+        oracles.objective(bounds.x0),
+        oracles.constraints(bounds.x0),
+        oracles.gradient(bounds.x0),
+        oracles.jacobian(bounds.x0),
+    )
+    assert all(np.all(np.isfinite(np.asarray(value, dtype=float))) for value in evaluations)
+
+
+def test_exponential_cone_restoration_is_exact_relaxable_and_dnlp_compilable() -> None:
+    from cvxpy.reductions.dnlp2smooth.dnlp2smooth import Dnlp2Smooth
+    from cvxpy.reductions.solvers.nlp_solvers.nlp_solver import Bounds, Oracles
+
+    upper = cp.Variable(name="upper", bounds=[0.5, 1.5])
+    scale = cp.Variable(name="scale")
+    epigraph = cp.Variable(name="epigraph")
+    lower = LowerProblem(
+        cp.Minimize(epigraph),
+        [scale == upper, cp.ExpCone(0.0, scale, epigraph)],
+        parameters=[upper],
+    )
+    model = BilevelProblem(
+        cp.Minimize(cp.square(upper - 1.0) + cp.square(scale - 1.0) + cp.square(epigraph - 1.0)),
+        lower,
+    )
+    lifted = model._lifted_problem
+    layout = model.canonicalize().cone_layout
+    assert layout.exponential == 1
+    block = layout.exponential_slices[0]
+
+    slack = np.zeros(layout.size)
+    dual = np.zeros(layout.size)
+    slack[block] = (0.0, 1.0, 1.0)
+    dual[block] = (-1.0, -1.0, 1.0)
+    lifted.slack.value = slack
+    lifted.dual.value = dual
+    radius = cp.Variable(nonneg=True, name="test_exponential_restoration_radius")
+    radius.value = 0.0
+    constraints = continuation._relaxed_cone_constraints(model, radius)
+
+    def max_violation() -> float:
+        return max(float(np.linalg.norm(np.asarray(item.violation(), dtype=float))) for item in constraints)
+
+    assert max_violation() <= 1e-12
+
+    slack[block] = (0.75, 0.0, 0.0)
+    dual[block] = (0.75, 0.0, 0.0)
+    lifted.slack.value = slack
+    lifted.dual.value = dual
+    radius.value = 0.0
+    assert max_violation() > 0.5
+    radius.value = 1.0
+    assert max_violation() <= 1e-12
+
+    restoration = cp.Problem(cp.Minimize(radius), constraints)
+    assert restoration.is_dcp()
+    assert restoration.is_dnlp()
+    smooth, _ = Dnlp2Smooth().apply(restoration)
+    bounds = Bounds(smooth)
+    oracles = Oracles(bounds.new_problem, verbose=False, use_hessian=False)
+    evaluations = (
+        oracles.objective(bounds.x0),
+        oracles.constraints(bounds.x0),
+        oracles.gradient(bounds.x0),
+        oracles.jacobian(bounds.x0),
+    )
+    assert all(np.all(np.isfinite(np.asarray(value, dtype=float))) for value in evaluations)
+
+
 @pytest.mark.parametrize(
     "solver",
     [

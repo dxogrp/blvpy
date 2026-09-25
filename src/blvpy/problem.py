@@ -179,7 +179,7 @@ class BilevelProblem:
         """Validate and assemble the supported single-level reformulation.
 
         Validation checks the upper model, lower DCP and DPP compliance, the
-        audited exact-canonicalization policy, the zero/nonnegative/SOC cone
+        audited exact-canonicalization policy, the supported affine-cone
         restriction, and DNLP compatibility of the lifted formulation.
 
         Returns
@@ -194,7 +194,7 @@ class BilevelProblem:
             If the model uses an unsupported variable type, atom, or DNLP
             expression.
         UnsupportedConeError
-            If lower canonicalization produces a cone outside SOCP mode.
+            If lower canonicalization produces an unsupported cone.
         ApproximateCanonicalizationError
             If an accepted-looking source expression would be canonicalized
             only approximately.
@@ -216,7 +216,7 @@ class BilevelProblem:
             self._lifted = self._assemble_lifted(canonical)
 
     def canonicalize(self) -> CanonicalLowerProblem:
-        """Canonicalize the lower problem into BLVPY's affine SOCP form.
+        """Canonicalize the lower problem into BLVPY's supported affine conic form.
 
         Returns
         -------
@@ -230,7 +230,7 @@ class BilevelProblem:
             If the lower problem is not a supported DCP/DPP optimization
             problem.
         UnsupportedConeError
-            If canonicalization contains PSD, exponential, or power cones.
+            If canonicalization contains PSD or N-dimensional power cones.
         CanonicalizationError
             If the fixed Clarabel-compatible reduction cannot be extracted.
 
@@ -610,7 +610,7 @@ def _linked_parameter_domain_constraints(
             raise UnsupportedModelError(f"Generated parameter {parameter.name()!r} has a discrete domain.")
         if attributes.get("PSD") or attributes.get("NSD") or attributes.get("hermitian"):
             raise UnsupportedModelError(
-                f"Generated parameter {parameter.name()!r} requires a matrix cone outside SOCP mode."
+                f"Generated parameter {parameter.name()!r} requires an unsupported matrix cone."
             )
         if attributes.get("nonneg") or attributes.get("pos"):
             constraints.append(variable >= 0)

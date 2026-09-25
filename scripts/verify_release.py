@@ -77,6 +77,12 @@ def _metadata_value(raw: bytes, field: str, *, archive: Path) -> str:
     return value
 
 
+def _package_python_sources(source_root: Path) -> tuple[str, ...]:
+    return tuple(
+        sorted(source.relative_to(source_root).as_posix() for source in source_root.rglob("*.py") if source.is_file())
+    )
+
+
 def _validate_wheel(wheel: Path, expected_version: Version, source_root: Path) -> None:
     name, version, build, tags = parse_wheel_filename(wheel.name)
     if canonicalize_name(name) != _PROJECT_NAME or version != expected_version or build:
@@ -109,8 +115,8 @@ def _validate_wheel(wheel: Path, expected_version: Version, source_root: Path) -
         archived = {path.as_posix() for path in paths}
         if not any(name.endswith(".dist-info/licenses/LICENSE") for name in archived):
             raise ValueError(f"{wheel.name} is missing its license file.")
-        for source in source_root.glob("*.py"):
-            expected = f"blvpy/{source.name}"
+        for relative_source in _package_python_sources(source_root):
+            expected = f"blvpy/{relative_source}"
             if expected not in archived:
                 raise ValueError(f"{wheel.name} is missing package source {expected!r}.")
 
@@ -133,7 +139,7 @@ def _validate_sdist(sdist: Path, expected_version: Version, source_root: Path) -
 
         relative = {PurePosixPath(*path.parts[1:]).as_posix() for path in paths if len(path.parts) > 1}
         required = {"LICENSE", "PKG-INFO", "README.md", "pyproject.toml"}
-        required.update(f"src/blvpy/{source.name}" for source in source_root.glob("*.py"))
+        required.update(f"src/blvpy/{source}" for source in _package_python_sources(source_root))
         missing = sorted(required - relative)
         if missing:
             raise ValueError(f"{sdist.name} is missing required files: {', '.join(missing)}.")

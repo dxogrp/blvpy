@@ -1,8 +1,9 @@
-"""Product-cone utilities for BLVPY's SOCP canonical form.
+"""Product-cone utilities for BLVPY's supported conic form.
 
-CVXPY orders conic rows as zero, nonnegative, and then second-order
-cone blocks.  :class:`ConeLayout` records that order once and uses it for
-both symbolic membership constraints and numerical diagnostics.
+CVXPY orders the supported conic rows as zero, nonnegative, second-order,
+exponential, and then three-dimensional power-cone blocks. :class:`ConeLayout`
+records that order once and uses it for both symbolic membership constraints
+and numerical diagnostics.
 """
 
 from __future__ import annotations
@@ -16,7 +17,11 @@ import cvxpy as cp
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-ConeKind = Literal["zero", "nonnegative", "second_order"]
+from ._cones.numeric import _saturated_hypot
+from ._cones.power import _power_3d_dual_scale
+from ._cones.projection import _nonlinear_cone_distance
+
+ConeKind = Literal["zero", "nonnegative", "second_order", "exponential", "power_3d"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +30,7 @@ class ConeBlock:
 
     Parameters
     ----------
-    kind : {"zero", "nonnegative", "second_order"}
+    kind : {"zero", "nonnegative", "second_order", "exponential", "power_3d"}
         Cone represented by the block.
     start : int
         Inclusive zero-based row offset.
@@ -33,7 +38,7 @@ class ConeBlock:
         Exclusive row offset; it must be greater than ``start``.
     index : int, default=0
         Zero-based index among blocks of the same kind. It distinguishes
-        multiple second-order cones.
+        multiple cones of one kind.
 
     Raises
     ------
@@ -47,7 +52,7 @@ class ConeBlock:
     index: int = 0
 
     def __post_init__(self) -> None:
-        if self.kind not in {"zero", "nonnegative", "second_order"}:
+        if self.kind not in {"zero", "nonnegative", "second_order", "exponential", "power_3d"}:
             raise ValueError(f"Unknown cone kind {self.kind!r}.")
         if self.start < 0 or self.stop <= self.start:
             raise ValueError("A cone block must be a nonempty forward slice.")
@@ -69,7 +74,7 @@ class ConeBlock:
 
 @dataclass(frozen=True, slots=True)
 class ConeLayout:
-    """Ordered layout of a zero/nonnegative/SOC product cone.
+    """Ordered layout of a supported product cone.
 
     Parameters
     ----------
@@ -80,27 +85,38 @@ class ConeLayout:
     second_order : tuple of int, optional
         Dimensions of the second-order cone blocks. Each dimension includes
         the scalar head and must be at least two.
+    power_3d : tuple of float, optional
+        Exponent ``alpha`` for each three-dimensional power-cone block. Every
+        exponent must be finite and lie strictly between zero and one.
+    exponential : int, default=0
+        Number of three-dimensional exponential-cone blocks. This field is
+        declared after ``power_3d`` to preserve existing positional calls,
+        while its rows precede power-cone rows in canonical order.
 
     Raises
     ------
     ValueError
-        If a dimension is negative, nonintegral, or an SOC dimension is less
-        than two.
+        If a dimension or power-cone exponent is invalid.
 
     Notes
     -----
-    Rows follow CVXPY's canonical order: zero, nonnegative, then each SOC in
-    sequence. The associated dual cone is unrestricted on zero-cone rows and
-    self-dual on nonnegative and SOC rows.
+    Rows follow CVXPY's canonical order: zero, nonnegative, each SOC in
+    sequence, each exponential cone, and each 3D power cone in sequence. The
+    associated dual cone is unrestricted on zero-cone rows and self-dual on
+    nonnegative and SOC rows. Exponential and power cones use their respective
+    nonsymmetric duals.
     """
 
     zero: int = 0
     nonnegative: int = 0
     second_order: tuple[int, ...] = ()
+    power_3d: tuple[float, ...] = ()
+    exponential: int = 0
 
     def __post_init__(self) -> None:
         zero = _dimension(self.zero, "zero")
         nonnegative = _dimension(self.nonnegative, "nonnegative")
+        exponential = _dimension(self.exponential, "exponential")
         try:
             second_order = tuple(
                 _dimension(size, f"second_order[{position}]") for position, size in enumerate(self.second_order)
@@ -109,9 +125,17 @@ class ConeLayout:
             raise ValueError("second_order must be a sequence of cone sizes.") from error
         if any(size < 2 for size in second_order):
             raise ValueError("Every second-order cone must have dimension at least 2.")
+        try:
+            power_3d = tuple(
+                _power_3d_exponent(alpha, f"power_3d[{position}]") for position, alpha in enumerate(self.power_3d)
+            )
+        except TypeError as error:
+            raise ValueError("power_3d must be a sequence of cone exponents.") from error
         object.__setattr__(self, "zero", zero)
         object.__setattr__(self, "nonnegative", nonnegative)
         object.__setattr__(self, "second_order", second_order)
+        object.__setattr__(self, "power_3d", power_3d)
+        object.__setattr__(self, "exponential", exponential)
 
     @classmethod
     def from_dims(cls, dims: object) -> ConeLayout:
@@ -126,13 +150,13 @@ class ConeLayout:
         Returns
         -------
         ConeLayout
-            Validated zero/nonnegative/SOC row layout.
+            Validated supported product-cone row layout.
 
         Raises
         ------
         ValueError
             If ``dims`` is ``None``, contains invalid dimensions, or declares
-            nonempty PSD, exponential, or power cones.
+            nonempty PSD or N-dimensional power cones.
         """
 
         if dims is None:
@@ -141,12 +165,12 @@ class ConeLayout:
         zero = _dim_value(dims, ("zero", "f"), 0)
         nonnegative = _dim_value(dims, ("nonnegative", "nonneg", "l"), 0)
         second_order = _dim_value(dims, ("second_order", "soc", "q"), ())
+        power_3d = _dim_value(dims, ("power_3d", "p3d", "p3"), ())
+        exponential = _dim_value(dims, ("exponential", "exp", "ep"), 0)
 
         unsupported: list[str] = []
         for label, names in (
-            ("exponential", ("exp", "ep")),
             ("positive-semidefinite", ("psd", "s")),
-            ("3D power", ("p3d", "p3")),
             ("N-dimensional power", ("pnd",)),
         ):
             value = _dim_value(dims, names, 0)
@@ -154,12 +178,14 @@ class ConeLayout:
                 unsupported.append(label)
         if unsupported:
             rendered = ", ".join(unsupported)
-            raise ValueError(f"Unsupported cone dimensions for SOCP mode: {rendered}.")
+            raise ValueError(f"Unsupported cone dimensions: {rendered}.")
 
         return cls(
             zero=zero,
             nonnegative=nonnegative,
             second_order=tuple(second_order or ()),
+            power_3d=power_3d if power_3d is not None else (),
+            exponential=exponential,
         )
 
     @property
@@ -175,10 +201,22 @@ class ConeLayout:
         return self.second_order
 
     @property
+    def p3d(self) -> tuple[float, ...]:
+        """tuple of float: CVXPY-compatible alias for ``power_3d``."""
+
+        return self.power_3d
+
+    @property
+    def exp(self) -> int:
+        """int: CVXPY-compatible alias for ``exponential``."""
+
+        return self.exponential
+
+    @property
     def size(self) -> int:
         """int: Total number of scalar product-cone rows."""
 
-        return self.zero + self.nonnegative + sum(self.second_order)
+        return self.zero + self.nonnegative + sum(self.second_order) + 3 * self.exponential + 3 * len(self.power_3d)
 
     @property
     def zero_slice(self) -> slice:
@@ -216,6 +254,32 @@ class ConeLayout:
         return self.second_order_slices
 
     @property
+    def power_3d_slices(self) -> tuple[slice, ...]:
+        """tuple of slice: Ordered three-dimensional power-cone row slices."""
+
+        start = self.zero + self.nonnegative + sum(self.second_order) + 3 * self.exponential
+        return tuple(slice(start + 3 * position, start + 3 * (position + 1)) for position in range(len(self.power_3d)))
+
+    @property
+    def p3d_slices(self) -> tuple[slice, ...]:
+        """tuple of slice: Alias for ``power_3d_slices``."""
+
+        return self.power_3d_slices
+
+    @property
+    def exponential_slices(self) -> tuple[slice, ...]:
+        """tuple of slice: Ordered three-dimensional exponential-cone rows."""
+
+        start = self.zero + self.nonnegative + sum(self.second_order)
+        return tuple(slice(start + 3 * position, start + 3 * (position + 1)) for position in range(self.exponential))
+
+    @property
+    def exp_slices(self) -> tuple[slice, ...]:
+        """tuple of slice: Alias for ``exponential_slices``."""
+
+        return self.exponential_slices
+
+    @property
     def blocks(self) -> tuple[ConeBlock, ...]:
         """tuple of ConeBlock: All nonempty blocks in canonical row order."""
 
@@ -234,6 +298,14 @@ class ConeLayout:
             ConeBlock("second_order", block.start, block.stop, position)
             for position, block in enumerate(self.second_order_slices)
         )
+        blocks.extend(
+            ConeBlock("exponential", block.start, block.stop, position)
+            for position, block in enumerate(self.exponential_slices)
+        )
+        blocks.extend(
+            ConeBlock("power_3d", block.start, block.stop, position)
+            for position, block in enumerate(self.power_3d_slices)
+        )
         return tuple(blocks)
 
     def primal_constraints(self, value: cp.Expression | ArrayLike) -> tuple[cp.Constraint, ...]:
@@ -247,8 +319,9 @@ class ConeLayout:
         Returns
         -------
         tuple of cvxpy.Constraint
-            Zero equalities, nonnegative inequalities, and scalar-form SOC
-            inequalities in canonical block order.
+            Zero equalities, nonnegative inequalities, scalar-form SOC
+            inequalities, and exact exponential- and 3D power-cone constraints
+            in canonical block order.
 
         Raises
         ------
@@ -263,6 +336,10 @@ class ConeLayout:
         if self.nonnegative:
             constraints.append(vector[self.nonnegative_slice] >= 0)
         constraints.extend(_soc_constraint(vector, block) for block in self.second_order_slices)
+        for block in self.exponential_slices:
+            constraints.extend(_exponential_constraints(vector, block, dual=False))
+        for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True):
+            constraints.extend(_power_3d_constraints(vector, block, alpha, dual=False))
         return tuple(constraints)
 
     def dual_constraints(self, value: cp.Expression | ArrayLike) -> tuple[cp.Constraint, ...]:
@@ -276,8 +353,9 @@ class ConeLayout:
         Returns
         -------
         tuple of cvxpy.Constraint
-            Nonnegative and SOC membership constraints. Zero-cone dual rows
-            are unrestricted and therefore add no constraints.
+            Nonnegative, SOC, dual exponential-cone, and dual 3D power-cone
+            membership constraints. Zero-cone dual rows are unrestricted and
+            therefore add no constraints.
 
         Raises
         ------
@@ -290,6 +368,10 @@ class ConeLayout:
         if self.nonnegative:
             constraints.append(vector[self.nonnegative_slice] >= 0)
         constraints.extend(_soc_constraint(vector, block) for block in self.second_order_slices)
+        for block in self.exponential_slices:
+            constraints.extend(_exponential_constraints(vector, block, dual=True))
+        for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True):
+            constraints.extend(_power_3d_constraints(vector, block, alpha, dual=True))
         return tuple(constraints)
 
     def primal_distance(self, value: ArrayLike) -> float:
@@ -303,10 +385,15 @@ class ConeLayout:
         Returns
         -------
         float
-            Euclidean product-cone distance. With finite zero-cone entries,
-            nonfinite entries in a nonnegative or second-order block produce
-            positive infinity; NaN in a zero-cone block propagates to the
-            result.
+            Numerical Euclidean product-cone distance. Zero, nonnegative, and
+            second-order contributions are analytic. Exponential and 3D
+            power-cone contributions are numerical estimates. Exact membership
+            contributes zero, and uncertain solver results may be retried. If
+            no usable positive estimate is available, a conservative finite
+            upper bound is returned.
+            With finite zero-cone entries, nonfinite entries in a constrained
+            block produce positive infinity; NaN in a zero-cone block
+            propagates to the result.
 
         Raises
         ------
@@ -318,7 +405,13 @@ class ConeLayout:
         squared_distance = float(np.dot(vector[self.zero_slice], vector[self.zero_slice]))
         squared_distance += _nonnegative_squared_distance(vector[self.nonnegative_slice])
         squared_distance += sum(_soc_squared_distance(vector[block]) for block in self.second_order_slices)
-        return float(np.sqrt(squared_distance))
+        distance = float(np.sqrt(squared_distance))
+        nonlinear_distance = _nonlinear_cone_distance(
+            tuple(vector[block] for block in self.exponential_slices),
+            tuple((vector[block], alpha) for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True)),
+            dual=False,
+        )
+        return _saturated_hypot(distance, nonlinear_distance)
 
     def dual_distance(self, value: ArrayLike) -> float:
         """Compute distance to the dual product cone.
@@ -331,8 +424,12 @@ class ConeLayout:
         Returns
         -------
         float
-            Euclidean distance, with zero-cone dual rows unrestricted, or
-            positive infinity for nonfinite constrained entries.
+            Numerical Euclidean product-cone distance, with zero-cone dual
+            rows unrestricted. Exponential and 3D power-cone contributions
+            are numerical estimates. Exact membership contributes zero, and
+            uncertain solver results may be retried. If no usable positive
+            estimate is available, a conservative finite upper bound is
+            returned. Nonfinite constrained entries produce positive infinity.
 
         Raises
         ------
@@ -343,7 +440,13 @@ class ConeLayout:
         vector = _numeric_vector(value, self.size)
         squared_distance = _nonnegative_squared_distance(vector[self.nonnegative_slice])
         squared_distance += sum(_soc_squared_distance(vector[block]) for block in self.second_order_slices)
-        return float(np.sqrt(squared_distance))
+        distance = float(np.sqrt(squared_distance))
+        nonlinear_distance = _nonlinear_cone_distance(
+            tuple(vector[block] for block in self.exponential_slices),
+            tuple((vector[block], alpha) for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True)),
+            dual=True,
+        )
+        return _saturated_hypot(distance, nonlinear_distance)
 
     def complementarity(self, primal: ArrayLike, dual: ArrayLike) -> float:
         """Compute the canonical primal-dual pairing.
@@ -416,6 +519,46 @@ def _soc_constraint(vector: cp.Expression, block: slice) -> cp.Constraint:
     return cp.norm(vector[block.start + 1 : block.stop], 2) <= vector[block.start]
 
 
+def _exponential_constraints(
+    vector: cp.Expression,
+    block: slice,
+    *,
+    dual: bool,
+) -> tuple[cp.Constraint, ...]:
+    """Construct exact scalar membership constraints for one EXP block."""
+
+    x = vector[block.start]
+    y = vector[block.start + 1]
+    z = vector[block.start + 2]
+    # Native ExpCone constraints do not implement is_dnlp in CVXPY 1.9.
+    # Relative entropy gives exact closed-cone descriptions that are both DCP
+    # and DNLP, including the y=0 (or, dually, x=0) closure faces.
+    if dual:
+        return x <= 0, z >= 0, cp.rel_entr(-x, z) <= y - x
+    return y >= 0, z >= 0, cp.rel_entr(y, z) <= -x
+
+
+def _power_3d_constraints(
+    vector: cp.Expression,
+    block: slice,
+    alpha: float,
+    *,
+    dual: bool,
+) -> tuple[cp.Constraint, ...]:
+    x = vector[block.start]
+    y = vector[block.start + 1]
+    z = vector[block.start + 2]
+    geometric_mean = cp.geo_mean(
+        cp.hstack([x, y]),
+        p=[alpha, 1.0 - alpha],
+        approx=False,
+    )
+    tail_scale = _power_3d_dual_scale(alpha) if dual else 1.0
+    # Native PowCone3D constraints do not implement is_dnlp in CVXPY 1.9.
+    # This exact scalar form is both DCP (for fixed-lower solves) and DNLP.
+    return x >= 0, y >= 0, tail_scale * cp.abs(z) <= geometric_mean
+
+
 def _dimension(value: object, name: str) -> int:
     if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"{name} must be a nonnegative integer.")
@@ -425,6 +568,21 @@ def _dimension(value: object, name: str) -> int:
         raise ValueError(f"{name} must be a nonnegative integer.") from error
     if result < 0:
         raise ValueError(f"{name} must be a nonnegative integer.")
+    return result
+
+
+def _power_3d_exponent(value: object, name: str) -> float:
+    if isinstance(value, (bool, np.bool_, str, bytes)) or np.iscomplexobj(value):
+        raise ValueError(f"{name} must be a finite real number strictly between zero and one.")
+    try:
+        array = np.asarray(value, dtype=np.float64)
+        if array.shape:
+            raise ValueError
+        result = float(array)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(f"{name} must be a finite real number strictly between zero and one.") from error
+    if not np.isfinite(result) or not 0.0 < result < 1.0:
+        raise ValueError(f"{name} must be a finite real number strictly between zero and one.")
     return result
 
 

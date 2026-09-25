@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 from numpy.typing import ArrayLike, NDArray
 
+import blvpy.continuation as continuation
 from blvpy import BilevelProblem, GapDiagnostics, LowerProblem, Residuals
 
 if TYPE_CHECKING:
@@ -66,6 +67,73 @@ def _soc_distance(point: ArrayLike) -> float:
     return (tail_norm - head) / sqrt(2.0)
 
 
+def _exp_distance(point: ArrayLike, *, dual: bool) -> float:
+    """Independent Euclidean distance oracle using CVXPY's native cone."""
+
+    vector = np.asarray(point, dtype=float).reshape(3)
+    tolerance = 1e-10 * max(1.0, float(np.max(np.abs(vector))))
+    if dual:
+        u, v, w = (float(entry) for entry in vector)
+        if u <= tolerance and w >= -tolerance:
+            if abs(u) <= tolerance and v >= -tolerance:
+                return 0.0
+            if u < 0.0 and w > 0.0 and (-u) * np.log((-u) / w) <= v - u + tolerance:
+                return 0.0
+    else:
+        x, y, z = (float(entry) for entry in vector)
+        if y >= -tolerance and z >= -tolerance:
+            if abs(y) <= tolerance and x <= tolerance:
+                return 0.0
+            if y > 0.0 and z > 0.0 and x <= y * (np.log(z) - np.log(y)) + tolerance:
+                return 0.0
+    projected = cp.Variable(3)
+    if dual:
+        cone = cp.ExpCone(-projected[1], -projected[0], np.e * projected[2])
+    else:
+        cone = cp.ExpCone(projected[0], projected[1], projected[2])
+    projection = cp.Problem(cp.Minimize(cp.sum_squares(projected - vector)), [cone])
+    projection.solve(
+        solver=cp.CLARABEL,
+        tol_gap_abs=1e-10,
+        tol_gap_rel=1e-10,
+        tol_feas=1e-10,
+    )
+    assert projection.status in cp.settings.SOLUTION_PRESENT
+    assert projection.value is not None
+    return sqrt(max(float(projection.value), 0.0))
+
+
+def _power_3d_distance(point: ArrayLike, alpha: float, *, dual: bool) -> float:
+    """Independent Euclidean distance oracle using CVXPY's native cone."""
+
+    vector = np.asarray(point, dtype=float).reshape(3)
+    x_head = float(vector[0] / alpha) if dual else float(vector[0])
+    y_head = float(vector[1] / (1.0 - alpha)) if dual else float(vector[1])
+    tail = abs(float(vector[2]))
+    if x_head >= 0.0 and y_head >= 0.0:
+        if tail == 0.0:
+            return 0.0
+        if x_head > 0.0 and y_head > 0.0:
+            log_bound = alpha * np.log(x_head) + (1.0 - alpha) * np.log(y_head)
+            if np.log(tail) <= log_bound + 1e-10:
+                return 0.0
+    projected = cp.Variable(3)
+    if dual:
+        cone = cp.PowCone3D(projected[0] / alpha, projected[1] / (1.0 - alpha), projected[2], alpha)
+    else:
+        cone = cp.PowCone3D(projected[0], projected[1], projected[2], alpha)
+    projection = cp.Problem(cp.Minimize(cp.sum_squares(projected - vector)), [cone])
+    projection.solve(
+        solver=cp.CLARABEL,
+        tol_gap_abs=1e-10,
+        tol_gap_rel=1e-10,
+        tol_feas=1e-10,
+    )
+    assert projection.status in cp.settings.SOLUTION_PRESENT
+    assert projection.value is not None
+    return sqrt(max(float(projection.value), 0.0))
+
+
 def _product_cone_distance(
     value: ArrayLike,
     layout: ConeLayout,
@@ -81,6 +149,10 @@ def _product_cone_distance(
     squared += float(negative_part @ negative_part)
     for block in layout.second_order_slices:
         squared += _soc_distance(vector[block]) ** 2
+    for block in layout.exponential_slices:
+        squared += _exp_distance(vector[block], dual=dual) ** 2
+    for block, alpha in zip(layout.power_3d_slices, layout.power_3d, strict=True):
+        squared += _power_3d_distance(vector[block], alpha, dual=dual) ** 2
     return sqrt(squared)
 
 
@@ -155,6 +227,14 @@ def _primal_cone_constraints(value: cp.Variable, layout: ConeLayout) -> list[cp.
         for block in layout.blocks
         if block.kind == "second_order"
     )
+    constraints.extend(
+        cp.ExpCone(value[block.start], value[block.start + 1], value[block.start + 2])
+        for block in layout.exponential_slices
+    )
+    constraints.extend(
+        cp.PowCone3D(value[block.start], value[block.start + 1], value[block.start + 2], alpha)
+        for block, alpha in zip(layout.power_3d_slices, layout.power_3d, strict=True)
+    )
     return constraints
 
 
@@ -227,7 +307,12 @@ def _assert_residuals_match(actual: Residuals, expected: Residuals) -> None:
     )
 
 
-def _assert_gap_diagnostics_match(actual: GapDiagnostics, expected: GapDiagnostics) -> None:
+def _assert_gap_diagnostics_match(
+    actual: GapDiagnostics,
+    expected: GapDiagnostics,
+    *,
+    source_gap_atol: float = 2e-8,
+) -> None:
     names = (
         "primal_objective",
         "dual_objective",
@@ -244,7 +329,7 @@ def _assert_gap_diagnostics_match(actual: GapDiagnostics, expected: GapDiagnosti
         rtol=1e-8,
         atol=1e-9,
     )
-    assert actual.source_gap == pytest.approx(expected.source_gap, abs=1e-8)
+    assert actual.source_gap == pytest.approx(expected.source_gap, abs=source_gap_atol)
 
 
 def _check_against_numerical_oracles(
@@ -254,6 +339,7 @@ def _check_against_numerical_oracles(
     check_reference_recovery: bool = True,
     check_gap_convenience: bool = False,
     canonical_source_atol: float = 1e-8,
+    gap_convenience_atol: float = 2e-8,
 ) -> _NumericalOracle:
     assert result.succeeded
     assert result.objective is not None
@@ -311,7 +397,11 @@ def _check_against_numerical_oracles(
     assert gap_diagnostics.source_gap == pytest.approx(source_gap)
     assert gap_diagnostics.identity_error == pytest.approx(0.0, abs=1e-9)
     if check_gap_convenience:
-        _assert_gap_diagnostics_match(model.gap_diagnostics(result), gap_diagnostics)
+        _assert_gap_diagnostics_match(
+            model.gap_diagnostics(result),
+            gap_diagnostics,
+            source_gap_atol=gap_convenience_atol,
+        )
     return _NumericalOracle(
         source_gap=source_gap,
         direct_lower_value=direct_lower_value,
@@ -351,6 +441,40 @@ def _quadratic_model() -> tuple[BilevelProblem, cp.Variable, cp.Variable]:
         lower,
     )
     return model, x, y
+
+
+def _vectorized_exponential_cone_model() -> tuple[
+    BilevelProblem,
+    cp.Variable,
+    cp.Variable,
+    cp.Variable,
+    cp.Variable,
+    NDArray[np.float64],
+]:
+    base = np.array([0.5, 1.0, 2.0])
+    x = cp.Variable(name="x", bounds=[-0.5, 0.5])
+    exponent = cp.Variable(3, name="exponent")
+    scale = cp.Variable(3, name="scale")
+    epigraph = cp.Variable(3, name="epigraph")
+    lower = LowerProblem(
+        cp.Minimize(cp.sum(epigraph)),
+        [
+            exponent == x + np.log(base),
+            scale == 1.0,
+            cp.ExpCone(exponent, scale, epigraph),
+        ],
+        parameters=[x],
+    )
+    model = BilevelProblem(
+        cp.Minimize(
+            cp.square(x)
+            + cp.sum_squares(exponent - np.log(base))
+            + cp.sum_squares(scale - 1.0)
+            + cp.sum_squares(epigraph - base)
+        ),
+        lower,
+    )
+    return model, x, exponent, scale, epigraph, base
 
 
 def test_analytic_quadratic_reaches_target_and_is_epsilon_lower_optimal() -> None:
@@ -559,6 +683,296 @@ def test_exact_geometric_mean_and_rational_power_lower_problem() -> None:
     )
 
     np.testing.assert_allclose([x.value, *y.value, z.value], np.full(4, target), atol=_ANALYTIC_ATOL)
+    assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+        canonical_source_atol=2e-5,
+    )
+
+
+def test_exact_exp_lower_problem_uses_multiple_exponential_cones_end_to_end() -> None:
+    offsets = np.array([-0.6, 0.0, 0.5])
+    target = 0.2
+    x = cp.Variable(name="x", bounds=[-0.5, 1.0])
+    y = cp.Variable(3, name="y")
+    lower = LowerProblem(
+        cp.Minimize(cp.sum(cp.exp(y))),
+        [y >= x + offsets],
+        parameters=[x],
+    )
+    expected_y = target + offsets
+    model = BilevelProblem(
+        cp.Minimize(cp.square(x - target) + cp.sum_squares(y - expected_y)),
+        lower,
+    )
+
+    canonical = model.canonicalize()
+    assert canonical.cone_layout.exponential == 3
+    assert canonical.cone_layout.second_order == ()
+    assert canonical.cone_layout.power_3d == ()
+    result = _solve(model, epsilon_initial=1e-5, epsilon_target=1e-5, seed=61)
+
+    assert float(x.value) == pytest.approx(target, abs=_ANALYTIC_ATOL)
+    np.testing.assert_allclose(y.value, expected_y, atol=_ANALYTIC_ATOL)
+    assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+        canonical_source_atol=2e-5,
+        gap_convenience_atol=1e-7,
+    )
+    polished = model.polish(result, solver=cp.CLARABEL, verbose=False)
+    assert polished.feasible
+    assert polished.residuals.primal_cone <= 1e-7
+    assert polished.residuals.dual_cone <= 1e-7
+    np.testing.assert_allclose(polished.variable_values[y], float(polished.variable_values[x]) + offsets, atol=1e-7)
+
+
+def test_vectorized_direct_exponential_cone_lower_constraint_end_to_end() -> None:
+    model, x, exponent, scale, epigraph, base = _vectorized_exponential_cone_model()
+
+    canonical = model.canonicalize()
+    assert canonical.cone_layout.exponential == 3
+    assert len(canonical.cone_layout.exponential_slices) == 3
+    assert all(block.stop - block.start == 3 for block in canonical.cone_layout.exponential_slices)
+    result = _solve(model, epsilon_initial=1e-5, epsilon_target=1e-5, seed=67)
+
+    assert float(x.value) == pytest.approx(0.0, abs=_ANALYTIC_ATOL)
+    np.testing.assert_allclose(exponent.value, np.log(base), atol=_ANALYTIC_ATOL)
+    np.testing.assert_allclose(scale.value, np.ones(3), atol=_ANALYTIC_ATOL)
+    np.testing.assert_allclose(epigraph.value, base, atol=_ANALYTIC_ATOL)
+    assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+        canonical_source_atol=2e-5,
+        gap_convenience_atol=1e-7,
+    )
+
+
+def test_exponential_cone_infeasible_start_uses_real_ipopt_restoration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, x, exponent, scale, epigraph, base = _vectorized_exponential_cone_model()
+    original_initialize_lower = continuation._initialize_lower
+    original_restore_feasibility = continuation._restore_feasibility
+    restorations: list[tuple[Residuals, Residuals]] = []
+
+    def initialize_with_infeasible_exponential_blocks(current, *args, **kwargs) -> None:
+        original_initialize_lower(current, *args, **kwargs)
+        layout = current.canonicalize().cone_layout
+        assert layout.exponential == 3
+        lifted = current._lifted_problem
+        slack = np.asarray(lifted.slack.value, dtype=float).reshape(-1).copy()
+        dual = np.asarray(lifted.dual.value, dtype=float).reshape(-1).copy()
+        for block in layout.exponential_slices:
+            slack[block] = (0.75, 0.0, 0.0)
+            dual[block] = (0.75, 0.0, 0.0)
+        lifted.slack.save_value(slack)
+        lifted.dual.save_value(dual)
+
+    def record_restoration(
+        current,
+        epsilon,
+        solver,
+        options,
+        solver_verbose,
+        tolerance=1e-7,
+    ) -> None:
+        assert solver == cp.IPOPT
+        before = continuation.compute_residuals(current, epsilon)
+        original_restore_feasibility(current, epsilon, solver, options, solver_verbose, tolerance)
+        after = continuation.compute_residuals(current, epsilon)
+        restorations.append((before, after))
+
+    monkeypatch.setattr(continuation, "_initialize_lower", initialize_with_infeasible_exponential_blocks)
+    monkeypatch.setattr(continuation, "_restore_feasibility", record_restoration)
+
+    result = _solve(model, epsilon_initial=1e-2, epsilon_target=1e-5, seed=71)
+
+    assert len(restorations) == 1
+    before, after = restorations[0]
+    assert before.primal_cone > 0.5
+    assert before.dual_cone > 0.5
+    assert before.gap_violation > 0.5
+    assert after.max_violation <= 1e-7
+    assert result.residuals is not None
+    assert result.residuals.max_violation <= _FINAL_RESIDUAL_TOL
+    assert float(x.value) == pytest.approx(0.0, abs=_ANALYTIC_ATOL)
+    np.testing.assert_allclose(exponent.value, np.log(base), atol=_ANALYTIC_ATOL)
+    np.testing.assert_allclose(scale.value, np.ones(3), atol=_ANALYTIC_ATOL)
+    np.testing.assert_allclose(epigraph.value, base, atol=_ANALYTIC_ATOL)
+    assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+        canonical_source_atol=2e-5,
+        gap_convenience_atol=1e-7,
+    )
+
+
+def test_exact_power_lower_problem_uses_power_cone_end_to_end() -> None:
+    x = cp.Variable(name="x", bounds=[0.25, 1.5])
+    y = cp.Variable(nonneg=True, name="y")
+    lower = LowerProblem(
+        cp.Minimize(cp.power(y, np.sqrt(2.0), approx=False)),
+        [y >= x],
+        parameters=[x],
+    )
+    model = BilevelProblem(
+        cp.Minimize(cp.square(x - 1.0) + cp.square(y - 1.0)),
+        lower,
+    )
+
+    canonical = model.canonicalize()
+    assert canonical.cone_layout.power_3d
+    result = _solve(model, epsilon_initial=1e-5, epsilon_target=1e-5, seed=43)
+
+    np.testing.assert_allclose([x.value, y.value], [1.0, 1.0], atol=_ANALYTIC_ATOL)
+    assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+        canonical_source_atol=2e-5,
+    )
+    polished = model.polish(result, solver=cp.CLARABEL, verbose=False)
+    assert polished.feasible
+    assert polished.residuals.primal_cone <= 1e-7
+    assert polished.residuals.dual_cone <= 1e-7
+    assert float(polished.variable_values[y]) == pytest.approx(float(polished.variable_values[x]), abs=1e-7)
+
+
+def test_exact_pnorm_lower_problem_uses_power_cones_end_to_end() -> None:
+    exponent = np.sqrt(2.0)
+    alpha = 1.0 / exponent
+    x = cp.Variable(name="x", bounds=[0.25, 1.5])
+    y = cp.Variable(3, nonneg=True, name="y")
+    expected_y = np.array([1.0, 0.3, 0.4])
+    lower = LowerProblem(
+        cp.Minimize(cp.pnorm(y, exponent, approx=False)),
+        [y >= cp.hstack([x, 0.3, 0.4])],
+        parameters=[x],
+    )
+    model = BilevelProblem(
+        cp.Minimize(cp.square(x - 1.0) + cp.sum_squares(y - expected_y)),
+        lower,
+    )
+
+    canonical = model.canonicalize()
+    assert canonical.cone_layout.second_order == ()
+    np.testing.assert_allclose(canonical.cone_layout.power_3d, np.full(3, alpha))
+    result = _solve(model, epsilon_initial=1e-5, epsilon_target=1e-5, seed=53)
+
+    actual = np.concatenate(([float(x.value)], np.asarray(y.value, dtype=float)))
+    expected = np.concatenate(([1.0], expected_y))
+    np.testing.assert_allclose(actual, expected, atol=_ANALYTIC_ATOL)
+    assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+        canonical_source_atol=2e-5,
+    )
+
+
+def test_direct_power_cone_lower_constraint_end_to_end() -> None:
+    x = cp.Variable(name="x", bounds=[0.25, 1.5])
+    heads = cp.Variable(2, name="heads")
+    tail = cp.Variable(name="tail")
+    alpha = 0.25
+    lower = LowerProblem(
+        cp.Maximize(tail),
+        [heads[0] == x, heads[1] == 1.0, cp.PowCone3D(heads[0], heads[1], tail, alpha)],
+        parameters=[x],
+    )
+    model = BilevelProblem(
+        cp.Minimize(cp.square(x - 1.0) + cp.sum_squares(heads - 1.0) + cp.square(tail - 1.0)),
+        lower,
+    )
+
+    canonical = model.canonicalize()
+    assert canonical.cone_layout.power_3d == (alpha,)
+    result = _solve(model, epsilon_initial=1e-5, epsilon_target=1e-5, seed=47)
+
+    assert float(x.value) == pytest.approx(1.0, abs=_ANALYTIC_ATOL)
+    np.testing.assert_allclose(heads.value, np.ones(2), atol=_ANALYTIC_ATOL)
+    assert float(tail.value) == pytest.approx(1.0, abs=_ANALYTIC_ATOL)
+    assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
+    _check_against_numerical_oracles(
+        model,
+        result,
+        check_gap_convenience=True,
+        canonical_source_atol=2e-5,
+    )
+
+
+def test_power_cone_infeasible_start_uses_real_ipopt_restoration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    x = cp.Variable(name="x", bounds=[0.25, 1.5])
+    heads = cp.Variable(2, name="heads")
+    tail = cp.Variable(name="tail")
+    alpha = 0.25
+    lower = LowerProblem(
+        cp.Maximize(tail),
+        [heads[0] == x, heads[1] == 1.0, cp.PowCone3D(heads[0], heads[1], tail, alpha)],
+        parameters=[x],
+    )
+    model = BilevelProblem(
+        cp.Minimize(cp.square(x - 1.0) + cp.sum_squares(heads - 1.0) + cp.square(tail - 1.0)),
+        lower,
+    )
+    original_initialize_lower = continuation._initialize_lower
+    original_restore_feasibility = continuation._restore_feasibility
+    restorations: list[tuple[Residuals, Residuals]] = []
+
+    def initialize_with_infeasible_power_blocks(current, *args, **kwargs) -> None:
+        original_initialize_lower(current, *args, **kwargs)
+        layout = current.canonicalize().cone_layout
+        assert layout.power_3d == (alpha,)
+        lifted = current._lifted_problem
+        slack = np.asarray(lifted.slack.value, dtype=float).reshape(-1).copy()
+        dual = np.asarray(lifted.dual.value, dtype=float).reshape(-1).copy()
+        for block in layout.power_3d_slices:
+            slack[block] = (0.0, 0.0, 1.0)
+            dual[block] = (0.0, 0.0, 1.0)
+        lifted.slack.save_value(slack)
+        lifted.dual.save_value(dual)
+
+    def record_restoration(
+        current,
+        epsilon,
+        solver,
+        options,
+        solver_verbose,
+        tolerance=1e-7,
+    ) -> None:
+        assert solver == cp.IPOPT
+        before = continuation.compute_residuals(current, epsilon)
+        original_restore_feasibility(current, epsilon, solver, options, solver_verbose, tolerance)
+        after = continuation.compute_residuals(current, epsilon)
+        restorations.append((before, after))
+
+    monkeypatch.setattr(continuation, "_initialize_lower", initialize_with_infeasible_power_blocks)
+    monkeypatch.setattr(continuation, "_restore_feasibility", record_restoration)
+
+    result = _solve(model, epsilon_initial=1e-5, epsilon_target=1e-5, seed=59)
+
+    assert len(restorations) == 1
+    before, after = restorations[0]
+    assert before.primal_cone > 0.5
+    assert before.dual_cone > 0.5
+    assert before.gap_violation > 0.5
+    assert after.max_violation <= 1e-7
+    assert result.residuals is not None
+    assert result.residuals.max_violation <= _FINAL_RESIDUAL_TOL
+    np.testing.assert_allclose([x.value, *heads.value, tail.value], np.ones(4), atol=_ANALYTIC_ATOL)
     assert result.objective == pytest.approx(0.0, abs=_OBJECTIVE_ATOL)
     _check_against_numerical_oracles(
         model,

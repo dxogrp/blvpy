@@ -45,11 +45,15 @@ The complete model must satisfy **all** of the following:
   constant-only lower problems are not supported.
 - The lower problem is DCP and DPP with respect to every linked upper variable.
 - Every unlinked CVXPY parameter already has a finite value.
-- CVXPY produces only zero, nonnegative, and second-order cone blocks when
-  canonicalization is requested with a linear conic objective.
+- CVXPY produces only zero, nonnegative, second-order, exponential, and 3D
+  power-cone blocks when canonicalization is requested with a linear conic
+  objective.
 
 This includes linear programs, quadratic programs that CVXPY converts exactly
-to the accepted conic form, and second-order cone programs.
+to the accepted conic form, second-order cone programs, and models whose exact
+`cp.power(..., approx=False)` or `cp.pnorm(..., approx=False)` graphs use 3D
+power cones. Exact exponential-family atoms and scalar, vector, or matrix
+`cp.ExpCone` constraints are also accepted.
 
 Call {meth}`blvpy.BilevelProblem.validate` to obtain a specific exception for an unsupported model.
 See {doc}`troubleshooting` for the exception categories.
@@ -98,15 +102,3 @@ constraints.
 The dynamically assigned `variable.sample_bounds` attribute is sampling-only
 metadata used by explicit `best_of` searches.
 See {ref}`best-of-search`.
-
-## Numerical backends
-
-[IPOPT](https://coin-or.github.io/Ipopt/) is the default DNLP backend.
-A different backend accepted by CVXPY's `nlp=True` solve path can be passed to
-{meth}`blvpy.BilevelProblem.solve` after proper installation, but alternative
-backends are not fully tested.
-
-[Clarabel](https://clarabel.org/) is the default conic backend for fixed-upper
-lower solves, initialization, projection, and
-{meth}`~blvpy.BilevelProblem.gap_diagnostics`.
-Both the DNLP and conic solvers can be overridden per solve.

@@ -43,6 +43,11 @@ jobs:
       - name: Run tests
         run: uv run python -m pytest tests
 
+      - name: Run nonlinear-cone stress audit
+        if: matrix.python-version == '3.13'
+        timeout-minutes: 5
+        run: uv run --frozen python scripts/stress_cones.py --preset full
+
       - name: Check Marimo examples
         if: matrix.python-version == '3.13'
         run: uv run --frozen --group examples marimo check --strict examples

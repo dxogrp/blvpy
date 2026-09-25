@@ -13,30 +13,34 @@ expression that CVXPY does not recognize as DNLP.
 issues. {class}`blvpy.CanonicalizationError` indicates that CVXPY did not expose
 the exact canonical form BLVPY expected.
 
-## A lower atom is rejected
+## A lower model is rejected
 
-BLVPY checks both the source atom and the cones produced by CVXPY. The exception
-identifies which boundary failed:
+BLVPY validates the source expression and its canonical cone program as two
+separate layers. The exception identifies which layer failed.
 
-- {class}`blvpy.UnsupportedModelError` means the source atom is not in the
-  audited exact-SOCP set. Reformulate it using an accepted composition when
-  possible; {doc}`supported-atoms` lists every directly audited atom.
-- {class}`blvpy.ApproximateCanonicalizationError` means a power, p-norm, or
-  geometric-mean atom has nonzero or nonfinite `approx_error`, or a constraint
-  uses a quadrature approximation. BLVPY requires error exactly equal to zero,
-  not merely close to zero. Use an exactly represented rational exponent or
-  weight when the model permits it.
-- {class}`blvpy.UnsupportedConeError` means the source expression reaches PSD,
-  exponential, or power cones. For example, `approx=False` power and p-norm
-  forms require power cones even though approximation is disabled.
+### Source-expression checks
+
+- {class}`blvpy.UnsupportedModelError` means a source atom is outside the
+  audited set. {doc}`supported-atoms` lists every directly audited nonlinear
+  atom.
+- {class}`blvpy.ApproximateCanonicalizationError` means an atom has nonzero or
+  nonfinite approximation error, or a constraint uses a quadrature
+  approximation. Accepted rational representations must report finite
+  `approx_error` equal to zero. `PowCone3DApprox` is rejected because it uses
+  an SOC approximation; use the native `cp.PowCone3D` constraint when the
+  model requires an exact three-dimensional power cone.
+
+### Canonical-form checks
+
+At the cone level, BLVPY supports zero, nonnegative, second-order,
+exponential, and three-dimensional power-cone blocks. PSD and N-dimensional
+power-cone blocks are unsupported.
+
+- {class}`blvpy.UnsupportedConeError` reports an unsupported cone block. Exact
+  `cp.geo_mean` and direct `cp.PowConeND` constraints, for example, produce
+  N-dimensional power cones.
 - {class}`blvpy.CanonicalizationError` means CVXPY selected a reduction chain
   that BLVPY has not audited.
-
-For comparison, `cp.power(x, 3 / 2)`, `cp.pnorm(v, 3 / 2)`, and an exact
-`cp.geo_mean(v)` can pass the rational-atom check when their `approx_error` is
-zero. Exponential and logarithmic expressions, parameter-valued
-`matrix_frac`, spectral matrix functions, `perspective`, and any atom with a
-nonzero approximation error remain unsupported.
 
 ## IPOPT cannot be loaded
 
@@ -68,6 +72,20 @@ Inspect `result.runs`, `attempted_epsilon_history`, and each iteration's
 message and residuals. Possible responses include a looser target, gentler
 contraction, more retries, better scaling, explicit initialization, or a
 best-of search.
+
+## Nonlinear cone residuals are unexpectedly large
+
+Exponential- and 3D power-cone residual distances are numerical estimates.
+Scale a cone triple to a moderate common magnitude and, when an
+equivalent formulation permits it, avoid extreme ratios between its
+components. BLVPY attempts an exact shared power-of-two normalization.
+Uncertain solver results may be retried or replaced by a conservative upper
+bound rather than reported as zero.
+
+If BLVPY cannot obtain a usable positive estimate, it reports the distance to
+the cone's zero element as a conservative upper bound. This fail-closed result
+can cause an otherwise acceptable iterate to fail its residual check. See
+{ref}`nonlinear-cone-distance-estimates` for the numerical contract.
 
 ## Diagnostics fail
 

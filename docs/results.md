@@ -132,7 +132,8 @@ canonicalization produces $A$, $b$, $c$, $d$, and $\mathcal K$ from the
 modeled lower objective and constraints, and BLVPY evaluates their dependence
 on $x$. In the returned result, `canonical_primal` stores $u$, `slack` stores
 $s$, and `dual` stores $\lambda$. BLVPY recomputes the residuals from these
-snapshots after each nonlinear attempt; no additional solver call is required.
+snapshots after each nonlinear attempt; no additional lower-problem solve is
+required.
 
 {class}`blvpy.Residuals` reports how closely the returned numerical point
 satisfies this canonical system and the original bilevel model:
@@ -162,10 +163,10 @@ satisfies this canonical system and the original bilevel model:
     linked-variable domain constraints.
 * - `primal_cone`
   - $\operatorname{dist}(s,\mathcal{K})$
-  - Distance of the slack from the primal product cone.
+  - Numerical distance of the slack from the primal product cone.
 * - `dual_cone`
   - $\operatorname{dist}(\lambda,\mathcal{K}^*)$
-  - Distance of the dual vector from the dual product cone.
+  - Numerical distance of the dual vector from the dual product cone.
 * - `complementarity`
   - $s^T\lambda$
   - Signed primal-dual cone pairing. Exact lower optimality requires zero
@@ -177,6 +178,22 @@ satisfies this canonical system and the original bilevel model:
     $s^T\lambda\leq\epsilon$. It is zero whenever that relaxed inequality is
     satisfied.
 ```
+
+(nonlinear-cone-distance-estimates)=
+### Cone distance diagnostics
+
+Algebraic residuals and zero-, nonnegative-, and second-order-cone distances
+are evaluated directly. For exponential and 3D power cones, the reported
+distances are numerical estimates. BLVPY reports zero only after an exact
+membership check and retries uncertain solver results when possible.
+
+If no usable positive estimate is available, BLVPY reports the distance to the
+cone's zero element. This conservative upper bound can make a residual check
+fail, but it cannot cause a known nonmember to be reported as zero.
+
+Cone distances are evaluated wherever residuals are recomputed, including
+initialization, restoration, continuation attempts, final selection, and
+polishing.
 
 All six feasibility residuals ideally equal zero. For a residual record $r$,
 BLVPY defines the aggregate

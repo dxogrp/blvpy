@@ -1,5 +1,21 @@
 # Release notes
 
+## 0.5
+
+- Added exact 3D power-cone support, including exact `cp.power` and `cp.pnorm`
+  atoms and direct `cp.PowCone3D` constraints.
+- Added exponential-cone support for exact exponential-family atoms and
+  scalar, vector, and matrix `cp.ExpCone` constraints.
+- Extended {class}`blvpy.ConeLayout` inspection with the `power_3d` and `p3d`
+  exponent tuples, the `exponential` and `exp` counts, and their
+  `power_3d_slices`, `p3d_slices`, `exponential_slices`, and `exp_slices` row
+  selectors.
+- Made SCS and Clarabel direct runtime dependencies for nonlinear cone
+  diagnostics.
+- Added advanced clean-equipment rebate and carbon-tax abatement examples,
+  demonstrating 3D power-cone and exponential-cone lower models,
+  respectively.
+
 ## 0.4
 
 - Added {meth}`blvpy.BilevelProblem.polish`, a non-mutating fixed-upper lower

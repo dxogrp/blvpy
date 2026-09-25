@@ -58,6 +58,11 @@ test: sync ## run the full test suite
 	@printf "$(BLUE)Running tests...$(RESET)\n"
 	@uv run python -m pytest tests
 
+.PHONY: stress-cones
+stress-cones: sync ## run the deterministic nonlinear-cone stress audit
+	@printf "$(BLUE)Stress-testing nonlinear cone distances...$(RESET)\n"
+	@uv run --frozen python scripts/stress_cones.py --preset full
+
 .PHONY: lint
 lint: sync ## check formatting and lint rules
 	@printf "$(BLUE)Running Ruff checks...$(RESET)\n"

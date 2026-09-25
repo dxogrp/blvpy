@@ -74,6 +74,8 @@ class ProgressReporter:
         zero: int,
         nonnegative: int,
         soc: tuple[int, ...],
+        exp: int = 0,
+        power_3d: tuple[float, ...] = (),
         lower_solver: str,
         nonlinear_solver: str,
         best_of: int | None,
@@ -97,7 +99,13 @@ class ProgressReporter:
                 f"canonical_constraints={canonical_constraints}",
             )
             soc_text = "[" + ", ".join(str(dimension) for dimension in soc) + "]"
-            self._detail("Cones", f"zero={zero}", f"nonnegative={nonnegative}", f"soc={soc_text}")
+            cone_fields = [f"zero={zero}", f"nonnegative={nonnegative}", f"soc={soc_text}"]
+            if exp:
+                cone_fields.append(f"exp={exp}")
+            if power_3d:
+                power_3d_text = "[" + ", ".join(_number(alpha) for alpha in power_3d) + "]"
+                cone_fields.append(f"power3d={power_3d_text}")
+            self._detail("Cones", *cone_fields)
             self._detail(
                 "Solvers",
                 f"lower={_clean_text(lower_solver)}",

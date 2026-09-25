@@ -28,6 +28,12 @@ its own row.
   - $\left\langle\operatorname{sort}(\operatorname{vec}x),
     \operatorname{sort}(\operatorname{vec}W)\right\rangle$
   - LP
+* - `cp.entr(x)`
+  - $-x\log x$ elementwise
+  - EXP
+* - `cp.exp(x)`
+  - $e^x$ elementwise
+  - EXP
 * - `cp.geo_mean(x, p=..., approx=True)`
   - $\displaystyle\prod_i x_i^{w_i}$, where
     $w=p/(\mathbf{1}^{\mathsf T}p)$
@@ -35,6 +41,21 @@ its own row.
 * - `cp.huber(x, M)`
   - $\begin{cases}x^2,&|x|\leq M,\\2M|x|-M^2,&|x|>M\end{cases}$
   - SOC
+* - `cp.kl_div(x, y)`
+  - $x\log(x/y)-x+y$ elementwise
+  - EXP
+* - `cp.log(x)`
+  - $\log x$ elementwise
+  - EXP
+* - `cp.log1p(x)`
+  - $\log(1+x)$ elementwise
+  - EXP
+* - `cp.log_sum_exp(x, axis=..., keepdims=...)`
+  - $\log\left(\sum_i e^{x_i}\right)$
+  - EXP
+* - `cp.logistic(x)`
+  - $\log(1+e^x)$ elementwise
+  - EXP
 * - `cp.max(x, axis=...)`
   - $\max_i x_i$
   - LP
@@ -57,18 +78,31 @@ its own row.
   - $\begin{cases}(\sum_i |x_i|^p)^{1/p},&p>1,\\
     (\sum_i x_i^p)^{1/p},&p<1,\ x\geq0\end{cases}$
   - SOC
+* - `cp.pnorm(x, p, approx=False)`
+  - $\begin{cases}(\sum_i |x_i|^p)^{1/p},&p>1,\\
+    (\sum_i x_i^p)^{1/p},&p<1,\ x\geq0\end{cases}$
+  - LP / SOC / P3D
 * - `cp.power(x, p, approx=True)`
   - $x^p$ elementwise
   - SOC
+* - `cp.power(x, p, approx=False)`
+  - $x^p$ elementwise
+  - Affine / SOC / P3D
 * - `cp.quad_form(x, P)`
   - $x^TPx$
   - SOC
 * - `cp.quad_over_lin(x, y)`
   - $\|x\|_2^2/y$
   - SOC
+* - `cp.rel_entr(x, y)`
+  - $x\log(x/y)$ elementwise
+  - EXP
 * - `cp.sum_largest(x, k)`
   - $\displaystyle\sum_{i=1}^k x_{[i]}$
   - LP
+* - `cp.xexp(x)`
+  - $xe^x$ elementwise
+  - EXP / SOC
 ```
 
 Vector-valued expressions are flattened where needed. Sorting in `dotsort`
@@ -85,6 +119,29 @@ representations. BLVPY accepts them only when CVXPY reports a finite
 `approx_error` exactly equal to zero. A tiny nonzero value is still an
 approximation and is rejected without a numerical tolerance.
 
-Note that using `approx=False` selects CVXPY's exact power-cone representation instead.
-However, power cones are outside BLVPY's current cone policy, so those forms remain
-unsupported even though they do not use rational approximation.
+Using `approx=False` for `cp.power` or `cp.pnorm` selects CVXPY's exact
+representation, which uses 3D power cones for the general case and simpler
+cones for special exponents. BLVPY supports those forms. Direct scalar and
+vectorized `cp.PowCone3D` constraints are also supported. Exact `cp.geo_mean`
+and direct `cp.PowConeND` constraints produce generalized power cones and
+remain unsupported. Convenience wrappers that do not expose an `approx`
+argument keep their normal CVXPY representation.
+
+Note that here the exactness describes the canonical graph representation, not the
+numerical cone-distance estimates; see
+{ref}`nonlinear-cone-distance-estimates`.
+
+## Exponential representations
+
+The listed exponential-family atoms use exact exponential-cone graphs.
+BLVPY also supports direct scalar, vector, and matrix `cp.ExpCone`
+constraints. Vector and matrix entries become three-row exponential-cone
+blocks in CVXPY's canonical element order.
+
+BLVPY audits exactness from the constructed expression graph. Convenience
+functions such as `cp.loggamma` and `cp.log_normcdf` return compositions of
+primitive atoms rather than distinct source nodes, so BLVPY evaluates those
+compositions according to their constituent atoms. Any approximation embodied
+in such a composition remains part of the modeled expression. Explicit
+quadrature constraints such as `RelEntrConeQuad` and `OpRelEntrConeQuad`
+remain unsupported.

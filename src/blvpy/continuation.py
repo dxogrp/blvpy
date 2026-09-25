@@ -12,6 +12,37 @@ import cvxpy as cp
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from ._cones.power import _power_3d_dual_scale as _power_3d_dual_scale
+from ._continuation.residuals import (
+    _constraint_violation,
+    _finite_constraint_violation,
+    _infinite_residuals,
+)
+from ._continuation.residuals import (
+    _norm as _norm,
+)
+from ._continuation.residuals import (
+    _required_vector as _required_vector,
+)
+from ._continuation.residuals import compute_residuals as _compute_residuals
+from ._continuation.restoration import _relax_constraint, _relaxed_cone_constraints
+from ._continuation.sampling import _generate_upper_initializations
+from ._continuation.sampling import (
+    _project_variable_value as _project_variable_value,
+)
+from ._continuation.sampling import (
+    _validated_sample_bounds as _validated_sample_bounds,
+)
+from ._continuation.sampling import (
+    _variable_bounds as _variable_bounds,
+)
+from ._continuation.state import (
+    _assign_values,
+    _numeric_value,
+    _restore_state,
+    _snapshot_state,
+    _sync_linked_parameters,
+)
 from .backends import solve_conic, solve_dnlp
 from .errors import InitializationError, SolveError, SolverUnavailableError
 from .fixed_lower import FixedLowerSolveError, solve_fixed_lower
@@ -132,6 +163,8 @@ def _solve_bilevel(
         zero=layout.zero,
         nonnegative=layout.nonnegative,
         soc=layout.second_order,
+        exp=layout.exponential,
+        power_3d=layout.power_3d,
         lower_solver=str(settings.conic_solver),
         nonlinear_solver=str(settings.solver),
         best_of=best_of,
@@ -650,125 +683,6 @@ def _checked_record(
     )
 
 
-def _generate_upper_initializations(
-    model: BilevelProblem,
-    best_of: int | None,
-    rng: np.random.Generator,
-) -> tuple[dict[cp.Variable, NDArray[np.float64]], ...]:
-    """Generate deterministic or CVXPY-style randomized upper points."""
-
-    if best_of is None:
-        sample: dict[cp.Variable, NDArray[np.float64]] = {}
-        for variable in model.upper_variables:
-            if variable.value is not None:
-                value = _numeric_value(variable.value, variable.shape)
-            else:
-                lower, upper = _variable_bounds(variable)
-                both = np.isfinite(lower) & np.isfinite(upper)
-                lower_only = np.isfinite(lower) & ~np.isfinite(upper)
-                upper_only = ~np.isfinite(lower) & np.isfinite(upper)
-                value = np.zeros(variable.shape, dtype=float)
-                value[both] = (lower[both] + upper[both]) / 2.0
-                value[lower_only] = lower[lower_only] + 1.0
-                value[upper_only] = upper[upper_only] - 1.0
-                value = _project_variable_value(variable, value)
-            sample[variable] = value
-        return (sample,)
-
-    specifications: list[
-        tuple[
-            cp.Variable,
-            NDArray[np.float64] | None,
-            NDArray[np.float64] | None,
-            NDArray[np.float64] | None,
-        ]
-    ] = []
-    missing: list[str] = []
-    for variable in model.upper_variables:
-        sample_bounds = getattr(variable, "sample_bounds", None)
-        if sample_bounds is not None:
-            lower, upper = _validated_sample_bounds(variable, sample_bounds)
-            specifications.append((variable, None, lower, upper))
-        elif variable.value is not None:
-            specifications.append(
-                (
-                    variable,
-                    _numeric_value(variable.value, variable.shape),
-                    None,
-                    None,
-                )
-            )
-        else:
-            lower, upper = _variable_bounds(variable)
-            if np.all(np.isfinite(lower)) and np.all(np.isfinite(upper)):
-                specifications.append((variable, None, lower, upper))
-            else:
-                missing.append(variable.name())
-    if missing:
-        names = ", ".join(missing)
-        raise InitializationError(
-            "Random best-of initialization requires .value, finite "
-            ".sample_bounds, or finite native bounds for variables: "
-            f"{names}."
-        )
-
-    samples: list[dict[cp.Variable, NDArray[np.float64]]] = []
-    for _ in range(best_of):
-        sample = {}
-        for variable, fixed, lower, upper in specifications:
-            if fixed is not None:
-                value = fixed.copy()
-            else:
-                assert lower is not None and upper is not None
-                value = np.asarray(
-                    rng.uniform(lower, upper),
-                    dtype=float,
-                ).reshape(variable.shape, order="F")
-                value = _project_variable_value(variable, value)
-            sample[variable] = value
-        samples.append(sample)
-    return tuple(samples)
-
-
-def _validated_sample_bounds(
-    variable: cp.Variable,
-    sample_bounds: Any,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    try:
-        lower_value, upper_value = sample_bounds
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"sample_bounds for variable {variable.name()!r} must be a (lower, upper) pair.") from error
-    if np.iscomplexobj(lower_value) or np.iscomplexobj(upper_value):
-        raise ValueError(f"sample_bounds for variable {variable.name()!r} must be real.")
-    try:
-        lower = np.broadcast_to(
-            np.asarray(lower_value, dtype=float),
-            variable.shape,
-        ).copy()
-        upper = np.broadcast_to(
-            np.asarray(upper_value, dtype=float),
-            variable.shape,
-        ).copy()
-    except (TypeError, ValueError) as error:
-        raise ValueError(
-            f"sample_bounds for variable {variable.name()!r} cannot be broadcast to shape {variable.shape}."
-        ) from error
-    if not np.all(np.isfinite(lower)) or not np.all(np.isfinite(upper)):
-        raise ValueError(f"sample_bounds for variable {variable.name()!r} must be finite.")
-    if np.any(lower > upper):
-        raise ValueError(
-            f"sample_bounds for variable {variable.name()!r} have lower entries greater than upper entries."
-        )
-    return lower, upper
-
-
-def _sync_linked_parameters(model: BilevelProblem) -> None:
-    for parameter, variable in model._parameter_links.items():
-        if variable.value is None:
-            raise InitializationError(f"Linked upper variable {variable.name()!r} has no value.")
-        parameter.value = np.asarray(variable.value, dtype=float)
-
-
 def _project_upper_start(
     model: BilevelProblem,
     sample: Mapping[cp.Variable, ArrayLike],
@@ -811,40 +725,7 @@ def _project_upper_start(
 def compute_residuals(model: BilevelProblem, epsilon: float | None = None) -> Residuals:
     """Independently compute all reported lifted residuals."""
 
-    lifted = model._lifted_problem
-    if epsilon is None:
-        epsilon = float(lifted.epsilon.value)
-    values = {parameter: variable.value for parameter, variable in model._parameter_links.items()}
-    if any(value is None for value in values.values()):
-        raise InitializationError("Linked upper variables do not all have numeric values.")
-    data = model.canonicalize().apply_numeric(values)
-    primal = _required_vector(lifted.primal.value, "canonical primal")
-    slack = _required_vector(lifted.slack.value, "canonical slack")
-    dual = _required_vector(lifted.dual.value, "canonical dual")
-    primal_residual = data.A @ primal + slack - data.b
-    dual_residual = data.A.T @ dual + data.c
-
-    recovered = model.canonicalize().recover_numeric(primal)
-    recovery = 0.0
-    lower_by_id = {variable.id: variable for variable in model._cvxpy_lower_problem.variables()}
-    for variable_id, expected in recovered.items():
-        actual = lower_by_id[variable_id].value
-        if actual is None:
-            recovery = float("inf")
-            break
-        recovery = max(recovery, _norm(np.asarray(actual) - expected))
-    upper = _constraint_violation(lifted.upper_constraints)
-    complementarity = model.canonicalize().cone_layout.complementarity(slack, dual)
-    return Residuals(
-        primal_equality=_norm(primal_residual),
-        dual_equality=_norm(dual_residual),
-        recovery=recovery,
-        upper_constraints=upper,
-        primal_cone=model.canonicalize().cone_layout.primal_distance(slack),
-        dual_cone=model.canonicalize().cone_layout.dual_distance(dual),
-        complementarity=complementarity,
-        gap_violation=max(complementarity - float(epsilon), 0.0),
-    )
+    return _compute_residuals(model, epsilon)
 
 
 def _initialize_lower(
@@ -884,7 +765,10 @@ def _restore_feasibility(
 ) -> None:
     lifted = model._lifted_problem
     radius = cp.Variable(nonneg=True, name="blvpy_restoration_radius")
-    radius.value = max(1.0, _constraint_violation(lifted.problem.constraints))
+    initial_violation = _constraint_violation(lifted.problem.constraints)
+    if not np.isfinite(initial_violation):
+        initial_violation = _finite_constraint_violation(lifted.problem.constraints)
+    radius.value = max(1.0, initial_violation)
     constraints: list[cp.Constraint] = []
     for constraint in lifted.upper_constraints:
         constraints.extend(_relax_constraint(constraint, radius))
@@ -906,39 +790,6 @@ def _restore_feasibility(
             "Feasibility restoration terminated without a sufficiently feasible "
             f"lifted point (max violation {restored.max_violation:.3g})."
         )
-
-
-def _relaxed_cone_constraints(
-    model: BilevelProblem,
-    radius: cp.Expression,
-) -> tuple[cp.Constraint, ...]:
-    lifted = model._lifted_problem
-    layout = model.canonicalize().cone_layout
-    slack, dual = lifted.slack, lifted.dual
-    constraints: list[cp.Constraint] = []
-    if layout.zero:
-        constraints.extend([slack[layout.zero_slice] <= radius, -slack[layout.zero_slice] <= radius])
-    if layout.nonnegative:
-        constraints.extend([slack[layout.nonnegative_slice] >= -radius, dual[layout.nonnegative_slice] >= -radius])
-    for block in layout.second_order_slices:
-        constraints.extend(
-            [
-                cp.norm(slack[block.start + 1 : block.stop], 2) <= slack[block.start] + radius,
-                cp.norm(dual[block.start + 1 : block.stop], 2) <= dual[block.start] + radius,
-            ]
-        )
-    return tuple(constraints)
-
-
-def _relax_constraint(
-    constraint: cp.Constraint,
-    radius: cp.Expression,
-) -> tuple[cp.Constraint, ...]:
-    if isinstance(constraint, cp.constraints.zero.Equality):
-        return constraint.expr <= radius, -constraint.expr <= radius
-    if isinstance(constraint, cp.constraints.nonpos.Inequality):
-        return (constraint.expr <= radius,)
-    raise SolveError(f"Cannot construct feasibility restoration for {type(constraint).__name__}.")
 
 
 def _solve_one(
@@ -1009,32 +860,6 @@ def _compile_probe(lifted: _LiftedProblem) -> None:
         raise SolveError(f"DNLP derivative compilation failed: {error}") from error
 
 
-def _variable_bounds(
-    variable: cp.Variable,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    lower, upper = variable.get_bounds()
-    lower_array = np.broadcast_to(np.asarray(lower, dtype=float), variable.shape).copy()
-    upper_array = np.broadcast_to(np.asarray(upper, dtype=float), variable.shape).copy()
-    if np.any(lower_array > upper_array):
-        raise InitializationError(f"Variable {variable.name()!r} has inconsistent bounds.")
-    return lower_array, upper_array
-
-
-def _project_variable_value(
-    variable: cp.Variable,
-    value: ArrayLike,
-) -> NDArray[np.float64]:
-    try:
-        projected = variable.project(value)
-    except (TypeError, ValueError) as error:
-        raise InitializationError(
-            f"Could not project an automatic value for upper variable {variable.name()!r} onto its declared attributes."
-        ) from error
-    if hasattr(projected, "toarray"):
-        projected = projected.toarray()
-    return _numeric_value(projected, variable.shape)
-
-
 def _epsilon_schedule(initial: float, target: float, contraction: float):
     epsilon = initial
     yield epsilon
@@ -1048,26 +873,6 @@ def _epsilon_schedule(initial: float, target: float, contraction: float):
             break
         epsilon = next_epsilon
         yield epsilon
-
-
-def _snapshot_state(problem: cp.Problem) -> dict[int, NDArray[np.float64]]:
-    state: dict[int, NDArray[np.float64]] = {}
-    for variable in problem.variables():
-        if variable.value is None:
-            raise InitializationError(f"NLP solve did not return a value for variable {variable.name()!r}.")
-        state[variable.id] = np.array(variable.value, dtype=float, copy=True)
-    return state
-
-
-def _restore_state(problem: cp.Problem, state: Mapping[int, ArrayLike]) -> None:
-    for variable in problem.variables():
-        if variable.id in state:
-            variable.save_value(np.array(state[variable.id], dtype=float, copy=True))
-
-
-def _assign_values(values: Mapping[cp.Variable, ArrayLike]) -> None:
-    for variable, value in values.items():
-        variable.project_and_assign(value)
 
 
 def _automatic_initialization_error(
@@ -1171,39 +976,6 @@ def _diagnostic_failure_record(
     )
 
 
-def _constraint_violation(constraints) -> float:
-    violation = 0.0
-    for constraint in constraints:
-        try:
-            value = np.asarray(constraint.violation(), dtype=float)
-        except Exception:
-            return float("inf")
-        violation = max(violation, _norm(value))
-    return violation
-
-
-def _numeric_value(value: Any, shape: tuple[int, ...]) -> NDArray[np.float64]:
-    array = np.asarray(value, dtype=float)
-    if array.shape != shape:
-        array = np.reshape(array, shape, order="F")
-    if not np.all(np.isfinite(array)):
-        raise InitializationError("Initial upper-variable values must be finite.")
-    return array.copy()
-
-
-def _required_vector(value: Any, name: str) -> NDArray[np.float64]:
-    if value is None:
-        raise InitializationError(f"The {name} has no numeric value.")
-    return np.asarray(value, dtype=float).reshape(-1, order="F")
-
-
-def _norm(value: ArrayLike) -> float:
-    array = np.asarray(value, dtype=float).reshape(-1)
-    if not np.all(np.isfinite(array)):
-        return float("inf")
-    return float(np.linalg.norm(array))
-
-
 def _boolean(value: Any, name: str) -> bool:
     if not isinstance(value, (bool, np.bool_)):
         raise ValueError(f"{name} must be boolean.")
@@ -1218,19 +990,6 @@ def _finite_nonnegative(value: Any, name: str) -> float:
     if not np.isfinite(number) or number < 0:
         raise ValueError(f"{name} must be a finite nonnegative number.")
     return number
-
-
-def _infinite_residuals() -> Residuals:
-    return Residuals(
-        primal_equality=float("inf"),
-        dual_equality=float("inf"),
-        recovery=float("inf"),
-        upper_constraints=float("inf"),
-        primal_cone=float("inf"),
-        dual_cone=float("inf"),
-        complementarity=float("inf"),
-        gap_violation=float("inf"),
-    )
 
 
 __all__ = ["compute_residuals"]
