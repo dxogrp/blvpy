@@ -55,8 +55,9 @@ class Residuals:
     All fields except ``complementarity`` are nonnegative. Infinite residuals
     are retained to represent missing or nonfinite numerical solver output.
     Zero, nonnegative, and second-order cone distances are analytic. Nonlinear
-    cone estimates may report a normalized below-resolution value as zero;
-    they are not mathematical certificates.
+    cone diagnostics reserve zero for exact membership and retry unusable
+    projection estimates before replacing them with a conservative upper
+    bound; the auxiliary-solver estimates are not mathematical certificates.
     """
 
     primal_equality: float

@@ -78,8 +78,9 @@ best-of search.
 Exponential- and 3D power-cone residual distances are numerical projection
 estimates. Scale a cone triple to a moderate common magnitude and, when an
 equivalent formulation permits it, avoid extreme ratios between its
-components. BLVPY removes a shared power-of-two scale exactly, but it cannot
-recover distinctions that fall below the normalized solver resolution.
+components. BLVPY removes a shared power-of-two scale exactly. Estimates near
+solver resolution are retried or replaced by a conservative upper bound
+rather than reported as zero.
 
 If BLVPY cannot obtain a validated projection, it reports the distance to the
 cone's zero element as a conservative upper bound. This fail-closed result can
