@@ -129,7 +129,7 @@ argument keep their normal CVXPY representation.
 
 Here, exactness describes the canonical graph representation. Numerical
 exponential- and power-cone residual distances are evaluated to internal
-projection-solver tolerance; see {doc}`results`.
+projection-solver tolerance; see {ref}`nonlinear-cone-distance-estimates`.
 
 ## Exponential representations
 

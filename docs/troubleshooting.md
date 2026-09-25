@@ -81,12 +81,10 @@ equivalent formulation permits it, avoid extreme ratios between its
 components. BLVPY removes a shared power-of-two scale exactly, but it cannot
 recover distinctions that fall below the normalized solver resolution.
 
-BLVPY validates internal SCS and Clarabel projection results before using
-them. If neither result is usable, it reports distance to the cone's zero
-element as a conservative upper bound. This fail-closed result can cause an
-otherwise acceptable iterate to fail its residual check. The internal
-projection settings are not controlled by `conic_solver` or
-`conic_solver_options`; see {doc}`results` for the numerical contract.
+If BLVPY cannot obtain a validated projection, it reports the distance to the
+cone's zero element as a conservative upper bound. This fail-closed result can
+cause an otherwise acceptable iterate to fail its residual check. See
+{ref}`nonlinear-cone-distance-estimates` for the numerical contract.
 
 ## Diagnostics fail
 

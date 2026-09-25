@@ -114,9 +114,7 @@ Polishing independently recomputes BLVPY's residuals at `epsilon=0` and checks
 them against the originating solve's tolerance, because a successful solver
 status indicates that numerical stopping rules were met rather than proving
 exact feasibility. See {doc}`results` for the residual definitions and the
-scope of polished and source-point diagnostics. For exponential- or power-cone
-lower models, this recomputation can invoke the internal projection solvers
-described there.
+scope of polished and source-point diagnostics.
 
 Raw `complementarity` remains available in `polished.residuals` but is omitted
 from the terminal: at `epsilon=0`, its positive part is `gap_violation`, while

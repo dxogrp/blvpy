@@ -102,20 +102,3 @@ constraints.
 The dynamically assigned `variable.sample_bounds` attribute is sampling-only
 metadata used by explicit `best_of` searches.
 See {ref}`best-of-search`.
-
-## Numerical backends
-
-[IPOPT](https://coin-or.github.io/Ipopt/) is the default DNLP backend.
-A different backend accepted by CVXPY's `nlp=True` solve path can be passed to
-{meth}`blvpy.BilevelProblem.solve` after proper installation, but alternative
-backends are not fully tested.
-
-[Clarabel](https://clarabel.org/) is the default conic backend for fixed-upper
-lower solves, initialization, projection, and
-{meth}`~blvpy.BilevelProblem.gap_diagnostics`.
-Both the DNLP and conic solvers can be overridden per solve.
-
-Exponential- and 3D power-cone residual distances use separate internal
-projection solves: batched SCS first, followed by a Clarabel retry for any
-rejected block. These diagnostic backends are not selected or configured by
-`conic_solver` or `conic_solver_options`.

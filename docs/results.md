@@ -132,13 +132,10 @@ canonicalization produces $A$, $b$, $c$, $d$, and $\mathcal K$ from the
 modeled lower objective and constraints, and BLVPY evaluates their dependence
 on $x$. In the returned result, `canonical_primal` stores $u$, `slack` stores
 $s$, and `dual` stores $\lambda$. BLVPY recomputes the residuals from these
-snapshots rather than trusting the nonlinear solver status. Algebraic
-residuals and zero-, nonnegative-, and second-order-cone distances are
-evaluated directly. Exponential- and 3D power-cone distances can invoke
-internal batched SCS projection solves, with rejected blocks retried using
-Clarabel. Cone distances are evaluated wherever residuals are recomputed,
-including initialization, restoration, continuation attempts, final
-selection, and polishing.
+snapshots after each nonlinear attempt; no additional solver call is required.
+Algebraic residuals and zero-, nonnegative-, and second-order-cone distances
+are evaluated directly. See {ref}`nonlinear-cone-distance-estimates` for the
+different numerical contract of exponential- and 3D power-cone distances.
 
 {class}`blvpy.Residuals` reports how closely the returned numerical point
 satisfies this canonical system and the original bilevel model:
@@ -184,19 +181,29 @@ satisfies this canonical system and the original bilevel model:
     satisfied.
 ```
 
+(nonlinear-cone-distance-estimates)=
+### Nonlinear cone distance estimates
+
 For exponential and 3D power cones, the reported distances are
 solver-tolerance estimates rather than exact floating-point projections.
-BLVPY removes a shared power-of-two scale exactly, applies a stable membership
-check, and numerically validates each projected point against primal and polar
-membership plus complementarity. A normalized violation below the projection
-solver's resolution can be reported as zero.
+BLVPY first applies a stable membership check and attempts to remove a shared
+power-of-two scale exactly. Limiting power-cone exponents are handled
+analytically. Blocks requiring solver assistance are sent to batched
+[SCS](https://www.cvxgrp.org/scs/) projections, with rejected blocks retried
+individually using Clarabel. BLVPY accepts a solver-produced projection only
+after validating primal and polar membership plus complementarity. A
+normalized violation below the projection solver's resolution can be reported
+as zero.
 
-If neither SCS nor Clarabel returns a usable projection, BLVPY reports the
-distance to the cone's zero element, saturated at the largest finite
-floating-point value. This is a conservative upper bound: it can make a
-residual check fail, but it does not accept an unvalidated projection. These
-internal solvers and their tolerances are independent of `conic_solver` and
-`conic_solver_options`.
+If exact normalization would lose information, or neither projection attempt
+returns a usable point, BLVPY reports the distance to the cone's zero element,
+saturated at the largest finite floating-point value. This is a conservative
+upper bound: it can make a residual check fail, but it does not accept an
+unvalidated projection.
+
+Cone distances are evaluated wherever residuals are recomputed, including
+initialization, restoration, continuation attempts, final selection, and
+polishing.
 
 All six feasibility residuals ideally equal zero. For a residual record $r$,
 BLVPY defines the aggregate

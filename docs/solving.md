@@ -163,7 +163,21 @@ Sampling precedence is:
 
 `sample_bounds` must be a finite `(lower, upper)` pair broadcastable to the variable shape.
 
-## Solvers and options
+(numerical-backends)=
+## Numerical backends
+
+[IPOPT](https://coin-or.github.io/Ipopt/) is the default DNLP backend.
+A different backend accepted by CVXPY's `nlp=True` solve path can be passed to
+{meth}`blvpy.BilevelProblem.solve` after proper installation, but alternative
+backends are not fully tested.
+
+[Clarabel](https://clarabel.org/) is the default conic backend for fixed-upper
+lower initialization and upper-point projection within
+{meth}`~blvpy.BilevelProblem.solve`. It is also the default for the fresh
+fixed-upper solves performed by {meth}`~blvpy.BilevelProblem.polish` and
+{meth}`~blvpy.BilevelProblem.gap_diagnostics`.
+
+The DNLP and conic backends used by `solve()` can be overridden independently:
 
 ```python
 result = problem.solve(
@@ -178,8 +192,14 @@ BLVPY copies the option mappings and forwards them to the corresponding CVXPY so
 It uses the selected DNLP backend consistently for restoration and continuation.
 It uses the selected conic backend for initialization and upper projection.
 Availability is checked when CVXPY actually invokes the backend.
-These settings do not configure the internal SCS projections and Clarabel
-retries used to estimate exponential- and power-cone residual distances.
+`polish()` and `gap_diagnostics()` each take their own `solver` and
+`solver_options`; changing `conic_solver` on the originating `solve()` call
+does not configure either later operation.
+
+Evaluating exponential- and 3D power-cone residuals can invoke fixed internal
+projection backends. These are not selected or configured by `conic_solver`
+or `conic_solver_options`; see {ref}`nonlinear-cone-distance-estimates` for
+their numerical contract.
 
 `verbose=True` (the default) prints concise BLVPY progress to standard error.
 `solver_verbose=False` (the default) suppresses CVXPY and native solver output on a best-effort basis.
