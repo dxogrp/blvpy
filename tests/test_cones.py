@@ -848,6 +848,29 @@ def _independent_exponential_cone_distance(point: np.ndarray, *, dual: bool) -> 
     return float(problem.value)
 
 
+@pytest.mark.filterwarnings("error")
+def test_exponential_dual_distance_resolves_near_boundary() -> None:
+    point = np.array([-1.0, -1.0 - 1e-7, 1.0])
+    expected = _independent_exponential_cone_distance(point, dual=True)
+
+    distance = ConeLayout(exponential=1).dual_distance(point)
+
+    assert 0.0 < distance < 1e-7
+    assert distance == pytest.approx(expected, abs=5e-9)
+
+
+@pytest.mark.filterwarnings("error")
+def test_power_cone_dual_distance_resolves_near_boundary() -> None:
+    alpha = 0.5
+    point = np.array([0.5, 0.5, 1.0 + 1e-7])
+    expected = _independent_power_cone_distance(point, alpha, dual=True)
+
+    distance = ConeLayout(power_3d=(alpha,)).dual_distance(point)
+
+    assert 0.0 < distance < 1e-7
+    assert distance == pytest.approx(expected, abs=5e-9)
+
+
 def test_product_cone_distances_match_independent_cvxpy_projections() -> None:
     layout = ConeLayout(zero=2, nonnegative=3, second_order=(3, 4))
     points = np.random.default_rng(90210).normal(size=(6, layout.size))
@@ -974,7 +997,7 @@ def test_power_cone_random_near_endpoint_faces_match_analytic_and_clarabel_dista
         assert dual_distance == pytest.approx(expected_dual, rel=5e-4, abs=5e-6)
 
 
-def test_power_cone_dual_distance_uses_moreau_decomposition() -> None:
+def test_power_cone_dual_distance_satisfies_moreau_identity() -> None:
     rng = np.random.default_rng(1138)
     for alpha in (0.001, 0.2, 0.5, 0.95, 0.999):
         layout = ConeLayout(power_3d=(alpha,))
@@ -988,7 +1011,7 @@ def test_power_cone_dual_distance_uses_moreau_decomposition() -> None:
             )
 
 
-def test_exponential_cone_dual_distance_uses_moreau_decomposition() -> None:
+def test_exponential_cone_dual_distance_satisfies_moreau_identity() -> None:
     layout = ConeLayout(exponential=1)
     points = np.vstack(
         [

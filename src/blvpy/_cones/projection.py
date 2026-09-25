@@ -25,6 +25,7 @@ from .numeric import (
 from .power import (
     _in_power_3d_polar,
     _in_power_3d_primal,
+    _power_3d_dual_scale,
     _power_3d_uses_endpoint_limit,
     _project_power_3d_endpoint,
 )
@@ -154,20 +155,30 @@ def _prepare_request(
     normalized, exponent = _binary_normalize(vector)
     if not _binary_normalization_is_exact(vector, normalized, exponent):
         return None
-    target = -normalized if dual else normalized
-    return _ProjectionRequest(kind, vector, target, exponent, dual, alpha)
+    return _ProjectionRequest(kind, vector, normalized, exponent, dual, alpha)
 
 
-def _is_exponential_member(vector: NDArray[np.float64], *, dual: bool) -> bool:
+def _is_exponential_member(
+    vector: NDArray[np.float64],
+    *,
+    dual: bool,
+    tolerance: float = 0.0,
+) -> bool:
     if dual:
-        return _in_exponential_polar(*(-vector))
-    return _in_exponential_primal(*vector)
+        return _in_exponential_polar(*(-vector), tolerance)
+    return _in_exponential_primal(*vector, tolerance)
 
 
-def _is_power_3d_member(vector: NDArray[np.float64], alpha: float, *, dual: bool) -> bool:
+def _is_power_3d_member(
+    vector: NDArray[np.float64],
+    alpha: float,
+    *,
+    dual: bool,
+    tolerance: float = 0.0,
+) -> bool:
     if dual:
-        return _in_power_3d_polar(*(-vector), alpha)
-    return _in_power_3d_primal(*vector, alpha)
+        return _in_power_3d_polar(*(-vector), alpha, tolerance)
+    return _in_power_3d_primal(*vector, alpha, tolerance)
 
 
 def _solve_projection_batch(
@@ -175,7 +186,7 @@ def _solve_projection_batch(
     *,
     solver: Literal["SCS", "CLARABEL"],
 ) -> list[NDArray[np.float64] | None]:
-    """Solve one normalized primal-cone projection problem."""
+    """Solve one normalized primal- or dual-cone projection problem."""
 
     if not requests:
         return []
@@ -184,6 +195,10 @@ def _solve_projection_batch(
         _increment_statistic("scs_blocks", len(requests))
     else:
         _increment_statistic("clarabel_retries", len(requests))
+
+    dual = requests[0].dual
+    if any(request.dual != dual for request in requests[1:]):
+        return [None] * len(requests)
 
     exponential_indices = [index for index, request in enumerate(requests) if request.kind == "exponential"]
     power_indices = [index for index, request in enumerate(requests) if request.kind == "power_3d"]
@@ -194,14 +209,21 @@ def _solve_projection_batch(
     if exponential_indices:
         points = np.column_stack([requests[index].target for index in exponential_indices])
         projected = cp.Variable(points.shape)
-        constraints.append(cp.ExpCone(projected[0, :], projected[1, :], projected[2, :]))
+        if dual:
+            constraints.append(cp.ExpCone(-projected[1, :], -projected[0, :], math.e * projected[2, :]))
+        else:
+            constraints.append(cp.ExpCone(projected[0, :], projected[1, :], projected[2, :]))
         differences.append(cp.vec(projected - points, order="F"))
         variables.append((exponential_indices, projected))
     if power_indices:
         points = np.column_stack([requests[index].target for index in power_indices])
         alphas = np.asarray([requests[index].alpha for index in power_indices], dtype=np.float64)
         projected = cp.Variable(points.shape)
-        constraints.append(cp.PowCone3D(projected[0, :], projected[1, :], projected[2, :], alphas))
+        tails: cp.Expression = projected[2, :]
+        if dual:
+            dual_scales = np.asarray([_power_3d_dual_scale(float(alpha)) for alpha in alphas])
+            tails = cp.multiply(dual_scales, tails)
+        constraints.append(cp.PowCone3D(projected[0, :], projected[1, :], tails, alphas))
         differences.append(cp.vec(projected - points, order="F"))
         variables.append((power_indices, projected))
 
@@ -271,14 +293,24 @@ def _valid_projection(
     if projection_norm > target_norm + tolerance or residual_norm > target_norm + tolerance:
         return False
     if request.kind == "exponential":
-        primal_member = _in_exponential_primal(*projected, tolerance)
-        polar_member = _in_exponential_polar(*residual, tolerance)
+        projection_member = _is_exponential_member(projected, dual=request.dual, tolerance=tolerance)
+        opposite_member = _is_exponential_member(-residual, dual=not request.dual, tolerance=tolerance)
     else:
         assert request.alpha is not None
-        primal_member = _in_power_3d_primal(*projected, request.alpha, tolerance)
-        polar_member = _in_power_3d_polar(*residual, request.alpha, tolerance)
+        projection_member = _is_power_3d_member(
+            projected,
+            request.alpha,
+            dual=request.dual,
+            tolerance=tolerance,
+        )
+        opposite_member = _is_power_3d_member(
+            -residual,
+            request.alpha,
+            dual=not request.dual,
+            tolerance=tolerance,
+        )
     pairing = abs(float(np.dot(projected, residual)))
-    return primal_member and polar_member and math.isfinite(pairing) and pairing <= tolerance
+    return projection_member and opposite_member and math.isfinite(pairing) and pairing <= tolerance
 
 
 def _request_distance(
@@ -308,7 +340,7 @@ def _normalized_request_distance(
     request: _ProjectionRequest,
     projected: NDArray[np.float64],
 ) -> float:
-    return _finite_norm(projected) if request.dual else _finite_norm(request.target - projected)
+    return _finite_norm(request.target - projected)
 
 
 def _projection_tolerance(
