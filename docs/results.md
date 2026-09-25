@@ -133,10 +133,7 @@ modeled lower objective and constraints, and BLVPY evaluates their dependence
 on $x$. In the returned result, `canonical_primal` stores $u$, `slack` stores
 $s$, and `dual` stores $\lambda$. BLVPY recomputes the residuals from these
 snapshots after each nonlinear attempt; no additional lower-problem solve is
-required. Algebraic residuals and zero-, nonnegative-, and second-order-cone
-distances are evaluated directly. See
-{ref}`nonlinear-cone-distance-estimates` for the different numerical contract
-of exponential- and 3D power-cone distances.
+required.
 
 {class}`blvpy.Residuals` reports how closely the returned numerical point
 satisfies this canonical system and the original bilevel model:
@@ -183,31 +180,18 @@ satisfies this canonical system and the original bilevel model:
 ```
 
 (nonlinear-cone-distance-estimates)=
-### Nonlinear cone distance estimates
+### Cone distance diagnostics
 
-For exponential and 3D power cones, the reported distances are
-solver-tolerance estimates rather than exact floating-point projections.
-BLVPY first applies a stable membership check, which is the only path that
-reports zero, and attempts to remove a shared power-of-two scale exactly.
-Positive limiting power-cone estimates are handled analytically; a zero
-endpoint estimate for a known nonmember is sent through the projection
-backends instead.
+Algebraic residuals and zero-, nonnegative-, and second-order-cone distances
+are evaluated directly. For exponential and 3D power cones, the reported
+distances are numerical estimates. BLVPY reports zero only after an exact
+membership check. Otherwise, it uses internal projection solvers, retries
+uncertain results, and accepts only finite, positive estimates that pass
+geometric validation.
 
-Blocks requiring solver assistance are sent to batched
-[SCS](https://www.cvxgrp.org/scs/) projections. An SCS result is accepted only
-when its status is `optimal`, its positive normalized distance exceeds the SCS
-resolution, and primal membership, polar membership, and complementarity all
-validate. Other blocks are retried individually using Clarabel. A validated,
-strictly positive Clarabel result may be accepted with status `optimal` or
-`optimal_inaccurate`; CVXPY's standard inaccurate-solution warning is captured
-so this validation can complete. Unexpected warnings, exceptions, statuses,
-nonfinite values, failed validation, and zero estimates reject the candidate.
-
-If exact normalization would lose information, or neither projection attempt
-returns a usable positive estimate, BLVPY reports the distance to the cone's
-zero element, saturated at the largest finite floating-point value. This is a
-conservative upper bound: it can make a residual check fail, but it does not
-accept an unvalidated projection or report a known nonmember as zero.
+If no validated estimate is available, BLVPY reports the distance to the
+cone's zero element. This conservative upper bound can make a residual check
+fail, but it cannot cause a known nonmember to be reported as zero.
 
 Cone distances are evaluated wherever residuals are recomputed, including
 initialization, restoration, continuation attempts, final selection, and
