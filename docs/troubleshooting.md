@@ -73,6 +73,21 @@ message and residuals. Possible responses include a looser target, gentler
 contraction, more retries, better scaling, explicit initialization, or a
 best-of search.
 
+## Nonlinear cone residuals are unexpectedly large
+
+Exponential- and 3D power-cone residual distances are numerical projection
+estimates. Scale a cone triple to a moderate common magnitude and, when an
+equivalent formulation permits it, avoid extreme ratios between its
+components. BLVPY removes a shared power-of-two scale exactly, but it cannot
+recover distinctions that fall below the normalized solver resolution.
+
+BLVPY validates internal SCS and Clarabel projection results before using
+them. If neither result is usable, it reports distance to the cone's zero
+element as a conservative upper bound. This fail-closed result can cause an
+otherwise acceptable iterate to fail its residual check. The internal
+projection settings are not controlled by `conic_solver` or
+`conic_solver_options`; see {doc}`results` for the numerical contract.
+
 ## Diagnostics fail
 
 `gap_diagnostics()` requires complete source and canonical snapshots and a

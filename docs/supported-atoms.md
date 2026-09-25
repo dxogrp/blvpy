@@ -127,6 +127,10 @@ and direct `cp.PowConeND` constraints produce generalized power cones and
 remain unsupported. Convenience wrappers that do not expose an `approx`
 argument keep their normal CVXPY representation.
 
+Here, exactness describes the canonical graph representation. Numerical
+exponential- and power-cone residual distances are evaluated to internal
+projection-solver tolerance; see {doc}`results`.
+
 ## Exponential representations
 
 The listed exponential-family atoms use exact exponential-cone graphs.

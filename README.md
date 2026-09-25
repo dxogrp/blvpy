@@ -71,7 +71,10 @@ pip install blvpy
 
 CVXPY also exposes DNLP paths for KNITRO, UNO, and COPT; these solvers may be selected in BLVPY after proper installation, but are not tested officially.
 The required default (and recommended) nonlinear solver is IPOPT, which is free and open-source.
-[Clarabel](https://clarabel.org/stable/) is the default backend conic solver.
+[Clarabel](https://clarabel.org/stable/) is the default configurable conic
+backend. SCS and Clarabel are installed with BLVPY and are also used internally
+to estimate exponential- and power-cone residual distances; those diagnostic
+solves are separate from the selected conic backend.
 
 ### Development setup
 

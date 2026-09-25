@@ -15,7 +15,7 @@ _SUCCESS_STATUSES = {"optimal", "optimal_inaccurate", "success", "succeeded"}
 
 @dataclass(frozen=True, slots=True)
 class Residuals:
-    """Independent residual summary for one lifted bilevel iterate.
+    """Residual summary recomputed independently of the DNLP solver status.
 
     Parameters
     ----------
@@ -30,9 +30,13 @@ class Residuals:
         Largest CVXPY violation norm among the upper and generated
         linked-variable domain constraints.
     primal_cone : float
-        Euclidean distance from ``s`` to the primal product cone.
+        Numerical distance diagnostic from ``s`` to the primal product cone.
+        Exponential and 3D power-cone contributions are auxiliary-solver
+        estimates with a conservative upper-bound fallback.
     dual_cone : float
-        Euclidean distance from ``lambda`` to the dual product cone.
+        Numerical distance diagnostic from ``lambda`` to the dual product
+        cone. Exponential and 3D power-cone contributions are auxiliary-solver
+        estimates with a conservative upper-bound fallback.
     complementarity : float
         Raw canonical pairing ``s.T @ lambda``. It may be slightly negative at
         a numerically infeasible point.
@@ -50,6 +54,9 @@ class Residuals:
     -----
     All fields except ``complementarity`` are nonnegative. Infinite residuals
     are retained to represent missing or nonfinite numerical solver output.
+    Zero, nonnegative, and second-order cone distances are analytic. Nonlinear
+    cone estimates may report a normalized below-resolution value as zero;
+    they are not mathematical certificates.
     """
 
     primal_equality: float

@@ -4,6 +4,9 @@
 
 BLVPY requires Python 3.12 or newer, CVXPY 1.9 or newer, and a native IPOPT installation.
 IPOPT and its Python binding, `cyipopt`, are mandatory runtime dependencies.
+SCS and Clarabel are installed automatically. Clarabel is the default
+configurable conic backend, while BLVPY uses SCS with a Clarabel retry
+internally for exponential- and power-cone residual distances.
 
 1. Install IPOPT by following the official
    [IPOPT installation guide](https://coin-or.github.io/Ipopt/INSTALL.html).

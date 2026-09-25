@@ -114,3 +114,8 @@ backends are not fully tested.
 lower solves, initialization, projection, and
 {meth}`~blvpy.BilevelProblem.gap_diagnostics`.
 Both the DNLP and conic solvers can be overridden per solve.
+
+Exponential- and 3D power-cone residual distances use separate internal
+projection solves: batched SCS first, followed by a Clarabel retry for any
+rejected block. These diagnostic backends are not selected or configured by
+`conic_solver` or `conic_solver_options`.

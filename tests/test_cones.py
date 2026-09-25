@@ -300,15 +300,9 @@ def test_exact_nonlinear_membership_bypasses_projection_solver(monkeypatch: pyte
     assert ConeLayout(power_3d=(0.25,)).primal_distance(np.array([scale, scale, scale])) == 0.0
     assert ConeLayout(power_3d=(0.25,)).dual_distance(np.array([0.25, 0.75, 1.0])) == 0.0
     for exponent in (-500, 0, 500):
-        assert ConeLayout(power_3d=(0.5,)).primal_distance(
-            np.ldexp(np.array([4.0, 1.0, 2.0]), exponent)
-        ) == 0.0
-        assert ConeLayout(power_3d=(0.5,)).dual_distance(
-            np.ldexp(np.array([4.0, 1.0, 4.0]), exponent)
-        ) == 0.0
-        assert ConeLayout(power_3d=(0.25,)).dual_distance(
-            np.ldexp(np.array([0.25, 0.75, 1.0]), exponent)
-        ) == 0.0
+        assert ConeLayout(power_3d=(0.5,)).primal_distance(np.ldexp(np.array([4.0, 1.0, 2.0]), exponent)) == 0.0
+        assert ConeLayout(power_3d=(0.5,)).dual_distance(np.ldexp(np.array([4.0, 1.0, 4.0]), exponent)) == 0.0
+        assert ConeLayout(power_3d=(0.25,)).dual_distance(np.ldexp(np.array([0.25, 0.75, 1.0]), exponent)) == 0.0
 
 
 @pytest.mark.parametrize(

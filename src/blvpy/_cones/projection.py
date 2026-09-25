@@ -281,9 +281,7 @@ def _projection_tolerance(
     residual_norm: float,
     solver_epsilon: float,
 ) -> float:
-    return _VALIDATION_FACTOR * solver_epsilon * (
-        1.0 + target_norm + projection_norm + residual_norm
-    )
+    return _VALIDATION_FACTOR * solver_epsilon * (1.0 + target_norm + projection_norm + residual_norm)
 
 
 def _fallback_distance(vector: NDArray[np.float64]) -> float:

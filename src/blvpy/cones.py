@@ -385,9 +385,14 @@ class ConeLayout:
         Returns
         -------
         float
-            Euclidean product-cone distance. With finite zero-cone entries,
-            nonfinite entries in a constrained block produce positive
-            infinity; NaN in a zero-cone block propagates to the result.
+            Numerical Euclidean product-cone distance. Zero, nonnegative, and
+            second-order contributions are analytic. Exponential and 3D
+            power-cone contributions are auxiliary-solver estimates; a value
+            below normalized solver resolution may be reported as zero, and
+            an unusable projection produces a conservative finite upper
+            bound. With finite zero-cone entries, nonfinite entries in a
+            constrained block produce positive infinity; NaN in a zero-cone
+            block propagates to the result.
 
         Raises
         ------
@@ -402,10 +407,7 @@ class ConeLayout:
         distance = float(np.sqrt(squared_distance))
         nonlinear_distance = _nonlinear_cone_distance(
             tuple(vector[block] for block in self.exponential_slices),
-            tuple(
-                (vector[block], alpha)
-                for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True)
-            ),
+            tuple((vector[block], alpha) for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True)),
             dual=False,
         )
         return _saturated_hypot(distance, nonlinear_distance)
@@ -421,8 +423,12 @@ class ConeLayout:
         Returns
         -------
         float
-            Euclidean distance, with zero-cone dual rows unrestricted, or
-            positive infinity for nonfinite constrained entries.
+            Numerical Euclidean product-cone distance, with zero-cone dual
+            rows unrestricted. Exponential and 3D power-cone contributions
+            are auxiliary-solver estimates; a value below normalized solver
+            resolution may be reported as zero, and an unusable projection
+            produces a conservative finite upper bound. Nonfinite constrained
+            entries produce positive infinity.
 
         Raises
         ------
@@ -436,10 +442,7 @@ class ConeLayout:
         distance = float(np.sqrt(squared_distance))
         nonlinear_distance = _nonlinear_cone_distance(
             tuple(vector[block] for block in self.exponential_slices),
-            tuple(
-                (vector[block], alpha)
-                for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True)
-            ),
+            tuple((vector[block], alpha) for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True)),
             dual=True,
         )
         return _saturated_hypot(distance, nonlinear_distance)

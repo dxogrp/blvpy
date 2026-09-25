@@ -132,7 +132,13 @@ canonicalization produces $A$, $b$, $c$, $d$, and $\mathcal K$ from the
 modeled lower objective and constraints, and BLVPY evaluates their dependence
 on $x$. In the returned result, `canonical_primal` stores $u$, `slack` stores
 $s$, and `dual` stores $\lambda$. BLVPY recomputes the residuals from these
-snapshots after each nonlinear attempt; no additional solver call is required.
+snapshots rather than trusting the nonlinear solver status. Algebraic
+residuals and zero-, nonnegative-, and second-order-cone distances are
+evaluated directly. Exponential- and 3D power-cone distances can invoke
+internal batched SCS projection solves, with rejected blocks retried using
+Clarabel. Cone distances are evaluated wherever residuals are recomputed,
+including initialization, restoration, continuation attempts, final
+selection, and polishing.
 
 {class}`blvpy.Residuals` reports how closely the returned numerical point
 satisfies this canonical system and the original bilevel model:
@@ -162,10 +168,10 @@ satisfies this canonical system and the original bilevel model:
     linked-variable domain constraints.
 * - `primal_cone`
   - $\operatorname{dist}(s,\mathcal{K})$
-  - Distance of the slack from the primal product cone.
+  - Numerical distance of the slack from the primal product cone.
 * - `dual_cone`
   - $\operatorname{dist}(\lambda,\mathcal{K}^*)$
-  - Distance of the dual vector from the dual product cone.
+  - Numerical distance of the dual vector from the dual product cone.
 * - `complementarity`
   - $s^T\lambda$
   - Signed primal-dual cone pairing. Exact lower optimality requires zero
@@ -177,6 +183,20 @@ satisfies this canonical system and the original bilevel model:
     $s^T\lambda\leq\epsilon$. It is zero whenever that relaxed inequality is
     satisfied.
 ```
+
+For exponential and 3D power cones, the reported distances are
+solver-tolerance estimates rather than exact floating-point projections.
+BLVPY removes a shared power-of-two scale exactly, applies a stable membership
+check, and numerically validates each projected point against primal and polar
+membership plus complementarity. A normalized violation below the projection
+solver's resolution can be reported as zero.
+
+If neither SCS nor Clarabel returns a usable projection, BLVPY reports the
+distance to the cone's zero element, saturated at the largest finite
+floating-point value. This is a conservative upper bound: it can make a
+residual check fail, but it does not accept an unvalidated projection. These
+internal solvers and their tolerances are independent of `conic_solver` and
+`conic_solver_options`.
 
 All six feasibility residuals ideally equal zero. For a residual record $r$,
 BLVPY defines the aggregate

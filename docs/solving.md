@@ -178,6 +178,8 @@ BLVPY copies the option mappings and forwards them to the corresponding CVXPY so
 It uses the selected DNLP backend consistently for restoration and continuation.
 It uses the selected conic backend for initialization and upper projection.
 Availability is checked when CVXPY actually invokes the backend.
+These settings do not configure the internal SCS projections and Clarabel
+retries used to estimate exponential- and power-cone residual distances.
 
 `verbose=True` (the default) prints concise BLVPY progress to standard error.
 `solver_verbose=False` (the default) suppresses CVXPY and native solver output on a best-effort basis.
