@@ -8,7 +8,6 @@ and numerical diagnostics.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from operator import index as integer_index
@@ -18,8 +17,9 @@ import cvxpy as cp
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._cones.exponential import _exponential_distance
-from ._cones.power import _power_3d_distance, _power_3d_dual_scale
+from ._cones.numeric import _saturated_hypot
+from ._cones.power import _power_3d_dual_scale
+from ._cones.projection import _nonlinear_cone_distance
 
 ConeKind = Literal["zero", "nonnegative", "second_order", "exponential", "power_3d"]
 
@@ -400,11 +400,15 @@ class ConeLayout:
         squared_distance += _nonnegative_squared_distance(vector[self.nonnegative_slice])
         squared_distance += sum(_soc_squared_distance(vector[block]) for block in self.second_order_slices)
         distance = float(np.sqrt(squared_distance))
-        for block in self.exponential_slices:
-            distance = math.hypot(distance, _exponential_distance(vector[block], dual=False))
-        for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True):
-            distance = math.hypot(distance, _power_3d_distance(vector[block], alpha, dual=False))
-        return distance
+        nonlinear_distance = _nonlinear_cone_distance(
+            tuple(vector[block] for block in self.exponential_slices),
+            tuple(
+                (vector[block], alpha)
+                for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True)
+            ),
+            dual=False,
+        )
+        return _saturated_hypot(distance, nonlinear_distance)
 
     def dual_distance(self, value: ArrayLike) -> float:
         """Compute distance to the dual product cone.
@@ -430,11 +434,15 @@ class ConeLayout:
         squared_distance = _nonnegative_squared_distance(vector[self.nonnegative_slice])
         squared_distance += sum(_soc_squared_distance(vector[block]) for block in self.second_order_slices)
         distance = float(np.sqrt(squared_distance))
-        for block in self.exponential_slices:
-            distance = math.hypot(distance, _exponential_distance(vector[block], dual=True))
-        for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True):
-            distance = math.hypot(distance, _power_3d_distance(vector[block], alpha, dual=True))
-        return distance
+        nonlinear_distance = _nonlinear_cone_distance(
+            tuple(vector[block] for block in self.exponential_slices),
+            tuple(
+                (vector[block], alpha)
+                for block, alpha in zip(self.power_3d_slices, self.power_3d, strict=True)
+            ),
+            dual=True,
+        )
+        return _saturated_hypot(distance, nonlinear_distance)
 
     def complementarity(self, primal: ArrayLike, dual: ArrayLike) -> float:
         """Compute the canonical primal-dual pairing.

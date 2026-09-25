@@ -38,10 +38,12 @@ name = "blvpy"
 version = "0.5.0"
 source = { editable = "." }
 dependencies = [
+    { name = "clarabel" },
     { name = "cvxpy" },
     { name = "cyipopt" },
     { name = "numpy" },
     { name = "scipy" },
+    { name = "scs" },
 ]
 
 [package.dev-dependencies]
@@ -62,10 +64,12 @@ examples = [
 
 [package.metadata]
 requires-dist = [
+    { name = "clarabel", specifier = ">=0.11" },
     { name = "cvxpy", specifier = ">=1.9" },
     { name = "cyipopt", specifier = ">=1.6" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "scipy", specifier = ">=1.13" },
+    { name = "scs", specifier = ">=3.2.11" },
 ]
 
 [package.metadata.requires-dev]
