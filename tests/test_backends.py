@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
 from unittest.mock import Mock
 
 import cvxpy as cp
 import pytest
+from cvxpy.reductions.solution import Solution
 
 from blvpy.backends import solve_conic, solve_dnlp
 from blvpy.errors import SolverUnavailableError
@@ -96,6 +98,44 @@ def test_solve_dnlp_preserves_explicit_ipopt_output_options() -> None:
         sb="no",
     )
     assert options == {"print_level": 4, "sb": "no"}
+
+
+def test_solve_dnlp_unpacks_an_inaccurate_cvxpy_result_under_werror() -> None:
+    problem = cp.Problem(cp.Minimize(0.0))
+    solution = Solution(cp.OPTIMAL_INACCURATE, 0.0, {}, {}, {})
+    chain = Mock()
+    chain.invert.return_value = solution
+    chain.solver.name.return_value = "TEST"
+    problem.solve = lambda **_options: problem.unpack_results(solution, chain, [])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        solve_dnlp(problem, solver="TEST", options={}, solver_verbose=False)
+
+    assert problem.status == cp.OPTIMAL_INACCURATE
+    assert problem.solver_stats.solver_name == "TEST"
+
+
+def test_solve_dnlp_replays_an_additional_user_warning_under_werror() -> None:
+    problem = cp.Problem(cp.Minimize(0.0))
+    solution = Solution(cp.OPTIMAL_INACCURATE, 0.0, {}, {}, {})
+    chain = Mock()
+    chain.invert.return_value = solution
+    chain.solver.name.return_value = "TEST"
+
+    def solve(**_options: object) -> None:
+        warnings.warn("additional solver warning", UserWarning, stacklevel=1)
+        problem.unpack_results(solution, chain, [])
+
+    problem.solve = solve
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(UserWarning, match="additional solver warning"):
+            solve_dnlp(problem, solver="TEST", options={}, solver_verbose=False)
+
+    assert problem.status == cp.OPTIMAL_INACCURATE
+    assert problem.solver_stats.solver_name == "TEST"
 
 
 @pytest.mark.parametrize(
