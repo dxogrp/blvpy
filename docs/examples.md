@@ -44,14 +44,13 @@ the notebook code and outputs.
 Advanced examples are published as a separate nested collection and may use
 advanced features or take longer to run.
 
-### Real data and literature
+### Real-data examples
 
 - {example}`Stigler food pricing <advanced/stigler_food_pricing>`
-  reproduces the classical minimum-cost diet before adding a Stackelberg
-  pricing model.
+  uses the OR-Tools Stigler food table in a Stackelberg markup model.
 - {example}`Iris SVM regularization <advanced/iris_svm_regularization>`
-  reproduces Fisher's discriminant scores and tunes a modern classifier on
-  the corrected Iris data.
+  selects regularization for a linear classifier trained on the corrected UCI
+  Iris data.
 - {example}`Renewable-capacity planning with German grid data <advanced/renewable_capacity_planning_smard>`
   applies the capacity model to an observed day of German demand, wind, and
   solar generation.
