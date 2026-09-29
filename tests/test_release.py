@@ -4,6 +4,7 @@ import hashlib
 import importlib.metadata
 import io
 import re
+import shlex
 import tarfile
 import tomllib
 import zipfile
@@ -227,21 +228,31 @@ def test_runtime_version_comes_from_distribution_metadata() -> None:
 
 def test_release_candidate_executes_all_example_collections() -> None:
     workflow = (WORKFLOWS_DIRECTORY / "release-candidate.yml").read_text(encoding="utf-8")
-    commands = re.findall(
-        r"python scripts/export_examples\.py\s+\\\s+"
-        r"--source-dir (?P<source>\S+)\s+\\\s+"
-        r"--shared-dir (?P<shared>\S+)\s+\\\s+"
-        r'--output-dir "(?P<output>[^"]+)"',
-        workflow,
-    )
+    steps = re.findall(r"^      - (?P<body>.*?)(?=^      - |\Z)", workflow, re.MULTILINE | re.DOTALL)
+    export_steps = [step for step in steps if "scripts/export_examples.py" in step]
 
-    assert len(commands) == 2
-    assert {source for source, _, _ in commands} == {
-        "examples/advanced",
+    assert len(export_steps) == 1
+    export_step = export_steps[0]
+    timeout = re.search(r"^\s*timeout-minutes:\s*(\d+)\s*$", export_step, re.MULTILINE)
+    assert timeout is not None
+    assert 0 < int(timeout.group(1)) <= 10
+
+    logical_lines = re.sub(r"\\\n\s*", " ", export_step).splitlines()
+    commands = [shlex.split(line) for line in logical_lines if "scripts/export_examples.py" in line]
+    options = []
+    for command in commands:
+        options.append(
+            {name: command[command.index(name) + 1] for name in ("--source-dir", "--shared-dir", "--output-dir")}
+        )
+
+    assert {command["--source-dir"] for command in options} == {
         "examples/gallery",
+        "examples/advanced",
     }
-    assert {shared for _, shared, _ in commands} == {"examples/_shared"}
-    assert len({output for _, _, output in commands}) == 2
+    assert {command["--shared-dir"] for command in options} == {"examples/_shared"}
+    outputs = [command["--output-dir"] for command in options]
+    assert len(outputs) == 2
+    assert len(set(outputs)) == 2
 
 
 def test_external_workflow_action_pins_are_immutable() -> None:

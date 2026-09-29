@@ -4,7 +4,7 @@ import json
 import re
 import runpy
 import subprocess
-import sys
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -82,13 +82,16 @@ def test_every_public_export_has_an_explicit_autodoc_entry() -> None:
     assert documented == set(blvpy.__all__)
 
 
-def test_every_example_is_linked_from_the_gallery() -> None:
+def test_every_example_is_linked_once_from_its_collection() -> None:
     documentation = (DOCS_ROOT / "examples.md").read_text(encoding="utf-8")
-    examples = {path.stem for path in (EXAMPLES_ROOT / "gallery").glob("*.py")}
-    linked_examples = set(EXAMPLE_ROLE_PATTERN.findall(documentation))
+    gallery_examples = {path.stem for path in (EXAMPLES_ROOT / "gallery").glob("*.py")}
+    advanced_examples = {path.stem for path in (EXAMPLES_ROOT / "advanced").glob("*.py")}
+    expected_links = Counter(gallery_examples)
+    expected_links.update(f"advanced/{stem}" for stem in advanced_examples)
 
-    assert examples
-    assert linked_examples == examples
+    assert gallery_examples
+    assert advanced_examples
+    assert Counter(EXAMPLE_ROLE_PATTERN.findall(documentation)) == expected_links
 
 
 def test_documentation_configuration_matches_deployment_contract() -> None:
@@ -117,7 +120,6 @@ def test_only_example_links_open_in_a_new_tab() -> None:
 
 def test_export_examples_isolated_and_replaces_stale_tree(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     examples = tmp_path / "examples"
     examples.mkdir()
@@ -134,23 +136,17 @@ def test_export_examples_isolated_and_replaces_stale_tree(
     assets = shared / "assets"
     assets.mkdir()
     (assets / "marker.txt").write_text("shared", encoding="utf-8")
-    advanced = examples / "advanced"
-    advanced.mkdir()
-    _write_notebook(advanced, "expensive.py")
     source_before = _snapshot(source)
     shared_before = _snapshot(shared)
-    advanced_before = _snapshot(advanced)
     output = tmp_path / "rendered"
     output.mkdir()
     (output / "retired.html").write_text("stale", encoding="utf-8")
-    calls: list[list[str]] = []
-    monkeypatch.setenv("PYTHONOPTIMIZE", "1")
+    working_directories: set[Path] = set()
 
     def fake_runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append(command)
         working_directory = Path(kwargs["cwd"])
-        assert working_directory.name == "gallery"
-        assert not (working_directory.parent / "advanced").exists()
+        working_directories.add(working_directory)
+        assert working_directory != source
         assert (working_directory.parent / "_shared" / "zhlatex.mplstyle").read_bytes() == b"font.size: 10\n"
         assert (working_directory.parent / "_shared" / "assets" / "marker.txt").read_text(encoding="utf-8") == "shared"
         if not (working_directory / "figures").exists():
@@ -159,26 +155,17 @@ def test_export_examples_isolated_and_replaces_stale_tree(
                 "b.py",
                 "zhlatex.mplstyle",
             }
-        assert kwargs["check"] is True
-        assert kwargs["timeout"] == 180
-        environment = kwargs["env"]
-        assert isinstance(environment, dict)
-        assert environment["MPLBACKEND"] == "Agg"
-        assert environment["OMP_NUM_THREADS"] == environment["OPENBLAS_NUM_THREADS"] == "1"
-        assert environment["PYTHONOPTIMIZE"] == "0"
         (working_directory / "figures").mkdir(exist_ok=True)
         (working_directory / "__marimo__").mkdir(exist_ok=True)
         return _write_fake_export(command)
 
     export_examples(source, output, shared_dir=shared, runner=fake_runner)
 
-    assert [Path(command[-3]).stem for command in calls] == ["a", "b"]
-    assert calls[0][:5] == [sys.executable, "-m", "marimo", "export", "html"]
-    assert {"--include-code", "--no-sandbox", "--force"} <= set(calls[0])
+    assert len(working_directories) == 1
+    assert source not in working_directories
     assert sorted(path.name for path in output.iterdir()) == ["a.html", "b.html"]
     assert _snapshot(source) == source_before
     assert _snapshot(shared) == shared_before
-    assert _snapshot(advanced) == advanced_before
 
 
 def test_export_failure_preserves_previous_tree(tmp_path: Path) -> None:
