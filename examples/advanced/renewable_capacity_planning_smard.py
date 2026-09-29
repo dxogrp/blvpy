@@ -91,8 +91,7 @@ def _(mo):
     The 24 rows cover the local day 21 June 2019 in Central European Summer
     Time and include grid load, onshore and offshore wind generation,
     photovoltaics, and their installed capacities. Source:
-    **Bundesnetzagentur | SMARD.de**, licensed under
-    [CC BY 4.0](https://www.smard.de/en/datennutzung).
+    **Bundesnetzagentur | SMARD.de**.
     """)
     return
 

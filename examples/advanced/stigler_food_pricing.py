@@ -41,7 +41,7 @@ def _(mo):
     The offline table is derived from the 77 foods and nine nutrient columns
     in the pinned
     [OR-Tools Stigler example](https://github.com/google/or-tools/blob/100f66e6242ab8bf8d32feb8f3bf086db66ae2b5/ortools/linear_solver/samples/stigler_diet.py).
-    OR-Tools distributes that sample under Apache-2.0. Every nutrient
+    Every nutrient
     coefficient is normalized per 1939 dollar spent on a food; the calorie
     column is measured in *thousands* of kcal per dollar. The package units
     are included for readable result labels.

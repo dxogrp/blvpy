@@ -66,8 +66,7 @@ def _(mo):
     ## Data source
 
     The vendored data are the corrected 150-row `bezdekIris.data` file from
-    the [UCI Iris dataset](https://doi.org/10.24432/C56C76), distributed under
-    [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The notebook
+    the [UCI Iris dataset](https://doi.org/10.24432/C56C76). The notebook
     reads the local copy and performs no runtime download.
     """)
     return
