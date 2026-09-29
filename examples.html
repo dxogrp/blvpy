@@ -13,8 +13,6 @@
     <script src="_static/documentation_options.js?v=db78e746"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
-    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
-    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script defer="defer" src="_static/version-switcher.js?v=a3984577"></script>
     <link rel="canonical" href="https://dxogrp.github.io/blvpy/version/0.5/examples.html" />
     <link rel="index" title="Index" href="genindex.html" />
@@ -107,10 +105,9 @@
             
   <section class="tex2jax_ignore mathjax_ignore" id="examples">
 <h1>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h1>
-<p>The gallery consists of standalone <a class="reference external" href="https://marimo.io/">Marimo</a> notebooks from <code class="docutils literal notranslate"><span class="pre">examples/gallery</span></code>.
-Each link opens an executed, non-interactive HTML snapshot containing the notebook code and outputs.
-Published snapshots use <span class="math notranslate nohighlight">\(\epsilon_{\mathrm{target}}=10^{-5}\)</span> to balance numerical validation and export time;
-live sessions can request tighter continuation targets.</p>
+<p>The example collections consist of standalone <a class="reference external" href="https://marimo.io/">Marimo</a>
+notebooks. Each link opens an executed, non-interactive HTML snapshot containing
+the notebook code and outputs.</p>
 <section id="modeling-primers">
 <h2>Modeling primers<a class="headerlink" href="#modeling-primers" title="Link to this heading">¶</a></h2>
 <ul class="simple">
@@ -132,7 +129,8 @@ selects a training penalty using validation loss.</p></li>
 <li><p><a class="extlink-example reference external" href="examples/demand_response_pricing.html" rel="noopener" target="_blank">Demand-response pricing</a>
 designs a time-of-use price while anticipating flexible energy use.</p></li>
 <li><p><a class="extlink-example reference external" href="examples/renewable_capacity_planning.html" rel="noopener" target="_blank">Renewable-capacity planning</a>
-trades capacity investment against lower-level electricity dispatch.</p></li>
+trades capacity investment against lower-level electricity dispatch using a
+compact synthetic daily profile.</p></li>
 <li><p><a class="extlink-example reference external" href="examples/traffic_tolling.html" rel="noopener" target="_blank">Traffic tolling</a>
 selects tolls while anticipating a congestion equilibrium.</p></li>
 <li><p><a class="extlink-example reference external" href="examples/stackelberg_port_security.html" rel="noopener" target="_blank">Stackelberg port security</a>
@@ -141,34 +139,52 @@ allocates limited patrol coverage against a best-responding attacker.</p></li>
 allocates member areas while anticipating elastic equilibrium.</p></li>
 <li><p><a class="extlink-example reference external" href="examples/dc_motor_mpc_tuning.html" rel="noopener" target="_blank">DC motor MPC tuning</a>
 learns control-cost weights while anticipating a constrained MPC response.</p></li>
+<li><p><a class="extlink-example reference external" href="examples/clean_equipment_rebate.html" rel="noopener" target="_blank">Clean-equipment rebates</a>
+design a rebate while anticipating
+a producer’s clean and fossil input choices under Cobb–Douglas production.</p></li>
+<li><p><a class="extlink-example reference external" href="examples/carbon_tax_abatement.html" rel="noopener" target="_blank">Carbon-tax abatement</a>
+sets a carbon tax while anticipating sector-level abatement with
+exponential costs.</p></li>
 </ul>
 </section>
 <section id="advanced-examples">
 <h2>Advanced examples<a class="headerlink" href="#advanced-examples" title="Link to this heading">¶</a></h2>
-<p>Advanced examples are available as source notebooks in the repository. They are
-checked statically and executed during release validation, but are not published
-with the gallery.</p>
+<p>Advanced examples are published as a separate nested collection and may use
+advanced features or take longer to run.</p>
+<section id="real-data-examples">
+<h3>Real-data examples<a class="headerlink" href="#real-data-examples" title="Link to this heading">¶</a></h3>
 <ul class="simple">
-<li><p><a class="reference external" href="https://github.com/dxogrp/blvpy/blob/main/examples/advanced/ridge_polishing.py">Ridge-polishing decision</a>
+<li><p><a class="extlink-example reference external" href="examples/advanced/stigler_food_pricing.html" rel="noopener" target="_blank">Stigler food pricing</a>
+uses the OR-Tools Stigler food table in a Stackelberg markup model.</p></li>
+<li><p><a class="extlink-example reference external" href="examples/advanced/iris_svm_regularization.html" rel="noopener" target="_blank">Iris SVM regularization</a>
+selects regularization for a linear classifier trained on the corrected UCI
+Iris data.</p></li>
+<li><p><a class="extlink-example reference external" href="examples/advanced/tourism_seasonality_levy.html" rel="noopener" target="_blank">Tourism-seasonality levies</a>
+designs monthly levies while travelers redistribute 2025 EU-27 tourist
+accommodation nights from Eurostat.</p></li>
+<li><p><a class="extlink-example reference external" href="examples/advanced/renewable_capacity_planning_smard.html" rel="noopener" target="_blank">Renewable-capacity planning with German grid data</a>
+applies the capacity model to an observed day of German demand, wind, and
+solar generation.</p></li>
+</ul>
+</section>
+<section id="polishing-workflows">
+<h3>Polishing workflows<a class="headerlink" href="#polishing-workflows" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><a class="extlink-example reference external" href="examples/advanced/ridge_polishing.html" rel="noopener" target="_blank">Ridge-polishing decision</a>
 retrains a validation-selected ridge model at its fixed penalty, then lets
 the user choose between lower-level feasibility and a better relaxed
 validation objective.</p></li>
-<li><p><a class="reference external" href="https://github.com/dxogrp/blvpy/blob/main/examples/advanced/low_carbon_blend_polishing.py">Low-carbon blend polishing</a>
+<li><p><a class="extlink-example reference external" href="examples/advanced/low_carbon_blend_polishing.html" rel="noopener" target="_blank">Low-carbon blend polishing</a>
 designs material rebates for a constrained producer, rejects a coarse
 polished response, tightens continuation, and explicitly adopts the
 candidate that passes a quantitative deployment gate.</p></li>
-<li><p><a class="reference external" href="https://github.com/dxogrp/blvpy/blob/main/examples/advanced/clean_equipment_rebate.py">Clean-equipment rebates</a>
-uses a three-dimensional power cone to design a rebate while anticipating
-a producer’s clean and fossil input choices under Cobb–Douglas production.</p></li>
-<li><p><a class="reference external" href="https://github.com/dxogrp/blvpy/blob/main/examples/advanced/carbon_tax_abatement.py">Carbon-tax abatement</a>
-sets a carbon tax while anticipating sector-level abatement with
-exponential costs represented by exponential cones.</p></li>
 </ul>
-<p>Browse all <a class="reference external" href="https://github.com/dxogrp/blvpy/tree/main/examples">repository examples</a>.</p>
-<p>For live interaction, install and open the complete example workspace from a repository checkout:</p>
+<p>For live interaction, install and open the complete example workspace from a
+repository checkout:</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>marimo
 </pre></div>
 </div>
+</section>
 </section>
 </section>
 
