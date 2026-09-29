@@ -51,6 +51,9 @@ advanced features or take longer to run.
 - {example}`Iris SVM regularization <advanced/iris_svm_regularization>`
   selects regularization for a linear classifier trained on the corrected UCI
   Iris data.
+- {example}`Tourism-seasonality levies <advanced/tourism_seasonality_levy>`
+  designs monthly levies while travelers redistribute 2025 EU-27 tourist
+  accommodation nights from Eurostat.
 - {example}`Renewable-capacity planning with German grid data <advanced/renewable_capacity_planning_smard>`
   applies the capacity model to an observed day of German demand, wind, and
   solar generation.

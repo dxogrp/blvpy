@@ -76,3 +76,31 @@ the downloaded source bytes and the derived CSV files.
   data may be shared and adapted under
   [CC BY 4.0](https://www.smard.de/en/datennutzung); the platform identifies
   ENTSO-E as its upstream data provider.
+
+## `eurostat_tourism_2025.csv`
+
+- **Upstream:** Eurostat, *Nights spent at tourist accommodation
+  establishments - monthly data* (`tour_occ_nim`),
+  [DOI 10.2908/TOUR_OCC_NIM](https://doi.org/10.2908/TOUR_OCC_NIM).
+- **API query:**
+  `https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/tour_occ_nim?lang=en&freq=M&c_resid=TOTAL&unit=NR&nace_r2=I551-I553&geo=EU27_2020&sinceTimePeriod=2025-01&untilTimePeriod=2025-12`.
+  The filters select monthly frequency (`freq=M`), all countries of residence
+  (`c_resid=TOTAL`), number of nights (`unit=NR`), hotels, holiday and other
+  short-stay accommodation, and camping grounds (`nace_r2=I551-I553`), the
+  EU-27 aggregate (`geo=EU27_2020`), and January through December 2025.
+- **Retrieved:** 2026-09-29. The API response reports update timestamp
+  `2026-09-22T23:00:00+0200`.
+- **Raw response SHA-256:**
+  `1dc88ed87a7d5cd07aeb24f6ffdd13205520af960d00f20db75d43c90f8313b9`.
+- **Local SHA-256:**
+  `67d66f96c399fdc03f14d430e1e63f4e031395cc515003259ebff710312c84a5`.
+- **Transformation:** the 12 returned time labels and integer observations
+  were extracted in chronological order and given the descriptive headers
+  `month` and `nights_spent`. No values were rounded, interpolated, or imputed.
+- **License and attribution:** Source: Eurostat,
+  [DOI 10.2908/TOUR_OCC_NIM](https://doi.org/10.2908/TOUR_OCC_NIM), accessed
+  2026-09-29. Eurostat permits reuse of its statistical data provided the
+  source is acknowledged under its
+  [free-reuse terms](https://ec.europa.eu/eurostat/help/copyright-notice).
+  This derivative CSV adapts the API response by selecting observations and
+  renaming fields; Eurostat is not responsible for this adaptation.
