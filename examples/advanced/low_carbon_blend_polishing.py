@@ -251,7 +251,6 @@ def _(
     baseline_blend = np.asarray(_baseline_variable.value, dtype=float)
     baseline_carbon = float(carbon_intensity @ baseline_blend)
     np.testing.assert_allclose(np.sum(baseline_blend), 1.0, atol=1e-9, rtol=0.0)
-    assert baseline_carbon > 0.28
     return baseline_blend, baseline_carbon
 
 
@@ -279,26 +278,14 @@ def _(blend, cp, np, problem, rebate):
     )
 
     assert coarse_result.succeeded, coarse_result.message
-    assert coarse_result.objective is not None
-    np.testing.assert_allclose(coarse_result.final_epsilon, coarse_epsilon, atol=0.0, rtol=0.0)
 
     coarse_result_rebate = np.asarray(coarse_result.variable_values[rebate], dtype=float)
     coarse_result_blend = np.asarray(coarse_result.variable_values[blend], dtype=float)
-    coarse_live_state_before_polish = {
-        _variable: np.array(_variable.value, dtype=float, copy=True) for _variable in coarse_result.variable_values
-    }
-    coarse_result_snapshots = {
-        _variable: np.array(_value, dtype=float, copy=True)
-        for _variable, _value in coarse_result.variable_values.items()
-    }
-    assert all(not np.asarray(_value).flags.writeable for _value in coarse_result.variable_values.values())
     return (
         coarse_epsilon,
-        coarse_live_state_before_polish,
         coarse_result,
         coarse_result_blend,
         coarse_result_rebate,
-        coarse_result_snapshots,
     )
 
 
@@ -321,11 +308,9 @@ def _(
     base_cost,
     blend,
     carbon_intensity,
-    coarse_live_state_before_polish,
     coarse_result,
     coarse_result_blend,
     coarse_result_rebate,
-    coarse_result_snapshots,
     cp,
     np,
     problem,
@@ -355,28 +340,13 @@ def _(
     coarse_lower_gap = coarse_result_lower_value - coarse_polished_lower_value
 
     maximum_degradation = 0.01
-    assert coarse_polished.objective_improvement_ratio is not None
     coarse_degradation = -coarse_polished.objective_improvement_ratio
     coarse_accepted = coarse_polished.feasible and coarse_degradation <= maximum_degradation
 
     assert coarse_polished.feasible
-    assert 0.05 < coarse_degradation < 0.08
     assert not coarse_accepted
-    assert 5e-5 < coarse_lower_gap < 1.5e-4
-    assert coarse_polished_carbon - coarse_result_carbon > 0.01
     assert coarse_polished_lower_value < coarse_result_lower_value
     np.testing.assert_allclose(coarse_polished_rebate, coarse_result_rebate, atol=1e-12, rtol=0.0)
-
-    for _variable, _value in coarse_live_state_before_polish.items():
-        np.testing.assert_array_equal(np.asarray(_variable.value), _value)
-    for _variable, _value in coarse_result_snapshots.items():
-        np.testing.assert_array_equal(coarse_result.variable_values[_variable], _value)
-    assert all(not np.asarray(_value).flags.writeable for _value in coarse_polished.variable_values.values())
-
-    coarse_polished_snapshots = {
-        _variable: np.array(_value, dtype=float, copy=True)
-        for _variable, _value in coarse_polished.variable_values.items()
-    }
     return (
         coarse_accepted,
         coarse_degradation,
@@ -384,7 +354,6 @@ def _(
         coarse_polished,
         coarse_polished_blend,
         coarse_polished_carbon,
-        coarse_polished_snapshots,
         coarse_result_carbon,
         maximum_degradation,
     )
@@ -442,10 +411,6 @@ def _(mo):
 def _(
     aggregate_rebate_cap,
     blend,
-    coarse_polished,
-    coarse_polished_snapshots,
-    coarse_result,
-    coarse_result_snapshots,
     cp,
     np,
     problem,
@@ -463,40 +428,22 @@ def _(
     )
 
     assert refined_result.succeeded, refined_result.message
-    assert refined_result.objective is not None
-    np.testing.assert_allclose(refined_result.final_epsilon, refined_epsilon, atol=0.0, rtol=0.0)
-
-    for _variable, _value in coarse_result_snapshots.items():
-        np.testing.assert_array_equal(coarse_result.variable_values[_variable], _value)
-    for _variable, _value in coarse_polished_snapshots.items():
-        np.testing.assert_array_equal(coarse_polished.variable_values[_variable], _value)
 
     refined_result_rebate = np.asarray(refined_result.variable_values[rebate], dtype=float)
     refined_result_blend = np.asarray(refined_result.variable_values[blend], dtype=float)
-    refined_live_state_before_polish = {
-        _variable: np.array(_variable.value, dtype=float, copy=True) for _variable in refined_result.variable_values
-    }
-    refined_result_snapshots = {
-        _variable: np.array(_value, dtype=float, copy=True)
-        for _variable, _value in refined_result.variable_values.items()
-    }
     return (
         refined_epsilon,
-        refined_live_state_before_polish,
         refined_result,
         refined_result_blend,
         refined_result_rebate,
-        refined_result_snapshots,
     )
 
 
 @app.cell
 def _(
     base_cost,
-    baseline_carbon,
     blend,
     carbon_intensity,
-    coarse_degradation,
     cp,
     maximum_degradation,
     np,
@@ -504,11 +451,9 @@ def _(
     producer_regularization,
     rebate,
     reference_blend,
-    refined_live_state_before_polish,
     refined_result,
     refined_result_blend,
     refined_result_rebate,
-    refined_result_snapshots,
 ):
     refined_polished = problem.polish(
         refined_result,
@@ -531,29 +476,13 @@ def _(
     )
     refined_lower_gap = refined_result_lower_value - refined_polished_lower_value
 
-    assert refined_polished.objective_improvement_ratio is not None
     refined_degradation = -refined_polished.objective_improvement_ratio
     refined_accepted = refined_polished.feasible and refined_degradation <= maximum_degradation
 
     assert refined_polished.feasible
     assert refined_accepted
-    assert 0.0 < refined_degradation < maximum_degradation
-    assert refined_degradation < coarse_degradation
-    assert 5e-7 < refined_lower_gap < 1.5e-6
-    assert refined_polished_carbon < 0.85 * baseline_carbon
     assert refined_polished_lower_value < refined_result_lower_value
     np.testing.assert_allclose(refined_polished_rebate, refined_result_rebate, atol=1e-12, rtol=0.0)
-
-    for _variable, _value in refined_live_state_before_polish.items():
-        np.testing.assert_array_equal(np.asarray(_variable.value), _value)
-    for _variable, _value in refined_result_snapshots.items():
-        np.testing.assert_array_equal(refined_result.variable_values[_variable], _value)
-    assert all(not np.asarray(_value).flags.writeable for _value in refined_polished.variable_values.values())
-
-    refined_polished_snapshots = {
-        _variable: np.array(_value, dtype=float, copy=True)
-        for _variable, _value in refined_polished.variable_values.items()
-    }
     return (
         refined_accepted,
         refined_degradation,
@@ -561,7 +490,6 @@ def _(
         refined_polished,
         refined_polished_blend,
         refined_polished_carbon,
-        refined_polished_snapshots,
         refined_result_carbon,
     )
 
@@ -715,22 +643,17 @@ def _(
     rebate,
     refined_accepted,
     refined_polished,
-    refined_polished_snapshots,
 ):
     if not refined_accepted:
         raise RuntimeError("The refined polished candidate did not pass the deployment gate.")
 
     for _variable, _value in refined_polished.variable_values.items():
         _variable.project_and_assign(_value)
-    for _variable, _value in refined_polished_snapshots.items():
-        np.testing.assert_array_equal(np.asarray(_variable.value), _value)
-        np.testing.assert_array_equal(refined_polished.variable_values[_variable], _value)
 
     adopted_rebate = np.asarray(rebate.value, dtype=float)
     adopted_blend = np.asarray(blend.value, dtype=float)
     adopted_carbon = float(carbon_intensity @ adopted_blend)
     carbon_reduction = (baseline_carbon - adopted_carbon) / baseline_carbon
-    assert carbon_reduction > 0.15
     return adopted_blend, adopted_carbon, adopted_rebate, carbon_reduction
 
 

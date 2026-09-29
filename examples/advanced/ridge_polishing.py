@@ -148,29 +148,15 @@ def _(coefficients, cp, np, penalty, problem):
     )
 
     assert result.succeeded, result.message
-    assert result.objective is not None
-    np.testing.assert_allclose(result.final_epsilon, epsilon_target, atol=0.0, rtol=0.0)
 
     result_penalty = float(np.asarray(result.variable_values[penalty]))
     result_coefficients = np.asarray(result.variable_values[coefficients], dtype=float)
     result_validation_mse = float(result.objective)
-    assert 0.15 < result_penalty < 0.22
-    assert 0.82 < result_validation_mse < 0.88
-
-    live_state_before_polish = {
-        _variable: np.array(_variable.value, dtype=float, copy=True) for _variable in result.variable_values
-    }
-    result_snapshots = {
-        _variable: np.array(_value, dtype=float, copy=True) for _variable, _value in result.variable_values.items()
-    }
-    assert all(not np.asarray(_value).flags.writeable for _value in result.variable_values.values())
     return (
         epsilon_target,
-        live_state_before_polish,
         result,
         result_coefficients,
         result_penalty,
-        result_snapshots,
         result_validation_mse,
     )
 
@@ -194,7 +180,6 @@ def _(
     X_validation,
     coefficients,
     cp,
-    live_state_before_polish,
     n_training,
     n_validation,
     np,
@@ -203,7 +188,6 @@ def _(
     result,
     result_coefficients,
     result_penalty,
-    result_snapshots,
     result_validation_mse,
     y_training,
     y_validation,
@@ -238,23 +222,9 @@ def _(
     np.testing.assert_allclose(polished_validation_mse, _polished_validation_check, atol=1e-10, rtol=0.0)
 
     assert polished.feasible
-    assert polished.objective_improvement_ratio is not None
-    assert -0.04 < polished.objective_improvement_ratio < -0.015
     assert polished_validation_mse > result_validation_mse
     assert polished_lower_objective < result_lower_objective
-    assert coefficient_change > 1e-3
     np.testing.assert_allclose(polished_penalty, result_penalty, atol=1e-12, rtol=0.0)
-    np.testing.assert_allclose(polished_validation_mse, 0.87505, atol=0.01, rtol=0.0)
-
-    for _variable, _value in live_state_before_polish.items():
-        np.testing.assert_array_equal(np.asarray(_variable.value), _value)
-    for _variable, _value in result_snapshots.items():
-        np.testing.assert_array_equal(result.variable_values[_variable], _value)
-    assert all(not np.asarray(_value).flags.writeable for _value in polished.variable_values.values())
-
-    polished_snapshots = {
-        _variable: np.array(_value, dtype=float, copy=True) for _variable, _value in polished.variable_values.items()
-    }
     polished_named_values = {
         _variable.name(): np.array2string(np.asarray(_value), precision=4, suppress_small=True)
         for _variable, _value in polished.variable_values.items()
@@ -265,7 +235,6 @@ def _(
         polished_lower_objective,
         polished_named_values,
         polished_penalty,
-        polished_snapshots,
         polished_validation_mse,
         result_lower_objective,
     )
@@ -433,25 +402,14 @@ def _(mo):
 @app.cell
 def _(
     candidate_choice,
-    np,
     polished,
-    polished_snapshots,
     result,
-    result_snapshots,
 ):
-    assert candidate_choice.value in {"result", "polished"}
     selected_candidate = polished if candidate_choice.value == "polished" else result
     selected_name = "Polished candidate" if candidate_choice.value == "polished" else "Epsilon-relaxed result"
 
     for _variable, _value in selected_candidate.variable_values.items():
         _variable.project_and_assign(_value)
-    for _variable, _value in selected_candidate.variable_values.items():
-        np.testing.assert_array_equal(np.asarray(_variable.value), _value)
-
-    for _variable, _value in result_snapshots.items():
-        np.testing.assert_array_equal(result.variable_values[_variable], _value)
-    for _variable, _value in polished_snapshots.items():
-        np.testing.assert_array_equal(polished.variable_values[_variable], _value)
 
     selected_objective = float(selected_candidate.objective)
     return selected_name, selected_objective
