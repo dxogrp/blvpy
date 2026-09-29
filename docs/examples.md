@@ -1,7 +1,8 @@
 # Examples
 
-The gallery consists of standalone [Marimo](https://marimo.io/) notebooks from `examples/gallery`.
-Each link opens an executed, non-interactive HTML snapshot containing the notebook code and outputs.
+The example collections consist of standalone [Marimo](https://marimo.io/)
+notebooks. Each link opens an executed, non-interactive HTML snapshot containing
+the notebook code and outputs.
 
 ## Modeling primers
 
@@ -40,26 +41,34 @@ Each link opens an executed, non-interactive HTML snapshot containing the notebo
 
 ## Advanced examples
 
-Advanced examples are available as source notebooks in the repository. They are
-checked statically and executed during release validation, but are not published
-with the gallery.
+Advanced examples are published as a separate nested collection and may use
+advanced features or take longer to run.
 
-- [Ridge-polishing decision](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/ridge_polishing.py)
+### Real data and literature
+
+- {example}`Stigler food pricing <advanced/stigler_food_pricing>`
+  reproduces the classical minimum-cost diet before adding a Stackelberg
+  pricing model.
+- {example}`Iris SVM regularization <advanced/iris_svm_regularization>`
+  reproduces Fisher's discriminant scores and tunes a modern classifier on
+  the corrected Iris data.
+- {example}`Renewable-capacity planning with German grid data <advanced/renewable_capacity_planning_smard>`
+  applies the capacity model to an observed day of German demand, wind, and
+  solar generation.
+
+### Polishing workflows
+
+- {example}`Ridge-polishing decision <advanced/ridge_polishing>`
   retrains a validation-selected ridge model at its fixed penalty, then lets
   the user choose between lower-level feasibility and a better relaxed
   validation objective.
-- [Low-carbon blend polishing](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/low_carbon_blend_polishing.py)
+- {example}`Low-carbon blend polishing <advanced/low_carbon_blend_polishing>`
   designs material rebates for a constrained producer, rejects a coarse
   polished response, tightens continuation, and explicitly adopts the
   candidate that passes a quantitative deployment gate.
-- [Stigler food pricing](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/stigler_food_pricing.py)
-  reproduces the classical minimum-cost diet before adding a Stackelberg pricing model.
-- [Iris SVM regularization](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/iris_svm_regularization.py)
-  reproduces Fisher's discriminant scores and tunes a modern classifier on the corrected Iris data.
-- [Renewable-capacity planning with German grid data](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/renewable_capacity_planning_smard.py)
-  applies the capacity model to an observed day of German demand, wind, and solar generation.
 
-For live interaction, install and open the complete example workspace from a repository checkout:
+For live interaction, install and open the complete example workspace from a
+repository checkout:
 
 ```shell
 make marimo

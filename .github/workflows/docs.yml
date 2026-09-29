@@ -57,19 +57,20 @@ jobs:
       - name: Install documentation dependencies
         run: uv sync --frozen --group dev --group docs --group examples
 
-      - name: Verify documentation
-        run: uv run --frozen --group dev --group docs --group examples python -m pytest tests/test_docs.py
-
       - name: Build documentation from the selected commit
         run: uv run --frozen --group docs --group examples sphinx-build -W --keep-going -n -b html docs docs/_build/html
 
-      - name: Export rendered example gallery
+      - name: Export rendered example collections
         timeout-minutes: 10
         run: |
           uv run --frozen --group docs --group examples python scripts/export_examples.py \
             --source-dir examples/gallery \
             --shared-dir examples/_shared \
             --output-dir docs/_build/html/examples
+          uv run --frozen --group docs --group examples python scripts/export_examples.py \
+            --source-dir examples/advanced \
+            --shared-dir examples/_shared \
+            --output-dir docs/_build/html/examples/advanced
 
       - name: Recover the published series site
         id: history

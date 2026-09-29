@@ -38,11 +38,15 @@ check-examples: sync-examples ## statically check every Marimo example
 docs: _sync-docs-examples ## build and serve the Sphinx documentation
 	@printf "$(BLUE)Building Sphinx documentation...$(RESET)\n"
 	@uv run --frozen --group docs --group examples sphinx-build -b html docs docs/_build/html
-	@printf "$(BLUE)Exporting the executed example gallery; this may take several minutes...$(RESET)\n"
+	@printf "$(BLUE)Exporting the executed example collections; this may take several minutes...$(RESET)\n"
 	@uv run --frozen --group docs --group examples python scripts/export_examples.py \
 		--source-dir examples/gallery \
 		--shared-dir examples/_shared \
 		--output-dir docs/_build/html/examples
+	@uv run --frozen --group docs --group examples python scripts/export_examples.py \
+		--source-dir examples/advanced \
+		--shared-dir examples/_shared \
+		--output-dir docs/_build/html/examples/advanced
 	@printf "$(BLUE)Serving documentation at http://127.0.0.1:8000...$(RESET)\n"
 	@uv run --frozen --group docs --group examples python -m http.server --directory docs/_build/html 8000
 
