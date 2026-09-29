@@ -2,8 +2,6 @@
 
 The gallery consists of standalone [Marimo](https://marimo.io/) notebooks from `examples/gallery`.
 Each link opens an executed, non-interactive HTML snapshot containing the notebook code and outputs.
-Published snapshots use $\epsilon_{\mathrm{target}}=10^{-5}$ to balance numerical validation and export time;
-live sessions can request tighter continuation targets.
 
 ## Modeling primers
 
@@ -13,7 +11,6 @@ live sessions can request tighter continuation targets.
   shows how the upper problem selects among tied lower optimizers.
 - {example}`Parameter-dependent SOCP <parameter_dependent_socp>`
   derives a geometric response and inspects parameter-dependent canonical data.
-
 - {example}`Best-of local optima <best_of_local_optima>`
   compares a deterministic local solve with several complete randomized runs.
 
@@ -24,7 +21,8 @@ live sessions can request tighter continuation targets.
 - {example}`Demand-response pricing <demand_response_pricing>`
   designs a time-of-use price while anticipating flexible energy use.
 - {example}`Renewable-capacity planning <renewable_capacity_planning>`
-  trades capacity investment against lower-level electricity dispatch.
+  trades capacity investment against lower-level electricity dispatch using a
+  compact synthetic daily profile.
 - {example}`Traffic tolling <traffic_tolling>`
   selects tolls while anticipating a congestion equilibrium.
 - {example}`Stackelberg port security <stackelberg_port_security>`
@@ -33,6 +31,12 @@ live sessions can request tighter continuation targets.
   allocates member areas while anticipating elastic equilibrium.
 - {example}`DC motor MPC tuning <dc_motor_mpc_tuning>`
   learns control-cost weights while anticipating a constrained MPC response.
+- {example}`Clean-equipment rebates <clean_equipment_rebate>`
+  design a rebate while anticipating
+  a producer's clean and fossil input choices under Cobb--Douglas production.
+- {example}`Carbon-tax abatement <carbon_tax_abatement>`
+  sets a carbon tax while anticipating sector-level abatement with
+  exponential costs.
 
 ## Advanced examples
 
@@ -48,14 +52,12 @@ with the gallery.
   designs material rebates for a constrained producer, rejects a coarse
   polished response, tightens continuation, and explicitly adopts the
   candidate that passes a quantitative deployment gate.
-- [Clean-equipment rebates](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/clean_equipment_rebate.py)
-  uses a three-dimensional power cone to design a rebate while anticipating
-  a producer's clean and fossil input choices under Cobb--Douglas production.
-- [Carbon-tax abatement](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/carbon_tax_abatement.py)
-  sets a carbon tax while anticipating sector-level abatement with
-  exponential costs represented by exponential cones.
-
-Browse all [repository examples](https://github.com/dxogrp/blvpy/tree/main/examples).
+- [Stigler food pricing](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/stigler_food_pricing.py)
+  reproduces the classical minimum-cost diet before adding a Stackelberg pricing model.
+- [Iris SVM regularization](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/iris_svm_regularization.py)
+  reproduces Fisher's discriminant scores and tunes a modern classifier on the corrected Iris data.
+- [Renewable-capacity planning with German grid data](https://github.com/dxogrp/blvpy/blob/main/examples/advanced/renewable_capacity_planning_smard.py)
+  applies the capacity model to an observed day of German demand, wind, and solar generation.
 
 For live interaction, install and open the complete example workspace from a repository checkout:
 
